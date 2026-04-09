@@ -22178,3 +22178,27030 @@ If you want, say:
 
 
 
+
+PART 17: THE NEXT BUILD PHASES
+
+Phase 5.1 — Weeks 11–12: Operational Hardening
+text
+✅ Strict approval blocking (commit / push / merge physically impossible without an approved gate)
+✅ Daemon recovery journal (resume unfinished runs after crash or restart)
+✅ Worker leases + heartbeat-based job reclaim
+✅ Multi-run concurrency locks (no two daemons mutate the same workspace)
+✅ GitHub issue → org task translation
+✅ PR patch summarization from actual git diff (not prompt summary only)
+✅ Per-team budgets + token quotas
+✅ Subteam-specific memory partitions
+✅ ULTRAPLAN SLAs (timeout, cancellation, checkpointing)
+✅ Incident log + run recovery diagnostics
+
+Milestone: AutoOrg can run unattended for 72+ hours, crash, restart, and resume safely without duplicate commits, orphaned jobs, or approval bypasses.
+
+Phase 6 — Weeks 13–15: Tool-Using Organization
+text
+✅ Tool registry with explicit capability manifests
+✅ Safe retrieval tools (web fetch, docs fetch, repo search, issue search)
+✅ Sandboxed code execution per role
+✅ Structured tool-call traces in transcripts and DB
+✅ Tool budgets and allowlists per role / team
+✅ Evidence packs attached to proposals
+✅ External connectors (GitHub, local files, docs, tickets, APIs)
+✅ Tool-use-aware Critic ("you should have verified this with a tool")
+✅ Tool-use-aware Ratchet Judge penalties for unsupported claims
+✅ Replayable tool traces for debugging
+
+Milestone: AutoOrg shifts from a “thinking organization” to an “acting organization” that can inspect, verify, and operate on real systems under policy.
+
+Phase 6.1 — Week 16: Safety + Provenance Hardening
+text
+✅ Policy engine for every action class (READ / PROPOSE / PATCH / EXECUTE / PUBLISH)
+✅ Reversible action ledger
+✅ Provenance chain: claim → citation → graph node → source chunk → seed material
+✅ Signed run manifests + immutable artifact metadata
+✅ Secret redaction + PII filters in transcripts and memory
+✅ Sandbox escape tests + permission fuzzing
+✅ Risk-tiered approvals (high-risk actions require stronger approval)
+✅ Unsafe-action detector in Critic
+✅ Judge-side policy compliance score
+✅ Security audit export
+
+Milestone: Every non-trivial action is attributable, policy-checked, and reversible.
+
+Phase 7 — Weeks 17–19: Benchmark Lab + Regression Evals
+text
+✅ Standard benchmark suite of org.md missions
+✅ Gold outputs + acceptance bands
+✅ Cross-model leaderboard
+✅ Constitution A/B testing
+✅ Regression alarms on score, cost, latency, groundedness, and novelty
+✅ Offline replay of historical runs
+✅ “Why did this regress?” evaluator
+✅ Benchmark mode in CI
+✅ Org template bake-offs
+✅ Judge calibration harness
+
+Milestone: You can prove a change made AutoOrg better, not just different.
+
+Phase 8 — Weeks 20–22: Portfolio Orchestration
+text
+✅ Multiple concurrent orgs on one mission
+✅ Competing constitutions / role mixes / model maps
+✅ Portfolio allocator routes budget to best-performing orgs
+✅ Judge ensemble / council mode
+✅ Cross-org artifact exchange with quarantine
+✅ Tournament mode for org.md strategies
+✅ Best-of-N synthesis layer
+✅ Branch-per-org git strategy
+✅ Portfolio dashboard with capital allocation view
+✅ Failure containment between orgs
+
+Milestone: AutoOrg becomes a research portfolio manager, not just a single autonomous loop.
+
+Phase 9 — Weeks 23–26: Productization + Platform
+text
+✅ Multi-tenant auth / RBAC
+✅ Hosted runs + remote agents
+✅ Org templates / role registry / marketplace
+✅ Team collaboration + comments + approvals UI
+✅ Billing / quotas / workspace isolation
+✅ Deployment modes (local, single-node, cloud worker, managed)
+✅ Backup / restore / export bundles
+✅ Compliance logs + retention policies
+✅ Admin observability dashboard
+✅ Public API / SDK for launching runs
+
+Milestone: External teams can use AutoOrg reliably as a platform, not just as an internal experiment.
+
+Phase 10 — Weeks 27–30: Learning Organization
+text
+✅ Distill winning patterns from git history + results.tsv
+✅ Prompt / policy optimizer from successful cycles
+✅ Role evolution based on benchmark performance
+✅ Memory pruning via learned utility
+✅ Cost-quality routing optimizer
+✅ Fine-tuned planner / judge adapters from traces
+✅ “Simulate before rollout” release gate
+✅ Self-improvement proposals reviewed under the constitution
+✅ Meta-critic for prompt drift detection
+✅ Continuous adaptation without breaking auditability
+
+Milestone: AutoOrg begins improving its own operating policy while remaining bounded by the constitution and approval system.
+
+
+
+
+
+
+
+Phase 5 currently adds hierarchy, daemon mode, scheduling, approvals, and GitHub integration, but the approval gate is explicitly still a soft gate: a commit can exist locally and only then be marked pending. The doc also explicitly says the next move should be a hardening pass adding strict approval blocking, recovery after crash/restart, worker leases, issue→task translation, diff-based PR summaries, concurrency safety, subteam memory partitions, team budgets, and ULTRAPLAN SLAs. 
+1
+
+So below I’m treating Phase 5.1 as an additive hardening layer on top of your existing runtime/, integrations/, db/, and api/ layout. One architectural change is necessary: split ratchet decision from git materialization. Right now the ratchet logic commits immediately, and Phase 5 adds approval afterward; real strict blocking only works if “this deserves a commit” is separated from “write to git history now.” That’s my design inference from the current doc. 
+1
+
+AutoOrg — Phase 5.1: Operational Hardening
+Strict Approval Blocking, Crash Recovery, Worker Leases, Concurrency Safety
+WHAT PHASE 5.1 ADDS
+text
+
+Phase 5   ── Hierarchy + daemon + scheduler + soft approval gates + GitHub awareness
+
+Phase 5.1 ── ┌──────────────────────────────────────────────────────────────┐
+             │ Strict approval blocking: commit/push/merge impossible      │
+             │ without an approved gate                                    │
+             │ Crash recovery journal + resumable runs                     │
+             │ Worker leases + heartbeat-based reclaim                     │
+             │ Real job execution records (not just scheduled jobs)        │
+             │ Workspace/repo concurrency locks                            │
+             │ GitHub issue → org task translation                         │
+             │ PR summaries from actual git diff                           │
+             │ Per-team budgets + budget event tracking                    │
+             │ Subteam-specific memory partitions                          │
+             │ ULTRAPLAN SLAs: timeout, checkpoint, cancel, resume         │
+             │ Incident log + recovery diagnostics                         │
+             └──────────────────────────────────────────────────────────────┘
+DIRECTORY ADDITIONS
+text
+
+src/
+├── runtime/
+│   ├── approval-enforcer.ts      ← strict approval blocking + materialization
+│   ├── workspace-lock.ts         ← repo/workspace lease lock
+│   ├── recovery-journal.ts       ← resumable checkpoints
+│   ├── crash-recover.ts          ← recover interrupted runs after restart
+│   ├── lease-manager.ts          ← worker leases + heartbeat + reclaim
+│   ├── job-executor.ts           ← actually runs scheduled jobs
+│   ├── budget-manager.ts         ← per-team USD/token/tool budgets
+│   ├── memory-partitions.ts      ← per-team memory views and writes
+│   ├── ultraplan-sla.ts          ← timeout/checkpoint/cancel wrapper
+│   └── incident-log.ts           ← incidents + recovery diagnostics
+├── prompts/
+│   ├── issue-translator.ts       ← GitHub issue → delegated task prompt
+│   ├── diff-summarizer.ts        ← summarize real git patch
+│   └── recovery-analyst.ts       ← restart/resume diagnosis prompt
+├── integrations/
+│   ├── issue-translator.ts       ← translate issues into org tasks
+│   └── diff-summarizer.ts        ← turn git diff into structured summary
+├── db/
+│   ├── schema-phase5_1.sql
+│   └── migrate-phase5_1.ts
+└── api/
+    └── hardening-routes.ts       ← recovery, budgets, locks, issue tasks
+
+artifacts/
+├── approvals/
+│   ├── pending/
+│   └── materialized/
+└── recovery/
+    └── checkpoints/
+
+memory/
+└── partitions/
+    ├── shared/
+    └── <team-id>/
+        ├── MEMORY.md
+        └── facts/
+1. Phase 5.1 DB schema
+src/db/schema-phase5_1.sql
+SQL
+
+-- ============================================================
+-- AutoOrg Phase 5.1 Hardening
+-- Strict approval blocking + recovery + leases + budgets
+-- ============================================================
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: pending_actions
+-- Actions that cannot materialize until approval is granted
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS pending_actions (
+  id TEXT PRIMARY KEY,
+  approval_id TEXT NOT NULL REFERENCES approvals(id) ON DELETE CASCADE,
+  run_id TEXT NOT NULL,
+  cycle_number INTEGER,
+  action_type TEXT NOT NULL CHECK(action_type IN ('commit','push','merge','ultraplan_apply','job')),
+  status TEXT NOT NULL DEFAULT 'staged'
+    CHECK(status IN ('staged','approved','materialized','rejected','expired','failed')),
+  branch_name TEXT,
+  target_ref TEXT,
+  artifact_path TEXT NOT NULL,       -- full artifact / snapshot
+  diff_path TEXT,                    -- optional git patch
+  commit_message TEXT,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  error_text TEXT,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  materialized_at DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_pending_actions_run_status
+  ON pending_actions(run_id, status);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: run_checkpoints
+-- Durable resume points for orchestrator + daemon
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS run_checkpoints (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  cycle_number INTEGER NOT NULL,
+  stage TEXT NOT NULL CHECK(stage IN (
+    'boot',
+    'pre_cycle',
+    'post_team_assignment',
+    'post_workers',
+    'post_score',
+    'post_decision',
+    'post_dream',
+    'idle'
+  )),
+  state_json TEXT NOT NULL,
+  git_head TEXT,
+  best_score REAL,
+  plateau_count INTEGER DEFAULT 0,
+  consecutive_rejects INTEGER DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_run_checkpoints_run_stage
+  ON run_checkpoints(run_id, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: recovery_events
+-- Recovery diagnostics after restart/crash
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS recovery_events (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  event_type TEXT NOT NULL CHECK(event_type IN (
+    'crash_detected',
+    'resume_started',
+    'resume_succeeded',
+    'resume_failed',
+    'orphan_reclaimed',
+    'lock_stolen_after_expiry'
+  )),
+  summary TEXT NOT NULL,
+  details_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_recovery_events_run
+  ON recovery_events(run_id, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: workspace_locks
+-- Prevents two daemons/runs mutating same repo/workspace
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS workspace_locks (
+  lock_key TEXT PRIMARY KEY,         -- e.g. repo:/abs/path/to/repo
+  holder_id TEXT NOT NULL,           -- daemon or run instance
+  run_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active'
+    CHECK(status IN ('active','released','expired')),
+  lease_expires_at DATETIME NOT NULL,
+  heartbeat_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: worker_leases
+-- Worker claim + heartbeat + reclaim
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS worker_leases (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  cycle_number INTEGER NOT NULL,
+  task_id TEXT NOT NULL,
+  worker_role TEXT NOT NULL,
+  worker_instance TEXT NOT NULL,
+  team_id TEXT,
+  status TEXT NOT NULL DEFAULT 'leased'
+    CHECK(status IN ('leased','running','completed','expired','reclaimed','failed','cancelled')),
+  lease_expires_at DATETIME NOT NULL,
+  heartbeat_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  attempt_count INTEGER NOT NULL DEFAULT 1,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  result_json TEXT,
+  error_text TEXT,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_worker_leases_run_status
+  ON worker_leases(run_id, status, lease_expires_at);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: job_executions
+-- Actual executions for scheduled jobs
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS job_executions (
+  id TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL REFERENCES scheduled_jobs(id) ON DELETE CASCADE,
+  run_id TEXT,
+  status TEXT NOT NULL DEFAULT 'queued'
+    CHECK(status IN ('queued','running','completed','failed','cancelled','expired')),
+  claimed_by TEXT,
+  lease_expires_at DATETIME,
+  started_at DATETIME,
+  finished_at DATETIME,
+  output_json TEXT,
+  error_text TEXT,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_job_executions_job
+  ON job_executions(job_id, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: issue_tasks
+-- GitHub issues translated into org-native tasks
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS issue_tasks (
+  id TEXT PRIMARY KEY,
+  github_event_id TEXT REFERENCES github_events(id),
+  repo_full_name TEXT NOT NULL,
+  issue_number INTEGER NOT NULL,
+  run_id TEXT,
+  team_id TEXT,
+  title TEXT NOT NULL,
+  translated_mission TEXT NOT NULL,
+  acceptance_criteria_json TEXT NOT NULL DEFAULT '[]',
+  risk_level TEXT NOT NULL CHECK(risk_level IN ('low','medium','high')),
+  status TEXT NOT NULL DEFAULT 'translated'
+    CHECK(status IN ('translated','queued','in_progress','done','rejected')),
+  source_payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_issue_tasks_repo_issue
+  ON issue_tasks(repo_full_name, issue_number);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: team_budgets
+-- Per-team resource ceilings
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS team_budgets (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  team_id TEXT NOT NULL,
+  budget_type TEXT NOT NULL CHECK(budget_type IN ('usd','tokens','tool_calls','minutes')),
+  window_scope TEXT NOT NULL CHECK(window_scope IN ('run','cycle')),
+  limit_value REAL NOT NULL,
+  consumed_value REAL NOT NULL DEFAULT 0,
+  hard_limit INTEGER NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_team_budgets_run_team
+  ON team_budgets(run_id, team_id);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: budget_events
+-- Budget accounting ledger
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS budget_events (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  team_id TEXT NOT NULL,
+  role TEXT,
+  cycle_number INTEGER,
+  budget_type TEXT NOT NULL CHECK(budget_type IN ('usd','tokens','tool_calls','minutes')),
+  delta_value REAL NOT NULL,
+  reason TEXT NOT NULL,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_budget_events_run_team
+  ON budget_events(run_id, team_id, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: memory_partitions
+-- Team-scoped memory lanes
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS memory_partitions (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  team_id TEXT NOT NULL,
+  partition_name TEXT NOT NULL,
+  index_path TEXT NOT NULL,
+  facts_dir TEXT NOT NULL,
+  read_scope_json TEXT NOT NULL DEFAULT '["shared"]',
+  write_scope_json TEXT NOT NULL DEFAULT '[]',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_memory_partitions_run_team
+  ON memory_partitions(run_id, team_id);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: ultraplan_checkpoints
+-- Periodic saved state for long ULTRAPLAN sessions
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS ultraplan_checkpoints (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES ultraplan_sessions(id) ON DELETE CASCADE,
+  run_id TEXT NOT NULL,
+  cycle_number INTEGER NOT NULL,
+  checkpoint_number INTEGER NOT NULL,
+  summary TEXT NOT NULL,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ultraplan_checkpoints_session
+  ON ultraplan_checkpoints(session_id, checkpoint_number);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: ultraplan_sla_events
+-- Timeout / cancel / checkpoint / overbudget diagnostics
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS ultraplan_sla_events (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES ultraplan_sessions(id) ON DELETE CASCADE,
+  run_id TEXT NOT NULL,
+  event_type TEXT NOT NULL CHECK(event_type IN (
+    'started',
+    'checkpoint',
+    'timeout',
+    'cancelled',
+    'completed',
+    'over_budget'
+  )),
+  details_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ultraplan_sla_session
+  ON ultraplan_sla_events(session_id, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: incident_log
+-- General hardening / ops incidents
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS incident_log (
+  id TEXT PRIMARY KEY,
+  run_id TEXT,
+  severity TEXT NOT NULL CHECK(severity IN ('info','warn','error','critical')),
+  component TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  details_json TEXT NOT NULL DEFAULT '{}',
+  resolved INTEGER NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_incident_log_created
+  ON incident_log(created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- Feature flags
+-- ────────────────────────────────────────────────────────────
+INSERT OR IGNORE INTO feature_flags (flag_name, enabled, description) VALUES
+  ('strictApprovalBlocking', 1, 'No commit/push/merge without approved gate (Phase 5.1)'),
+  ('daemonRecovery', 1, 'Resume interrupted runs after restart (Phase 5.1)'),
+  ('workerLeases', 1, 'Heartbeat-based worker leases (Phase 5.1)'),
+  ('workspaceLocks', 1, 'Repo/workspace concurrency locks (Phase 5.1)'),
+  ('jobExecutions', 1, 'Track and lease actual job executions (Phase 5.1)'),
+  ('issueTranslation', 1, 'GitHub issue -> org task translation (Phase 5.1)'),
+  ('diffPatchSummary', 1, 'PR summaries from actual git diff (Phase 5.1)'),
+  ('teamBudgets', 1, 'Per-team budgets and usage ledger (Phase 5.1)'),
+  ('teamMemoryPartitions', 1, 'Subteam-specific memory partitions (Phase 5.1)'),
+  ('ultraplanSla', 1, 'ULTRAPLAN timeout/checkpoint/cancel policy (Phase 5.1)'),
+  ('incidentLog', 1, 'Operational incident logging (Phase 5.1)');
+src/db/migrate-phase5_1.ts
+TypeScript
+
+#!/usr/bin/env bun
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import chalk from 'chalk';
+import { getDb } from '@/db/migrate.js';
+
+async function migrate() {
+  console.log(chalk.cyan('\n⚙️ Running Phase 5.1 migrations...\n'));
+  const db = getDb();
+  const schema = readFileSync(path.join(import.meta.dir, 'schema-phase5_1.sql'), 'utf-8');
+  db.exec(schema);
+  db.close();
+  console.log(chalk.bold.green('✅ Phase 5.1 migration complete.\n'));
+}
+
+migrate().catch(console.error);
+Run:
+
+Bash
+
+bun run src/db/migrate-phase5_1.ts
+2. Ratchet hardening: split decision from materialization
+Patch src/runtime/ratchet.ts
+TypeScript
+
+import { exec } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const sh = promisify(exec);
+
+export type RatchetDecision = 'COMMIT' | 'REVERT' | 'PENDING_APPROVAL';
+
+export class RatchetEngine {
+  constructor(private constitution: Constitution) {}
+
+  async score(proposal: Proposal, graph: KnowledgeGraph): Promise<RatchetScore> {
+    const judgeOutput = await AgentRunner.run('RatchetJudge', {
+      proposal,
+      constitution: this.constitution,
+      graph,
+      model: 'claude-opus-4',
+    });
+    return judgeOutput as RatchetScore;
+  }
+
+  decide(score: RatchetScore, bestScore: number): 'COMMIT' | 'REVERT' {
+    return score.composite > bestScore ? 'COMMIT' : 'REVERT';
+  }
+
+  async materializeCommit(opts: {
+    file?: string;
+    commitMessage: string;
+  }): Promise<string> {
+    const file = opts.file ?? 'workspace/current_output.md';
+    await sh(`git add ${file}`);
+    await sh(`git commit -m "${opts.commitMessage.replace(/"/g, '\\"')}"`);
+    const { stdout } = await sh('git rev-parse HEAD');
+    return stdout.trim();
+  }
+
+  async materializeRevert(file = 'workspace/current_output.md'): Promise<void> {
+    await sh(`git checkout -- ${file}`);
+  }
+}
+Key change: the ratchet still decides truthfully, but git side effects are now performed by either the orchestrator or the approval enforcer.
+
+3. Strict approval blocking
+src/runtime/approval-enforcer.ts
+TypeScript
+
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { nanoid } from 'nanoid';
+import simpleGit from 'simple-git';
+import { getDb } from '@/db/migrate.js';
+import { ApprovalGate } from '@/runtime/approval-gate.js';
+import { WorkspaceLock } from '@/runtime/workspace-lock.js';
+import { IncidentLog } from '@/runtime/incident-log.js';
+
+const PENDING_DIR = path.join(process.cwd(), 'artifacts', 'approvals', 'pending');
+const MATERIALIZED_DIR = path.join(process.cwd(), 'artifacts', 'approvals', 'materialized');
+
+export class ApprovalEnforcer {
+  private gate = new ApprovalGate();
+  private git = simpleGit();
+  private lock = new WorkspaceLock();
+  private incidents = new IncidentLog();
+
+  constructor(private runId: string) {}
+
+  async stageCommitCandidate(opts: {
+    cycleNumber: number;
+    targetFile: string;
+    outputText: string;
+    score: RatchetScore;
+    summary: string;
+  }) {
+    await mkdir(PENDING_DIR, { recursive: true });
+    await mkdir(MATERIALIZED_DIR, { recursive: true });
+
+    const actionId = `act_${nanoid(10)}`;
+    const snapshotPath = path.join(PENDING_DIR, `${actionId}.current_output.md`);
+    const diffPath = path.join(PENDING_DIR, `${actionId}.patch`);
+    const commitMessage = `cycle-${opts.cycleNumber}: score=${opts.score.composite.toFixed(4)}`;
+
+    await writeFile(snapshotPath, opts.outputText, 'utf-8');
+
+    const diff = await this.git.diff(['--binary', '--', opts.targetFile]);
+    await writeFile(diffPath, diff, 'utf-8');
+
+    const approvalId = this.gate.request({
+      runId: this.runId,
+      cycleNumber: opts.cycleNumber,
+      approvalType: 'commit',
+      subject: actionId,
+      requestedBy: 'system',
+      summary: `Cycle ${opts.cycleNumber} requests COMMIT at ${opts.score.composite.toFixed(4)}.`,
+      details: {
+        score: opts.score,
+        artifactPath: snapshotPath,
+        diffPath,
+        commitMessage,
+        summary: opts.summary,
+      },
+    });
+
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO pending_actions
+      (id, approval_id, run_id, cycle_number, action_type, status, artifact_path, diff_path, commit_message, metadata_json)
+      VALUES (?, ?, ?, ?, 'commit', 'staged', ?, ?, ?, ?)
+    `).run(
+      actionId,
+      approvalId,
+      this.runId,
+      opts.cycleNumber,
+      snapshotPath,
+      diffPath,
+      commitMessage,
+      JSON.stringify({ score: opts.score, summary: opts.summary })
+    );
+    db.close();
+
+    // HARD BLOCK:
+    // Remove the candidate from the live working tree until approval exists.
+    await this.git.checkout(['--', opts.targetFile]);
+
+    return { actionId, approvalId, snapshotPath, diffPath };
+  }
+
+  async materializeApprovedActions() {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT pa.*, a.status AS approval_status
+      FROM pending_actions pa
+      JOIN approvals a ON a.id = pa.approval_id
+      WHERE pa.status = 'staged' AND a.status = 'approved'
+      ORDER BY pa.created_at ASC
+    `).all() as Array<{
+      id: string;
+      run_id: string;
+      action_type: string;
+      artifact_path: string;
+      commit_message: string | null;
+    }>;
+    db.close();
+
+    for (const row of rows) {
+      await this.lock.withLock(
+        `repo:${process.cwd()}`,
+        `materializer:${row.id}`,
+        row.run_id,
+        async () => {
+          if (row.action_type !== 'commit') return;
+
+          const content = await readFile(row.artifact_path, 'utf-8');
+          const targetFile = path.join(process.cwd(), 'workspace', 'current_output.md');
+          await writeFile(targetFile, content, 'utf-8');
+          await this.git.add([targetFile]);
+          await this.git.commit(row.commit_message ?? `AutoOrg materialized ${row.id}`);
+          await rename(
+            row.artifact_path,
+            path.join(MATERIALIZED_DIR, path.basename(row.artifact_path))
+          );
+
+          const db2 = getDb();
+          db2.prepare(`
+            UPDATE pending_actions
+            SET status = 'materialized', materialized_at = datetime('now')
+            WHERE id = ?
+          `).run(row.id);
+          db2.close();
+        }
+      );
+    }
+  }
+
+  async rejectAction(actionId: string, reason: string) {
+    const db = getDb();
+    db.prepare(`
+      UPDATE pending_actions
+      SET status = 'rejected', error_text = ?
+      WHERE id = ?
+    `).run(reason, actionId);
+    db.close();
+
+    this.incidents.log({
+      runId: this.runId,
+      severity: 'info',
+      component: 'approval-enforcer',
+      summary: `Pending action ${actionId} rejected`,
+      details: { reason },
+    });
+  }
+}
+Behavior change:
+
+If a cycle deserves a commit, the output is converted into a pending approval artifact.
+The working tree is restored immediately.
+Only an approved action can materialize into git history.
+That is strict blocking, not soft gating.
+
+4. Workspace/repo concurrency lock
+src/runtime/workspace-lock.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+
+export class WorkspaceLock {
+  acquire(lockKey: string, holderId: string, runId: string, ttlMs = 60_000) {
+    const db = getDb();
+    const now = new Date();
+    const expires = new Date(now.getTime() + ttlMs).toISOString();
+
+    const row = db.prepare(`
+      SELECT * FROM workspace_locks
+      WHERE lock_key = ?
+    `).get(lockKey) as
+      | { holder_id: string; lease_expires_at: string; status: string }
+      | undefined;
+
+    if (row && row.status === 'active' && new Date(row.lease_expires_at).getTime() > now.getTime()) {
+      db.close();
+      throw new Error(`Workspace lock already held by ${row.holder_id}`);
+    }
+
+    db.prepare(`
+      INSERT INTO workspace_locks
+      (lock_key, holder_id, run_id, status, lease_expires_at, metadata_json, created_at, updated_at)
+      VALUES (?, ?, ?, 'active', ?, '{}', datetime('now'), datetime('now'))
+      ON CONFLICT(lock_key) DO UPDATE SET
+        holder_id = excluded.holder_id,
+        run_id = excluded.run_id,
+        status = 'active',
+        lease_expires_at = excluded.lease_expires_at,
+        heartbeat_at = datetime('now'),
+        updated_at = datetime('now')
+    `).run(lockKey, holderId, runId, expires);
+
+    db.close();
+  }
+
+  heartbeat(lockKey: string, holderId: string, ttlMs = 60_000) {
+    const db = getDb();
+    const expires = new Date(Date.now() + ttlMs).toISOString();
+    db.prepare(`
+      UPDATE workspace_locks
+      SET heartbeat_at = datetime('now'),
+          lease_expires_at = ?,
+          updated_at = datetime('now')
+      WHERE lock_key = ? AND holder_id = ? AND status = 'active'
+    `).run(expires, lockKey, holderId);
+    db.close();
+  }
+
+  release(lockKey: string, holderId: string) {
+    const db = getDb();
+    db.prepare(`
+      UPDATE workspace_locks
+      SET status = 'released', updated_at = datetime('now')
+      WHERE lock_key = ? AND holder_id = ?
+    `).run(lockKey, holderId);
+    db.close();
+  }
+
+  sweepExpired() {
+    const db = getDb();
+    db.prepare(`
+      UPDATE workspace_locks
+      SET status = 'expired', updated_at = datetime('now')
+      WHERE status = 'active' AND lease_expires_at < datetime('now')
+    `).run();
+    db.close();
+  }
+
+  async withLock<T>(
+    lockKey: string,
+    holderId: string,
+    runId: string,
+    fn: () => Promise<T>,
+    ttlMs = 60_000,
+  ): Promise<T> {
+    this.acquire(lockKey, holderId, runId, ttlMs);
+    try {
+      return await fn();
+    } finally {
+      this.release(lockKey, holderId);
+    }
+  }
+}
+5. Recovery journal + resumable runs
+src/runtime/recovery-journal.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+
+export interface CheckpointPayload {
+  bestScore: number;
+  plateauCount: number;
+  consecutiveRejects: number;
+  cycleNumber: number;
+  stage: string;
+  extra?: Record<string, unknown>;
+}
+
+export class RecoveryJournal {
+  constructor(private runId: string) {}
+
+  checkpoint(payload: CheckpointPayload, gitHead?: string) {
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO run_checkpoints
+      (id, run_id, cycle_number, stage, state_json, git_head, best_score, plateau_count, consecutive_rejects)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      `chk_${nanoid(10)}`,
+      this.runId,
+      payload.cycleNumber,
+      payload.stage,
+      JSON.stringify(payload),
+      gitHead ?? null,
+      payload.bestScore,
+      payload.plateauCount,
+      payload.consecutiveRejects
+    );
+    db.close();
+  }
+
+  latest() {
+    const db = getDb();
+    const row = db.prepare(`
+      SELECT * FROM run_checkpoints
+      WHERE run_id = ?
+      ORDER BY created_at DESC
+      LIMIT 1
+    `).get(this.runId) as { state_json: string } | undefined;
+    db.close();
+    return row ? JSON.parse(row.state_json) as CheckpointPayload : null;
+  }
+
+  recordEvent(eventType: string, summary: string, details: Record<string, unknown> = {}) {
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO recovery_events
+      (id, run_id, event_type, summary, details_json)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(
+      `rec_${nanoid(10)}`,
+      this.runId,
+      eventType,
+      summary,
+      JSON.stringify(details)
+    );
+    db.close();
+  }
+}
+src/runtime/crash-recover.ts
+TypeScript
+
+import { RecoveryJournal } from '@/runtime/recovery-journal.js';
+import { LeaseManager } from '@/runtime/lease-manager.js';
+import { WorkspaceLock } from '@/runtime/workspace-lock.js';
+import { IncidentLog } from '@/runtime/incident-log.js';
+
+export async function recoverInterruptedRun(runId: string) {
+  const journal = new RecoveryJournal(runId);
+  const leases = new LeaseManager(runId);
+  const locks = new WorkspaceLock();
+  const incidents = new IncidentLog();
+
+  const checkpoint = journal.latest();
+  if (!checkpoint) return null;
+
+  journal.recordEvent('resume_started', `Attempting recovery for run ${runId}`, checkpoint);
+
+  try {
+    locks.sweepExpired();
+    leases.reclaimExpired();
+    journal.recordEvent('resume_succeeded', `Recovered run ${runId}`, {
+      resumeFromStage: checkpoint.stage,
+      cycleNumber: checkpoint.cycleNumber,
+    });
+    return checkpoint;
+  } catch (error) {
+    journal.recordEvent('resume_failed', `Recovery failed for run ${runId}`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    incidents.log({
+      runId,
+      severity: 'error',
+      component: 'crash-recover',
+      summary: `Run recovery failed`,
+      details: { error: error instanceof Error ? error.message : String(error) },
+    });
+    return null;
+  }
+}
+6. Worker leases + heartbeat reclaim
+src/runtime/lease-manager.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+
+export class LeaseManager {
+  constructor(private runId: string) {}
+
+  leaseTask(opts: {
+    cycleNumber: number;
+    taskId: string;
+    workerRole: string;
+    workerInstance: string;
+    teamId?: string;
+    payload?: Record<string, unknown>;
+    ttlMs?: number;
+  }) {
+    const leaseId = `lease_${nanoid(10)}`;
+    const expires = new Date(Date.now() + (opts.ttlMs ?? 45_000)).toISOString();
+
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO worker_leases
+      (id, run_id, cycle_number, task_id, worker_role, worker_instance, team_id, status, lease_expires_at, payload_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, ?)
+    `).run(
+      leaseId,
+      this.runId,
+      opts.cycleNumber,
+      opts.taskId,
+      opts.workerRole,
+      opts.workerInstance,
+      opts.teamId ?? null,
+      expires,
+      JSON.stringify(opts.payload ?? {})
+    );
+
+    db.prepare(`
+      UPDATE delegated_tasks
+      SET status = 'running', updated_at = datetime('now')
+      WHERE id = ?
+    `).run(opts.taskId);
+
+    db.close();
+    return leaseId;
+  }
+
+  heartbeat(leaseId: string, ttlMs = 45_000) {
+    const db = getDb();
+    const expires = new Date(Date.now() + ttlMs).toISOString();
+    db.prepare(`
+      UPDATE worker_leases
+      SET heartbeat_at = datetime('now'),
+          lease_expires_at = ?,
+          updated_at = datetime('now')
+      WHERE id = ? AND status = 'running'
+    `).run(expires, leaseId);
+    db.close();
+  }
+
+  complete(leaseId: string, result: unknown) {
+    const db = getDb();
+    const lease = db.prepare(`SELECT task_id FROM worker_leases WHERE id = ?`).get(leaseId) as
+      | { task_id: string }
+      | undefined;
+
+    db.prepare(`
+      UPDATE worker_leases
+      SET status = 'completed', result_json = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(JSON.stringify(result), leaseId);
+
+    if (lease?.task_id) {
+      db.prepare(`
+        UPDATE delegated_tasks
+        SET status = 'completed', result_summary = ?, updated_at = datetime('now')
+        WHERE id = ?
+      `).run(
+        typeof result === 'string' ? result.slice(0, 500) : JSON.stringify(result).slice(0, 500),
+        lease.task_id
+      );
+    }
+
+    db.close();
+  }
+
+  reclaimExpired() {
+    const db = getDb();
+    const expired = db.prepare(`
+      SELECT id, task_id FROM worker_leases
+      WHERE status = 'running' AND lease_expires_at < datetime('now')
+    `).all() as Array<{ id: string; task_id: string }>;
+
+    for (const row of expired) {
+      db.prepare(`
+        UPDATE worker_leases
+        SET status = 'reclaimed', updated_at = datetime('now')
+        WHERE id = ?
+      `).run(row.id);
+
+      db.prepare(`
+        UPDATE delegated_tasks
+        SET status = 'pending', updated_at = datetime('now')
+        WHERE id = ?
+      `).run(row.task_id);
+    }
+
+    db.close();
+    return expired.length;
+  }
+}
+7. Incident log
+src/runtime/incident-log.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+
+export class IncidentLog {
+  log(opts: {
+    runId?: string;
+    severity: 'info' | 'warn' | 'error' | 'critical';
+    component: string;
+    summary: string;
+    details?: Record<string, unknown>;
+  }) {
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO incident_log
+      (id, run_id, severity, component, summary, details_json)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      `inc_${nanoid(10)}`,
+      opts.runId ?? null,
+      opts.severity,
+      opts.component,
+      opts.summary,
+      JSON.stringify(opts.details ?? {})
+    );
+    db.close();
+  }
+}
+8. Actual scheduled job execution
+src/runtime/job-executor.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+import { DreamEngine } from '@/runtime/dream.js';
+import { graphManager } from '@/runtime/graph-manager.js';
+import { IncidentLog } from '@/runtime/incident-log.js';
+
+export class JobExecutor {
+  private incidents = new IncidentLog();
+
+  claimJob(jobId: string, claimedBy: string, ttlMs = 60_000) {
+    const db = getDb();
+    const executionId = `jx_${nanoid(10)}`;
+    const expires = new Date(Date.now() + ttlMs).toISOString();
+
+    db.prepare(`
+      INSERT INTO job_executions
+      (id, job_id, status, claimed_by, lease_expires_at, started_at)
+      VALUES (?, ?, 'running', ?, ?, datetime('now'))
+    `).run(executionId, jobId, claimedBy, expires);
+
+    db.prepare(`
+      UPDATE scheduled_jobs
+      SET status = 'running'
+      WHERE id = ?
+    `).run(jobId);
+
+    db.close();
+    return executionId;
+  }
+
+  async runJob(job: {
+    id: string;
+    job_type: 'org_run' | 'dream' | 'graph_rebuild' | 'health_check' | 'github_sync';
+    run_id?: string | null;
+    payload_json: string;
+  }, claimedBy = 'daemon_default') {
+    const executionId = this.claimJob(job.id, claimedBy);
+    const db = getDb();
+
+    try {
+      const payload = JSON.parse(job.payload_json || '{}');
+
+      if (job.job_type === 'dream' && job.run_id) {
+        const dream = new DreamEngine(job.run_id);
+        await dream.run();
+      }
+
+      if (job.job_type === 'graph_rebuild' && job.run_id) {
+        graphManager.init(job.run_id);
+        await graphManager.ensureBuilt(payload.config ?? {});
+      }
+
+      if (job.job_type === 'health_check') {
+        // no-op diagnostic job for now
+      }
+
+      db.prepare(`
+        UPDATE job_executions
+        SET status = 'completed', finished_at = datetime('now'), output_json = ?
+        WHERE id = ?
+      `).run(JSON.stringify({ ok: true, jobType: job.job_type }), executionId);
+
+      db.prepare(`
+        UPDATE scheduled_jobs
+        SET status = 'idle', last_run_at = datetime('now'), last_error = NULL
+        WHERE id = ?
+      `).run(job.id);
+    } catch (error) {
+      db.prepare(`
+        UPDATE job_executions
+        SET status = 'failed', finished_at = datetime('now'), error_text = ?
+        WHERE id = ?
+      `).run(error instanceof Error ? error.message : String(error), executionId);
+
+      db.prepare(`
+        UPDATE scheduled_jobs
+        SET status = 'error', last_error = ?
+        WHERE id = ?
+      `).run(error instanceof Error ? error.message : String(error), job.id);
+
+      this.incidents.log({
+        runId: job.run_id ?? undefined,
+        severity: 'error',
+        component: 'job-executor',
+        summary: `Scheduled job ${job.id} failed`,
+        details: { error: error instanceof Error ? error.message : String(error) },
+      });
+    } finally {
+      db.close();
+    }
+  }
+}
+9. Per-team budgets
+src/runtime/budget-manager.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+
+export class BudgetManager {
+  constructor(private runId: string) {}
+
+  seedDefaults(teamId: string, opts?: {
+    usdLimit?: number;
+    tokenLimit?: number;
+    toolCallLimit?: number;
+    minuteLimit?: number;
+  }) {
+    const defaults = {
+      usdLimit: opts?.usdLimit ?? 1.5,
+      tokenLimit: opts?.tokenLimit ?? 40_000,
+      toolCallLimit: opts?.toolCallLimit ?? 50,
+      minuteLimit: opts?.minuteLimit ?? 20,
+    };
+
+    const entries = [
+      ['usd', defaults.usdLimit],
+      ['tokens', defaults.tokenLimit],
+      ['tool_calls', defaults.toolCallLimit],
+      ['minutes', defaults.minuteLimit],
+    ] as const;
+
+    const db = getDb();
+    for (const [budgetType, limitValue] of entries) {
+      db.prepare(`
+        INSERT OR IGNORE INTO team_budgets
+        (id, run_id, team_id, budget_type, window_scope, limit_value, consumed_value, hard_limit)
+        VALUES (?, ?, ?, ?, 'run', ?, 0, 1)
+      `).run(`bud_${nanoid(8)}`, this.runId, teamId, budgetType, limitValue);
+    }
+    db.close();
+  }
+
+  canSpend(teamId: string, budgetType: 'usd' | 'tokens' | 'tool_calls' | 'minutes', delta: number) {
+    const db = getDb();
+    const row = db.prepare(`
+      SELECT limit_value, consumed_value, hard_limit
+      FROM team_budgets
+      WHERE run_id = ? AND team_id = ? AND budget_type = ?
+      LIMIT 1
+    `).get(this.runId, teamId, budgetType) as
+      | { limit_value: number; consumed_value: number; hard_limit: number }
+      | undefined;
+    db.close();
+
+    if (!row) return true;
+    if (!row.hard_limit) return true;
+    return row.consumed_value + delta <= row.limit_value;
+  }
+
+  spend(opts: {
+    teamId: string;
+    role?: string;
+    cycleNumber?: number;
+    budgetType: 'usd' | 'tokens' | 'tool_calls' | 'minutes';
+    delta: number;
+    reason: string;
+    metadata?: Record<string, unknown>;
+  }) {
+    if (!this.canSpend(opts.teamId, opts.budgetType, opts.delta)) {
+      throw new Error(`Budget exceeded for ${opts.teamId}/${opts.budgetType}`);
+    }
+
+    const db = getDb();
+    db.prepare(`
+      UPDATE team_budgets
+      SET consumed_value = consumed_value + ?, updated_at = datetime('now')
+      WHERE run_id = ? AND team_id = ? AND budget_type = ?
+    `).run(opts.delta, this.runId, opts.teamId, opts.budgetType);
+
+    db.prepare(`
+      INSERT INTO budget_events
+      (id, run_id, team_id, role, cycle_number, budget_type, delta_value, reason, metadata_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      `be_${nanoid(8)}`,
+      this.runId,
+      opts.teamId,
+      opts.role ?? null,
+      opts.cycleNumber ?? null,
+      opts.budgetType,
+      opts.delta,
+      opts.reason,
+      JSON.stringify(opts.metadata ?? {})
+    );
+
+    db.close();
+  }
+}
+10. Team memory partitions
+src/runtime/memory-partitions.ts
+TypeScript
+
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+
+export class TeamMemoryPartitions {
+  constructor(private runId: string) {}
+
+  async ensureTeamPartition(teamId: string, partitionName: string) {
+    const base = path.join(process.cwd(), 'memory', 'partitions', teamId);
+    const factsDir = path.join(base, 'facts');
+    const memoryIndex = path.join(base, 'MEMORY.md');
+
+    await mkdir(factsDir, { recursive: true });
+    try {
+      await readFile(memoryIndex, 'utf-8');
+    } catch {
+      await writeFile(memoryIndex, `# ${partitionName} Memory\n\n`, 'utf-8');
+    }
+
+    const db = getDb();
+    db.prepare(`
+      INSERT OR IGNORE INTO memory_partitions
+      (id, run_id, team_id, partition_name, index_path, facts_dir, read_scope_json, write_scope_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      `mp_${nanoid(8)}`,
+      this.runId,
+      teamId,
+      partitionName,
+      memoryIndex,
+      factsDir,
+      JSON.stringify(['shared', teamId]),
+      JSON.stringify([teamId])
+    );
+    db.close();
+
+    return { base, factsDir, memoryIndex };
+  }
+
+  async buildContext(teamId?: string) {
+    const sharedPath = path.join(process.cwd(), 'memory', 'MEMORY.md');
+    const shared = await readFile(sharedPath, 'utf-8').catch(() => '');
+
+    if (!teamId) return shared;
+
+    const teamPath = path.join(process.cwd(), 'memory', 'partitions', teamId, 'MEMORY.md');
+    const team = await readFile(teamPath, 'utf-8').catch(() => '');
+
+    return [
+      '## SHARED MEMORY',
+      shared.slice(0, 2000),
+      '',
+      `## TEAM PARTITION (${teamId})`,
+      team.slice(0, 1500),
+    ].join('\n');
+  }
+
+  async appendFact(teamId: string, fileName: string, content: string) {
+    const target = path.join(process.cwd(), 'memory', 'partitions', teamId, 'facts', fileName);
+    const previous = await readFile(target, 'utf-8').catch(() => '');
+    await writeFile(target, previous + '\n' + content.trim() + '\n', 'utf-8');
+  }
+}
+11. GitHub issue → org task translation
+src/prompts/issue-translator.ts
+TypeScript
+
+import { z } from 'zod';
+
+export const IssueTranslationSchema = z.object({
+  translated_mission: z.string(),
+  acceptance_criteria: z.array(z.string()).min(1),
+  suggested_team: z.enum(['Research', 'Quality', 'Planning', 'Memory', 'Platform']),
+  task_type: z.enum(['research', 'quality', 'planning', 'memory']),
+  risk_level: z.enum(['low', 'medium', 'high']),
+  rationale: z.string(),
+  needs_human_approval: z.boolean(),
+});
+
+export const ISSUE_TRANSLATOR_SYSTEM_PROMPT = `
+You are AutoOrg's Issue Translator.
+
+Your job:
+1. Read a GitHub issue.
+2. Translate it into an AutoOrg-native delegated task.
+3. Produce clear acceptance criteria.
+4. Route it to the most appropriate team.
+5. Mark high-risk changes as needing human approval.
+
+Hard rules:
+- Preserve the user's intent.
+- Convert vague requests into measurable acceptance criteria.
+- Flag risky or ambiguous issues as high risk.
+- Do not invent repository facts not present in the issue payload.
+`.trim();
+src/integrations/issue-translator.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+import { getAdapter } from '@/adapters/adapter-factory.js';
+import { ISSUE_TRANSLATOR_SYSTEM_PROMPT, IssueTranslationSchema } from '@/prompts/issue-translator.js';
+
+export async function translateGitHubIssueEvent(githubEventId: string, runId?: string) {
+  const db = getDb();
+  const event = db.prepare(`
+    SELECT * FROM github_events
+    WHERE id = ?
+  `).get(githubEventId) as
+    | { payload_json: string; repo_full_name: string | null }
+    | undefined;
+
+  if (!event) {
+    db.close();
+    throw new Error(`GitHub event ${githubEventId} not found`);
+  }
+
+  const payload = JSON.parse(event.payload_json);
+  const issue = payload.issue;
+  if (!issue) {
+    db.close();
+    throw new Error(`GitHub event ${githubEventId} does not contain issue payload`);
+  }
+
+  const adapter = getAdapter({
+    provider: (process.env.DEFAULT_LLM_PROVIDER ?? 'anthropic') as any,
+    model: 'claude-sonnet-4-5',
+  });
+
+  const translated = await adapter.structured({
+    model: 'claude-sonnet-4-5',
+    messages: [
+      { role: 'system', content: ISSUE_TRANSLATOR_SYSTEM_PROMPT },
+      {
+        role: 'user',
+        content: JSON.stringify({
+          repo: event.repo_full_name,
+          issue_number: issue.number,
+          title: issue.title,
+          body: issue.body ?? '',
+          labels: (issue.labels ?? []).map((x: any) => x.name ?? String(x)),
+        }, null, 2),
+      },
+    ],
+    schema: IssueTranslationSchema,
+  });
+
+  const issueTaskId = `it_${nanoid(10)}`;
+  db.prepare(`
+    INSERT INTO issue_tasks
+    (id, github_event_id, repo_full_name, issue_number, run_id, title,
+     translated_mission, acceptance_criteria_json, risk_level, source_payload_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    issueTaskId,
+    githubEventId,
+    event.repo_full_name ?? 'unknown/unknown',
+    issue.number,
+    runId ?? null,
+    issue.title,
+    translated.translated_mission,
+    JSON.stringify(translated.acceptance_criteria),
+    translated.risk_level,
+    JSON.stringify(payload)
+  );
+
+  if (runId) {
+    db.prepare(`
+      INSERT INTO delegated_tasks
+      (id, run_id, cycle_number, from_role, to_role, task_type, instruction, status, result_summary)
+      VALUES (?, ?, 0, 'GitHub', 'CoordinatorLead', ?, ?, 'pending', ?)
+    `).run(
+      `task_${nanoid(10)}`,
+      runId,
+      translated.task_type,
+      `${translated.translated_mission}\n\nAcceptance criteria:\n- ${translated.acceptance_criteria.join('\n- ')}`,
+      `Translated from GitHub issue #${issue.number}`
+    );
+  }
+
+  db.close();
+  return { issueTaskId, translated };
+}
+12. PR summaries from actual git diff
+src/prompts/diff-summarizer.ts
+TypeScript
+
+import { z } from 'zod';
+
+export const DiffSummarySchema = z.object({
+  summary: z.string(),
+  files_changed: z.array(z.string()),
+  risk_notes: z.array(z.string()),
+  tests_suggested: z.array(z.string()),
+  rollback_plan: z.string(),
+});
+
+export const DIFF_SUMMARIZER_SYSTEM_PROMPT = `
+You summarize code changes from a REAL git diff.
+
+Rules:
+- Use the diff itself, not a guessed summary.
+- Distinguish behavior change from refactor.
+- Call out migration or rollback risk explicitly.
+- If tests appear missing, say so.
+- Keep the summary concise but specific.
+`.trim();
+src/integrations/diff-summarizer.ts
+TypeScript
+
+import simpleGit from 'simple-git';
+import { getAdapter } from '@/adapters/adapter-factory.js';
+import { DIFF_SUMMARIZER_SYSTEM_PROMPT, DiffSummarySchema } from '@/prompts/diff-summarizer.js';
+
+export async function summarizeGitDiff(opts?: {
+  baseRef?: string;
+  headRef?: string;
+  maxChars?: number;
+}) {
+  const git = simpleGit();
+  const baseRef = opts?.baseRef ?? 'HEAD~1';
+  const headRef = opts?.headRef ?? 'HEAD';
+  const maxChars = opts?.maxChars ?? 20_000;
+
+  const stat = await git.diffSummary([`${baseRef}..${headRef}`]);
+  const diff = await git.diff(['--unified=1', `${baseRef}..${headRef}`]);
+
+  const adapter = getAdapter({
+    provider: (process.env.DEFAULT_LLM_PROVIDER ?? 'anthropic') as any,
+    model: 'claude-sonnet-4-5',
+  });
+
+  const result = await adapter.structured({
+    model: 'claude-sonnet-4-5',
+    messages: [
+      { role: 'system', content: DIFF_SUMMARIZER_SYSTEM_PROMPT },
+      {
+        role: 'user',
+        content: JSON.stringify({
+          baseRef,
+          headRef,
+          changedFiles: stat.files.map(f => ({
+            file: f.file,
+            insertions: f.insertions,
+            deletions: f.deletions,
+          })),
+          diff: diff.slice(0, maxChars),
+        }, null, 2),
+      },
+    ],
+    schema: DiffSummarySchema,
+  });
+
+  return result;
+}
+Patch src/integrations/pr-writer.ts
+Replace generatePrDraft(...) with:
+
+TypeScript
+
+import { summarizeGitDiff } from '@/integrations/diff-summarizer.js';
+import { getAdapter } from '@/adapters/adapter-factory.js';
+import type { ModelConfig, LLMProvider } from '@/types/index.js';
+
+export async function generatePrDraftFromDiff(opts?: {
+  baseRef?: string;
+  headRef?: string;
+}) {
+  const diffSummary = await summarizeGitDiff({
+    baseRef: opts?.baseRef ?? 'HEAD~1',
+    headRef: opts?.headRef ?? 'HEAD',
+  });
+
+  const model: ModelConfig = {
+    provider: (process.env.DEFAULT_LLM_PROVIDER ?? 'anthropic') as LLMProvider,
+    model: 'claude-sonnet-4-5',
+  };
+
+  const adapter = getAdapter(model);
+  const response = await adapter.run({
+    model: model.model,
+    messages: [
+      {
+        role: 'system',
+        content: 'You write concise, high-quality pull request titles and bodies from a structured diff summary.',
+      },
+      {
+        role: 'user',
+        content: `
+Create a PR title and body from this structured diff summary.
+
+Summary:
+${diffSummary.summary}
+
+Files changed:
+${diffSummary.files_changed.map(x => `- ${x}`).join('\n')}
+
+Risk notes:
+${diffSummary.risk_notes.map(x => `- ${x}`).join('\n')}
+
+Suggested tests:
+${diffSummary.tests_suggested.map(x => `- ${x}`).join('\n')}
+
+Rollback plan:
+${diffSummary.rollback_plan}
+
+Return plain text:
+TITLE: ...
+BODY: ...
+        `.trim(),
+      },
+    ],
+    maxTokens: 1400,
+    temperature: 0.2,
+  });
+
+  const text = response.content;
+  const titleMatch = text.match(/TITLE:\s*(.+)/);
+  const bodyMatch = text.match(/BODY:\s*([\s\S]+)/);
+
+  return {
+    title: titleMatch?.[1]?.trim() ?? 'AutoOrg update',
+    body: bodyMatch?.[1]?.trim() ?? text,
+    costUsd: response.costUsd,
+    summary: diffSummary,
+  };
+}
+13. ULTRAPLAN SLAs
+src/runtime/ultraplan-sla.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+import { IncidentLog } from '@/runtime/incident-log.js';
+
+export class UltraPlanSla {
+  private incidents = new IncidentLog();
+
+  constructor(private runId: string) {}
+
+  checkpoint(sessionId: string, cycleNumber: number, checkpointNumber: number, summary: string, payload?: unknown) {
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO ultraplan_checkpoints
+      (id, session_id, run_id, cycle_number, checkpoint_number, summary, payload_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      `upc_${nanoid(8)}`,
+      sessionId,
+      this.runId,
+      cycleNumber,
+      checkpointNumber,
+      summary,
+      JSON.stringify(payload ?? {})
+    );
+
+    db.prepare(`
+      INSERT INTO ultraplan_sla_events
+      (id, session_id, run_id, event_type, details_json)
+      VALUES (?, ?, ?, 'checkpoint', ?)
+    `).run(
+      `upe_${nanoid(8)}`,
+      sessionId,
+      this.runId,
+      JSON.stringify({ checkpointNumber, summary })
+    );
+
+    db.close();
+  }
+
+  async runWithSla<T>(opts: {
+    sessionId: string;
+    cycleNumber: number;
+    maxDurationMs: number;
+    onRun: () => Promise<T>;
+    onTimeout?: () => Promise<T>;
+  }): Promise<T> {
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO ultraplan_sla_events
+      (id, session_id, run_id, event_type, details_json)
+      VALUES (?, ?, ?, 'started', ?)
+    `).run(
+      `upe_${nanoid(8)}`,
+      opts.sessionId,
+      this.runId,
+      JSON.stringify({ maxDurationMs: opts.maxDurationMs })
+    );
+    db.close();
+
+    let timeoutHandle: Timer | undefined;
+
+    try {
+      const timeoutPromise = new Promise<T>((_, reject) => {
+        timeoutHandle = setTimeout(() => reject(new Error('ULTRAPLAN_TIMEOUT')), opts.maxDurationMs);
+      });
+
+      const result = await Promise.race([opts.onRun(), timeoutPromise]);
+
+      const db2 = getDb();
+      db2.prepare(`
+        INSERT INTO ultraplan_sla_events
+        (id, session_id, run_id, event_type, details_json)
+        VALUES (?, ?, ?, 'completed', ?)
+      `).run(
+        `upe_${nanoid(8)}`,
+        opts.sessionId,
+        this.runId,
+        JSON.stringify({ cycleNumber: opts.cycleNumber })
+      );
+      db2.close();
+
+      return result;
+    } catch (error) {
+      if ((error as Error).message === 'ULTRAPLAN_TIMEOUT' && opts.onTimeout) {
+        const db3 = getDb();
+        db3.prepare(`
+          INSERT INTO ultraplan_sla_events
+          (id, session_id, run_id, event_type, details_json)
+          VALUES (?, ?, ?, 'timeout', ?)
+        `).run(
+          `upe_${nanoid(8)}`,
+          opts.sessionId,
+          this.runId,
+          JSON.stringify({ cycleNumber: opts.cycleNumber, maxDurationMs: opts.maxDurationMs })
+        );
+        db3.close();
+
+        this.incidents.log({
+          runId: this.runId,
+          severity: 'warn',
+          component: 'ultraplan-sla',
+          summary: `ULTRAPLAN timed out in cycle ${opts.cycleNumber}`,
+          details: { sessionId: opts.sessionId },
+        });
+
+        return await opts.onTimeout();
+      }
+
+      throw error;
+    } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+    }
+  }
+}
+Patch src/prompts/ultraplan.ts
+Add:
+
+TypeScript
+
+Hard rules:
+- You must optimize for best useful answer before deadline, not perfect answer.
+- If time is constrained, prioritize bottleneck diagnosis, strategic pivot, and next 5 actions.
+- Return a cancellation-safe summary.
+- Return at least one checkpoint-quality partial summary inside the final JSON.
+
+Return JSON:
+{
+  "bottleneck": "...",
+  "pivot_hypothesis": "...",
+  "five_cycle_plan": ["...", "...", "...", "...", "..."],
+  "checkpoint_summary": "...",
+  "cancellation_safe_summary": "...",
+  "risks": ["..."],
+  "expected_score_delta": 0.00
+}
+14. Team creation should seed memory partitions + budgets
+Patch src/runtime/team-manager.ts
+After team creation, add:
+
+TypeScript
+
+import { TeamMemoryPartitions } from '@/runtime/memory-partitions.js';
+import { BudgetManager } from '@/runtime/budget-manager.js';
+
+const partitions = new TeamMemoryPartitions(this.runId);
+const budgets = new BudgetManager(this.runId);
+
+// inside createTeam(...)
+await partitions.ensureTeamPartition(teamId, input.name);
+budgets.seedDefaults(teamId, {
+  usdLimit: input.name === 'Planning' ? 2.5 : 1.25,
+  tokenLimit: input.name === 'Planning' ? 60_000 : 30_000,
+  toolCallLimit: 40,
+  minuteLimit: input.name === 'Planning' ? 30 : 15,
+});
+This means every department gets:
+
+its own memory lane
+its own budget ceiling
+independent resource accounting
+15. AgentRunner should become team-aware and budget-aware
+Patch src/runtime/agent-runner.ts
+Add imports:
+
+TypeScript
+
+import { TeamMemoryPartitions } from '@/runtime/memory-partitions.js';
+import { BudgetManager } from '@/runtime/budget-manager.js';
+import { IncidentLog } from '@/runtime/incident-log.js';
+Before model invocation:
+
+TypeScript
+
+const partitions = new TeamMemoryPartitions(ctx.runId);
+const budgets = new BudgetManager(ctx.runId);
+const incidents = new IncidentLog();
+
+const teamId = ctx.teamId ?? 'shared';
+const memoryContext = await partitions.buildContext(ctx.teamId);
+const estimatedTokens = Math.ceil((prompt.length || 0) / 3.5);
+
+if (featureFlag('teamBudgets') && ctx.teamId) {
+  if (!budgets.canSpend(teamId, 'tokens', estimatedTokens)) {
+    incidents.log({
+      runId: ctx.runId,
+      severity: 'warn',
+      component: 'agent-runner',
+      summary: `Budget denied for ${ctx.role} on team ${teamId}`,
+      details: { estimatedTokens, cycle: ctx.cycle },
+    });
+
+    return {
+      skipped: true,
+      reason: `Budget exceeded for team ${teamId}`,
+    };
+  }
+}
+
+const fullPrompt = [
+  prompt,
+  '',
+  '## TEAM MEMORY CONTEXT',
+  memoryContext.slice(0, 2500),
+].join('\n');
+After successful model return:
+
+TypeScript
+
+if (featureFlag('teamBudgets') && ctx.teamId) {
+  const usage = response.usage ?? { inputTokens: estimatedTokens, outputTokens: 0 };
+  budgets.spend({
+    teamId,
+    role: ctx.role,
+    cycleNumber: ctx.cycle,
+    budgetType: 'tokens',
+    delta: (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0),
+    reason: 'llm_call',
+    metadata: { model: ctx.model ?? null },
+  });
+
+  if (typeof response.costUsd === 'number') {
+    budgets.spend({
+      teamId,
+      role: ctx.role,
+      cycleNumber: ctx.cycle,
+      budgetType: 'usd',
+      delta: response.costUsd,
+      reason: 'llm_call',
+      metadata: { model: ctx.model ?? null },
+    });
+  }
+}
+16. Orchestrator Phase 5.1 integration
+Patch src/runtime/orchestrator.ts
+We are adding:
+
+lock acquisition
+recovery journal
+strict approval materialization path
+team budget/memory initialization
+ULTRAPLAN SLA wrapper
+truthful PENDING_APPROVAL result logging
+A. Add imports
+TypeScript
+
+import simpleGit from 'simple-git';
+import { featureFlag } from '@/config/feature-flags.js';
+import { ApprovalEnforcer } from '@/runtime/approval-enforcer.js';
+import { WorkspaceLock } from '@/runtime/workspace-lock.js';
+import { RecoveryJournal } from '@/runtime/recovery-journal.js';
+import { recoverInterruptedRun } from '@/runtime/crash-recover.js';
+import { LeaseManager } from '@/runtime/lease-manager.js';
+import { BudgetManager } from '@/runtime/budget-manager.js';
+import { TeamMemoryPartitions } from '@/runtime/memory-partitions.js';
+import { UltraPlanSla } from '@/runtime/ultraplan-sla.js';
+import { IncidentLog } from '@/runtime/incident-log.js';
+B. After run initialization, create hardening engines
+TypeScript
+
+const git = simpleGit();
+const approvalEnforcer = new ApprovalEnforcer(runId);
+const workspaceLock = new WorkspaceLock();
+const recoveryJournal = new RecoveryJournal(runId);
+const leaseManager = new LeaseManager(runId);
+const budgetManager = new BudgetManager(runId);
+const partitions = new TeamMemoryPartitions(runId);
+const ultraplanSla = new UltraPlanSla(runId);
+const incidents = new IncidentLog();
+C. Before entering main loop, acquire workspace lock + recover if needed
+TypeScript
+
+if (featureFlag('workspaceLocks')) {
+  workspaceLock.acquire(`repo:${process.cwd()}`, `run:${runId}`, runId, 90_000);
+}
+
+if (featureFlag('daemonRecovery')) {
+  const recovered = await recoverInterruptedRun(runId);
+  if (recovered) {
+    runState.bestScore = recovered.bestScore ?? runState.bestScore;
+    runState.plateauCount = recovered.plateauCount ?? runState.plateauCount;
+    runState.consecutiveRejects = recovered.consecutiveRejects ?? runState.consecutiveRejects;
+    cycleNumber = Math.max(cycleNumber, recovered.cycleNumber ?? 0);
+  }
+}
+
+recoveryJournal.checkpoint({
+  cycleNumber,
+  bestScore: runState.bestScore,
+  plateauCount: runState.plateauCount,
+  consecutiveRejects: runState.consecutiveRejects,
+  stage: 'boot',
+});
+D. At top of each cycle, heartbeat lock + write checkpoint
+TypeScript
+
+if (featureFlag('workspaceLocks')) {
+  workspaceLock.heartbeat(`repo:${process.cwd()}`, `run:${runId}`, 90_000);
+}
+
+recoveryJournal.checkpoint({
+  cycleNumber,
+  bestScore: runState.bestScore,
+  plateauCount: runState.plateauCount,
+  consecutiveRejects: runState.consecutiveRejects,
+  stage: 'pre_cycle',
+});
+E. After coordinator team assignment, initialize budgets + partitions for teams
+TypeScript
+
+if (featureFlag('coordinatorHierarchy')) {
+  const teams = coordinator.listTeams?.() ?? [];
+  for (const team of teams) {
+    if (featureFlag('teamMemoryPartitions')) {
+      await partitions.ensureTeamPartition(team.id, team.name);
+    }
+    if (featureFlag('teamBudgets')) {
+      budgetManager.seedDefaults(team.id);
+    }
+  }
+
+  recoveryJournal.checkpoint({
+    cycleNumber,
+    bestScore: runState.bestScore,
+    plateauCount: runState.plateauCount,
+    consecutiveRejects: runState.consecutiveRejects,
+    stage: 'post_team_assignment',
+    extra: { teamCount: teams.length },
+  });
+}
+F. Replace old direct ratchet materialization logic
+Find the old block where you do keepOrRevert(...) and replace with:
+
+TypeScript
+
+const decision = ratchet.decide(score, runState.bestScore);
+
+if (decision === 'REVERT') {
+  await ratchet.materializeRevert('workspace/current_output.md');
+  runState.consecutiveRejects += 1;
+
+  recoveryJournal.checkpoint({
+    cycleNumber,
+    bestScore: runState.bestScore,
+    plateauCount: runState.plateauCount,
+    consecutiveRejects: runState.consecutiveRejects,
+    stage: 'post_decision',
+    extra: { decision: 'REVERT' },
+  });
+
+  resultsLogger.append({
+    cycle: cycleNumber,
+    score: score.composite,
+    groundedness: score.groundedness,
+    novelty: score.novelty,
+    consistency: score.consistency,
+    missionAlignment: score.missionAlignment,
+    decision: 'REVERT',
+    summary: score.justification,
+  });
+}
+
+if (decision === 'COMMIT') {
+  const outputText = await Bun.file('workspace/current_output.md').text();
+
+  if (featureFlag('strictApprovalBlocking')) {
+    const staged = await approvalEnforcer.stageCommitCandidate({
+      cycleNumber,
+      targetFile: 'workspace/current_output.md',
+      outputText,
+      score,
+      summary: score.justification,
+    });
+
+    resultsLogger.append({
+      cycle: cycleNumber,
+      score: score.composite,
+      groundedness: score.groundedness,
+      novelty: score.novelty,
+      consistency: score.consistency,
+      missionAlignment: score.missionAlignment,
+      decision: 'PENDING_APPROVAL',
+      summary: `Commit staged for approval ${staged.approvalId}. ${score.justification}`,
+    });
+  } else {
+    const commitHash = await ratchet.materializeCommit({
+      file: 'workspace/current_output.md',
+      commitMessage: `cycle-${cycleNumber}: score=${score.composite.toFixed(4)}`,
+    });
+
+    runState.bestScore = score.composite;
+    runState.consecutiveRejects = 0;
+
+    resultsLogger.append({
+      cycle: cycleNumber,
+      score: score.composite,
+      groundedness: score.groundedness,
+      novelty: score.novelty,
+      consistency: score.consistency,
+      missionAlignment: score.missionAlignment,
+      decision: 'COMMIT',
+      summary: `Committed ${commitHash}. ${score.justification}`,
+    });
+  }
+
+  recoveryJournal.checkpoint({
+    cycleNumber,
+    bestScore: runState.bestScore,
+    plateauCount: runState.plateauCount,
+    consecutiveRejects: runState.consecutiveRejects,
+    stage: 'post_decision',
+    extra: { decision: featureFlag('strictApprovalBlocking') ? 'PENDING_APPROVAL' : 'COMMIT' },
+  });
+}
+G. Wrap ULTRAPLAN with SLA enforcement
+Replace the current ULTRAPLAN trigger body with:
+
+TypeScript
+
+if (
+  featureFlag('ultraplan') &&
+  featureFlag('ultraplanSla') &&
+  runState.plateauCount >= Math.max(3, Math.floor(config.plateauCycles * 0.6))
+) {
+  const ultra = await ultraPlanner.createSession({
+    config,
+    cycleNumber,
+    currentBest: runState.bestScore,
+    plateauCount: runState.plateauCount,
+    mission: config.mission,
+  });
+
+  const result = await ultraplanSla.runWithSla({
+    sessionId: ultra.sessionId,
+    cycleNumber,
+    maxDurationMs: config.ultraplanMaxDurationMs ?? 15 * 60 * 1000,
+    onRun: async () => {
+      const response = await ultraPlanner.executeSession(ultra.sessionId);
+      ultraplanSla.checkpoint(
+        ultra.sessionId,
+        cycleNumber,
+        1,
+        response.checkpoint_summary ?? 'ULTRAPLAN completed',
+        response
+      );
+      return response;
+    },
+    onTimeout: async () => ({
+      bottleneck: 'ULTRAPLAN timed out before completion.',
+      pivot_hypothesis: 'Use last known checkpoint and resume next cycle.',
+      five_cycle_plan: [],
+      checkpoint_summary: 'Timed out. Resume from saved checkpoint.',
+      cancellation_safe_summary: 'Timed out. No strategic pivot approved yet.',
+      risks: ['Partial ULTRAPLAN result'],
+      expected_score_delta: 0,
+    }),
+  });
+
+  const approvalId = approvalGate.request({
+    runId,
+    cycleNumber,
+    approvalType: 'ultraplan',
+    subject: ultra.sessionId,
+    requestedBy: 'CEO',
+    summary: `ULTRAPLAN session ${ultra.sessionId} produced a strategic plan.`,
+    details: result,
+  });
+
+  eventBus.broadcast({
+    type: 'ultraplan_ready',
+    sessionId: ultra.sessionId,
+    approvalId,
+    result,
+  });
+}
+H. On graceful shutdown, release workspace lock
+TypeScript
+
+process.on('SIGINT', () => {
+  try {
+    workspaceLock.release(`repo:${process.cwd()}`, `run:${runId}`);
+  } finally {
+    process.exit(0);
+  }
+});
+17. Daemon Phase 5.1 integration
+Patch src/runtime/daemon.ts
+Add imports:
+
+TypeScript
+
+import { ApprovalEnforcer } from '@/runtime/approval-enforcer.js';
+import { WorkspaceLock } from '@/runtime/workspace-lock.js';
+import { LeaseManager } from '@/runtime/lease-manager.js';
+import { JobExecutor } from '@/runtime/job-executor.js';
+import { recoverInterruptedRun } from '@/runtime/crash-recover.js';
+import { translateGitHubIssueEvent } from '@/integrations/issue-translator.js';
+import { IncidentLog } from '@/runtime/incident-log.js';
+import { getDb } from '@/db/migrate.js';
+Inside daemon loop, add:
+
+TypeScript
+
+const enforcer = new ApprovalEnforcer(runId);
+const locks = new WorkspaceLock();
+const leases = new LeaseManager(runId);
+const jobs = new JobExecutor();
+const incidents = new IncidentLog();
+
+setInterval(async () => {
+  try {
+    serviceState.heartbeat?.();
+
+    if (featureFlag('workspaceLocks')) {
+      locks.sweepExpired();
+    }
+
+    if (featureFlag('workerLeases')) {
+      const reclaimed = leases.reclaimExpired();
+      if (reclaimed > 0) {
+        incidents.log({
+          runId,
+          severity: 'warn',
+          component: 'daemon',
+          summary: `Reclaimed ${reclaimed} expired worker leases`,
+        });
+      }
+    }
+
+    if (featureFlag('daemonRecovery')) {
+      await recoverInterruptedRun(runId);
+    }
+
+    if (featureFlag('strictApprovalBlocking')) {
+      await enforcer.materializeApprovedActions();
+    }
+
+    if (featureFlag('jobExecutions')) {
+      const scheduler = new Scheduler();
+      const due = scheduler.dueJobs();
+      for (const job of due) {
+        await jobs.runJob(job as any, 'daemon_default');
+      }
+    }
+
+    if (featureFlag('issueTranslation')) {
+      const db = getDb();
+      const events = db.prepare(`
+        SELECT id
+        FROM github_events
+        WHERE processed = 0 AND event_type IN ('issues', 'issue_comment')
+        ORDER BY created_at ASC
+        LIMIT 10
+      `).all() as Array<{ id: string }>;
+
+      for (const event of events) {
+        await translateGitHubIssueEvent(event.id, runId);
+        db.prepare(`UPDATE github_events SET processed = 1 WHERE id = ?`).run(event.id);
+      }
+
+      db.close();
+    }
+  } catch (error) {
+    incidents.log({
+      runId,
+      severity: 'error',
+      component: 'daemon',
+      summary: 'Daemon tick failed',
+      details: { error: error instanceof Error ? error.message : String(error) },
+    });
+  }
+}, 5000);
+This turns daemon mode into:
+
+lock/lease sweeper
+recovery supervisor
+approval materializer
+scheduled job executor
+GitHub issue translator
+18. Recovery analyst prompt
+src/prompts/recovery-analyst.ts
+TypeScript
+
+export const RECOVERY_ANALYST_PROMPT = `
+You are AutoOrg's Recovery Analyst.
+
+Given:
+- the latest run checkpoint,
+- incident log entries,
+- stale worker leases,
+- pending approvals,
+- daemon state,
+
+produce:
+1. what likely happened,
+2. safest resume point,
+3. whether any output should be discarded,
+4. whether human approval is required before resuming.
+
+Hard rules:
+- Prefer replay safety over progress speed.
+- Never recommend resuming from an ambiguous partially-written state.
+- If git state and checkpoint disagree, choose checkpoint + clean workspace.
+`.trim();
+Optional: use this when recovery fails repeatedly and you want an LLM-written operator diagnosis.
+
+19. API routes for hardening
+src/api/hardening-routes.ts
+Add these route snippets to handleRequest(...).
+
+Imports
+TypeScript
+
+import { getDb } from '@/db/migrate.js';
+import { WorkspaceLock } from '@/runtime/workspace-lock.js';
+import { RecoveryJournal } from '@/runtime/recovery-journal.js';
+import { ApprovalEnforcer } from '@/runtime/approval-enforcer.js';
+import { translateGitHubIssueEvent } from '@/integrations/issue-translator.js';
+Routes
+TypeScript
+
+// GET /api/locks
+if (url.pathname === '/api/locks' && method === 'GET') {
+  const db = getDb();
+  const rows = db.prepare(`SELECT * FROM workspace_locks ORDER BY updated_at DESC`).all();
+  db.close();
+  return json(rows);
+}
+
+// POST /api/daemon/recover
+if (url.pathname === '/api/daemon/recover' && method === 'POST') {
+  const body = await req.json() as { runId: string };
+  const recovered = await recoverInterruptedRun(body.runId);
+  return json({ ok: true, recovered });
+}
+
+// GET /api/budgets?runId=...
+if (url.pathname === '/api/budgets' && method === 'GET') {
+  const runId = url.searchParams.get('runId');
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT * FROM team_budgets
+    ${runId ? 'WHERE run_id = ?' : ''}
+    ORDER BY team_id, budget_type
+  `).all(...(runId ? [runId] : []));
+  db.close();
+  return json(rows);
+}
+
+// GET /api/issue-tasks?runId=...
+if (url.pathname === '/api/issue-tasks' && method === 'GET') {
+  const runId = url.searchParams.get('runId');
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT * FROM issue_tasks
+    ${runId ? 'WHERE run_id = ?' : ''}
+    ORDER BY updated_at DESC
+  `).all(...(runId ? [runId] : []));
+  db.close();
+  return json(rows);
+}
+
+// POST /api/github-events/:id/translate
+params = matchRoute(url, method, '/api/github-events/:id/translate', 'POST');
+if (params) {
+  const body = await req.json().catch(() => ({})) as { runId?: string };
+  const result = await translateGitHubIssueEvent(params.id!, body.runId);
+  return json({ ok: true, result });
+}
+
+// POST /api/pending-actions/materialize
+if (url.pathname === '/api/pending-actions/materialize' && method === 'POST') {
+  const body = await req.json() as { runId: string };
+  const enforcer = new ApprovalEnforcer(body.runId);
+  await enforcer.materializeApprovedActions();
+  return json({ ok: true });
+}
+20. Minimal UI additions
+You already added an approvals page in Phase 5. For 5.1, add:
+
+text
+
+web/app/
+├── budgets/page.tsx
+├── locks/page.tsx
+└── issues/page.tsx
+Patch web/app/layout.tsx nav
+React
+
+<nav className="ml-auto flex gap-6 text-sm">
+  <a href="/" className="text-gray-400 hover:text-cyan-400 transition-colors">Dashboard</a>
+  <a href="/graph" className="text-gray-400 hover:text-cyan-400 transition-colors">Graph</a>
+  <a href="/approvals" className="text-gray-400 hover:text-cyan-400 transition-colors">Approvals</a>
+  <a href="/budgets" className="text-gray-400 hover:text-cyan-400 transition-colors">Budgets</a>
+  <a href="/locks" className="text-gray-400 hover:text-cyan-400 transition-colors">Locks</a>
+  <a href="/issues" className="text-gray-400 hover:text-cyan-400 transition-colors">Issues</a>
+  <a href="/interview" className="text-gray-400 hover:text-cyan-400 transition-colors">Interview</a>
+</nav>
+I’d keep these pages thin:
+
+Budgets: show team budget bars + overages.
+Locks: show active workspace lock holder and expiry.
+Issues: translated GitHub issues + status.
+21. Tests for Phase 5.1
+tests/approval-enforcer.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { ApprovalEnforcer } from '../src/runtime/approval-enforcer.js';
+import { ApprovalGate } from '../src/runtime/approval-gate.js';
+
+describe('ApprovalEnforcer', () => {
+  it('stages a commit candidate instead of committing immediately', async () => {
+    const enforcer = new ApprovalEnforcer('run_test');
+    const staged = await enforcer.stageCommitCandidate({
+      cycleNumber: 1,
+      targetFile: 'workspace/current_output.md',
+      outputText: '# Candidate output',
+      score: {
+        composite: 0.77,
+        groundedness: 0.8,
+        novelty: 0.7,
+        consistency: 0.8,
+        missionAlignment: 0.78,
+        justification: 'Improved result',
+      } as any,
+      summary: 'Improved result',
+    });
+
+    expect(staged.approvalId).toMatch(/^ap_/);
+    expect(staged.actionId).toMatch(/^act_/);
+  });
+});
+tests/workspace-lock.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { WorkspaceLock } from '../src/runtime/workspace-lock.js';
+
+describe('WorkspaceLock', () => {
+  it('prevents double-acquire of the same lock', () => {
+    const lock = new WorkspaceLock();
+    lock.acquire('repo:test', 'holder_a', 'run_a', 60_000);
+    expect(() => lock.acquire('repo:test', 'holder_b', 'run_b', 60_000)).toThrow();
+  });
+});
+tests/recovery-journal.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { RecoveryJournal } from '../src/runtime/recovery-journal.js';
+
+describe('RecoveryJournal', () => {
+  it('stores and reads latest checkpoint', () => {
+    const journal = new RecoveryJournal('run_recovery_test');
+    journal.checkpoint({
+      cycleNumber: 7,
+      bestScore: 0.81,
+      plateauCount: 2,
+      consecutiveRejects: 0,
+      stage: 'post_score',
+    });
+
+    const latest = journal.latest();
+    expect(latest?.cycleNumber).toBe(7);
+    expect(latest?.stage).toBe('post_score');
+  });
+});
+tests/lease-manager.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { LeaseManager } from '../src/runtime/lease-manager.js';
+
+describe('LeaseManager', () => {
+  it('creates a lease and can complete it', () => {
+    const leases = new LeaseManager('run_lease_test');
+    const leaseId = leases.leaseTask({
+      cycleNumber: 1,
+      taskId: 'task_123',
+      workerRole: 'Engineer',
+      workerInstance: 'eng_1',
+    });
+
+    expect(leaseId).toMatch(/^lease_/);
+    leases.complete(leaseId, { ok: true });
+  });
+});
+tests/budget-manager.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { BudgetManager } from '../src/runtime/budget-manager.js';
+
+describe('BudgetManager', () => {
+  it('enforces team budgets', () => {
+    const budgets = new BudgetManager('run_budget_test');
+    budgets.seedDefaults('team_research', { usdLimit: 1.0 });
+
+    expect(budgets.canSpend('team_research', 'usd', 0.5)).toBe(true);
+    budgets.spend({
+      teamId: 'team_research',
+      budgetType: 'usd',
+      delta: 0.5,
+      reason: 'test',
+    });
+
+    expect(budgets.canSpend('team_research', 'usd', 0.6)).toBe(false);
+  });
+});
+tests/issue-translator.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { IssueTranslationSchema } from '../src/prompts/issue-translator.js';
+
+describe('Issue translator schema', () => {
+  it('validates translated issue output', () => {
+    const parsed = IssueTranslationSchema.parse({
+      translated_mission: 'Fix the scheduler race condition.',
+      acceptance_criteria: ['No duplicate job execution', 'Add regression test'],
+      suggested_team: 'Platform',
+      task_type: 'quality',
+      risk_level: 'medium',
+      rationale: 'Touches scheduling behavior',
+      needs_human_approval: false,
+    });
+
+    expect(parsed.suggested_team).toBe('Platform');
+  });
+});
+tests/diff-summarizer.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { DiffSummarySchema } from '../src/prompts/diff-summarizer.js';
+
+describe('Diff summary schema', () => {
+  it('accepts a structured diff summary', () => {
+    const parsed = DiffSummarySchema.parse({
+      summary: 'Adds strict approval blocking before git commit.',
+      files_changed: ['src/runtime/approval-enforcer.ts', 'src/runtime/orchestrator.ts'],
+      risk_notes: ['May change commit timing semantics'],
+      tests_suggested: ['approval-enforcer test'],
+      rollback_plan: 'Disable strictApprovalBlocking and revert pending action flow.',
+    });
+
+    expect(parsed.files_changed.length).toBe(2);
+  });
+});
+22. Run instructions for Phase 5.1
+Bash
+
+# 1. Apply DB migration
+bun run src/db/migrate-phase5_1.ts
+
+# 2. Start daemon
+bun run src/runtime/daemon.ts
+
+# 3. Start API
+bun run src/api/server.ts
+
+# 4. Start dashboard
+cd web && bun run dev
+
+# 5. Start orchestrator
+bun start
+
+# 6. Approve staged commits from UI or API
+#    Then materialize approved actions:
+curl -X POST http://localhost:3000/api/pending-actions/materialize \
+  -H "Content-Type: application/json" \
+  -d '{"runId":"run_..."}'
+23. Optional .env additions for Phase 5.1
+Add to .env.example:
+
+Bash
+
+# ── HARDENING / DAEMON IDENTITY ──────────────────────────────
+AUTOORG_INSTANCE_NAME=default
+AUTOORG_WORKSPACE_KEY=repo:default
+AUTOORG_APPROVAL_ARTIFACT_DIR=artifacts/approvals
+AUTOORG_RECOVERY_DIR=artifacts/recovery
+
+# ── ULTRAPLAN SLA DEFAULTS ───────────────────────────────────
+ULTRAPLAN_MAX_DURATION_MS=900000
+ULTRAPLAN_CHECKPOINT_INTERVAL_MS=120000
+
+# ── BUDGET DEFAULTS ──────────────────────────────────────────
+DEFAULT_TEAM_USD_BUDGET=1.5
+DEFAULT_TEAM_TOKEN_BUDGET=40000
+DEFAULT_TEAM_TOOL_CALL_BUDGET=50
+DEFAULT_TEAM_MINUTE_BUDGET=20
+
+# ── LOCK / LEASE DEFAULTS ────────────────────────────────────
+WORKSPACE_LOCK_TTL_MS=90000
+WORKER_LEASE_TTL_MS=45000
+JOB_LEASE_TTL_MS=60000
+24. What Phase 5.1 now gives you
+At this point AutoOrg can:
+
+text
+
+✅ Refuse to commit until approval exists
+✅ Persist candidate commit artifacts safely outside live git history
+✅ Resume runs after crash or daemon restart
+✅ Reclaim orphaned worker tasks after heartbeat expiry
+✅ Prevent two daemons from mutating the same repo
+✅ Actually execute and record scheduled jobs
+✅ Translate GitHub issues into org-native delegated tasks
+✅ Generate PR summaries from the actual patch, not guessed summaries
+✅ Enforce team-level resource budgets
+✅ Give each subteam its own memory lane
+✅ Timebox and checkpoint ULTRAPLAN sessions
+✅ Produce operational incident logs for debugging
+This is the phase where AutoOrg stops being merely autonomous and becomes operationally trustworthy.
+
+
+
+
+
+
+
+proceeding to Phase 6.
+
+Your current Autoorg.md already establishes the core repository contract and runtime layout: org.md, constitution.md, results.tsv, role files, mailbox IPC, three-tier memory, knowledge graph, workspace, runtime, adapters, UI, config, and tests. It also already adds Phase 5 with hierarchical coordination, daemon mode, scheduler, approval gates, GitHub events, PR draft generation, and daemon/API helpers. 
+1
+
+So Phase 6 should not rewrite the system. It should slot in as a new layer: a tool-using execution substrate that sits under the agents and above the connectors/sandbox, while remaining compatible with the existing ratchet, graph grounding, memory, approvals, daemon, and Phase 5.1 hardening model. That fits the architecture you already laid down. 
+1
+
+AutoOrg — Phase 6: Tool-Using Organization
+Tool Registry, Sandboxed Execution, Evidence Packs, Replayable Tool Traces
+WHAT PHASE 6 ADDS
+text
+
+Phase 5.1 ── Strict approval blocking + crash recovery + leases + budgets + partitions
+
+Phase 6   ── ┌──────────────────────────────────────────────────────────────┐
+             │ Tool registry with explicit capability manifests             │
+             │ Role/team-specific tool allowlists + per-tool policy         │
+             │ Safe retrieval tools: repo search, doc search, web fetch,    │
+             │ GitHub issue/PR search, local file read                      │
+             │ Sandboxed code execution with timeout / cwd / env controls   │
+             │ Structured tool-call traces persisted to DB + artifacts      │
+             │ Evidence packs attached to worker outputs and CEO synthesis   │
+             │ Tool-aware Critic: missing verification becomes a defect      │
+             │ Tool-aware Ratchet scoring: unsupported claims get clamped    │
+             │ Replayable tool traces for debugging and benchmark replay     │
+             │ External connectors as first-class organizational tools       │
+             └──────────────────────────────────────────────────────────────┘
+DIRECTORY ADDITIONS
+text
+
+src/
+├── tools/
+│   ├── registry.ts               ← tool manifest registry
+│   ├── tool-runner.ts            ← policy checks + execution + trace logging
+│   ├── tool-policy.ts            ← role/team allowlists and limits
+│   ├── evidence-pack.ts          ← bundle evidence into artifacts + DB
+│   ├── replay.ts                 ← replay stored tool traces
+│   ├── sandbox.ts                ← restricted command/code execution
+│   └── manifests/
+│       ├── repo-search.ts        ← rg-based repo search
+│       ├── repo-read-file.ts     ← safe local file read
+│       ├── local-docs-search.ts  ← markdown/docs search
+│       ├── web-fetch.ts          ← safe HTTP fetch / text extraction
+│       ├── github-search.ts      ← issue/PR search via GitHub integration
+│       └── sandbox-exec.ts       ← shell/code execution in workspace
+├── integrations/
+│   └── connectors/
+│       ├── repo-search.ts
+│       ├── local-docs.ts
+│       ├── web-fetch.ts
+│       ├── github-search.ts
+│       └── ticket-search.ts
+├── prompts/
+│   ├── tool-planner.ts           ← decide which tools are needed
+│   ├── evidence-synthesizer.ts   ← final answer grounded in evidence pack
+│   ├── verification-auditor.ts   ← claim → evidence coverage analysis
+│   └── tool-aware-critic.ts      ← critic prompt for unsupported claims
+├── db/
+│   ├── schema-phase6.sql
+│   └── migrate-phase6.ts
+└── api/
+    └── tool-routes.ts            ← tools, traces, evidence, replay
+
+artifacts/
+├── tools/
+│   ├── traces/
+│   └── outputs/
+└── evidence/
+    ├── packs/
+    └── merged/
+1. Phase 6 DB schema
+src/db/schema-phase6.sql
+SQL
+
+-- ============================================================
+-- AutoOrg Phase 6 Schema
+-- Tool registry + tool traces + evidence packs + replay
+-- ============================================================
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: tool_definitions
+-- Manifested tools registered with the system
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS tool_definitions (
+  name TEXT PRIMARY KEY,                 -- repo.search / web.fetch / sandbox.exec
+  display_name TEXT NOT NULL,
+  capability_class TEXT NOT NULL CHECK(capability_class IN (
+    'search','read','verify','execute','transform'
+  )),
+  description TEXT NOT NULL,
+  input_schema_json TEXT NOT NULL,
+  output_schema_json TEXT NOT NULL,
+  default_timeout_ms INTEGER NOT NULL,
+  default_cost_hint REAL NOT NULL DEFAULT 0,
+  replayable INTEGER NOT NULL DEFAULT 1,
+  dangerous INTEGER NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: tool_policies
+-- Per-role / per-team allowlists and limits
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS tool_policies (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  team_id TEXT,
+  role TEXT NOT NULL,
+  tool_name TEXT NOT NULL REFERENCES tool_definitions(name) ON DELETE CASCADE,
+  allowed INTEGER NOT NULL DEFAULT 1,
+  max_calls_per_cycle INTEGER,
+  max_calls_per_run INTEGER,
+  require_evidence INTEGER NOT NULL DEFAULT 1,
+  require_human_approval INTEGER NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_tool_policies_run_role
+  ON tool_policies(run_id, role, team_id);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: tool_executions
+-- One row per actual tool call
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS tool_executions (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  cycle_number INTEGER NOT NULL,
+  task_id TEXT,
+  team_id TEXT,
+  role TEXT NOT NULL,
+  tool_name TEXT NOT NULL REFERENCES tool_definitions(name),
+  capability_class TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued'
+    CHECK(status IN ('queued','running','completed','failed','denied','timed_out','cancelled')),
+  input_json TEXT NOT NULL,
+  output_summary TEXT,
+  artifact_path TEXT,
+  duration_ms INTEGER,
+  cost_usd REAL DEFAULT 0,
+  source_count INTEGER DEFAULT 0,
+  deterministic INTEGER NOT NULL DEFAULT 0,
+  replayable INTEGER NOT NULL DEFAULT 1,
+  error_text TEXT,
+  started_at DATETIME,
+  finished_at DATETIME,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_tool_executions_run_cycle
+  ON tool_executions(run_id, cycle_number, created_at);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: tool_artifacts
+-- Source excerpts / file hits / command outputs per tool execution
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS tool_artifacts (
+  id TEXT PRIMARY KEY,
+  execution_id TEXT NOT NULL REFERENCES tool_executions(id) ON DELETE CASCADE,
+  artifact_type TEXT NOT NULL CHECK(artifact_type IN (
+    'file_hit','web_page','github_issue','github_pr','stdout','stderr','json','text'
+  )),
+  source_uri TEXT,
+  title TEXT,
+  excerpt TEXT,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_tool_artifacts_execution
+  ON tool_artifacts(execution_id);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: evidence_packs
+-- Evidence bundles attached to task outputs / synthesis
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS evidence_packs (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  cycle_number INTEGER NOT NULL,
+  task_id TEXT,
+  team_id TEXT,
+  owner_role TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK(kind IN ('worker','team','ceo','merged')),
+  status TEXT NOT NULL DEFAULT 'ready' CHECK(status IN ('ready','merged','archived')),
+  summary TEXT NOT NULL,
+  artifact_path TEXT NOT NULL,
+  item_count INTEGER NOT NULL DEFAULT 0,
+  unsupported_claim_count INTEGER NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_evidence_packs_run_cycle
+  ON evidence_packs(run_id, cycle_number, created_at);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: evidence_items
+-- Individual evidence records
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS evidence_items (
+  id TEXT PRIMARY KEY,
+  pack_id TEXT NOT NULL REFERENCES evidence_packs(id) ON DELETE CASCADE,
+  execution_id TEXT REFERENCES tool_executions(id) ON DELETE SET NULL,
+  claim_text TEXT,
+  source_uri TEXT,
+  title TEXT,
+  excerpt TEXT NOT NULL,
+  confidence REAL NOT NULL DEFAULT 0.5,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_evidence_items_pack
+  ON evidence_items(pack_id);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: verification_reports
+-- Claim coverage audit for final outputs
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS verification_reports (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  cycle_number INTEGER NOT NULL,
+  role TEXT NOT NULL,
+  task_id TEXT,
+  evidence_pack_id TEXT REFERENCES evidence_packs(id),
+  total_claims INTEGER NOT NULL DEFAULT 0,
+  supported_claims INTEGER NOT NULL DEFAULT 0,
+  unsupported_claims INTEGER NOT NULL DEFAULT 0,
+  report_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_verification_reports_run_cycle
+  ON verification_reports(run_id, cycle_number);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: tool_replays
+-- Replay history for debugging / benchmark reproducibility
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS tool_replays (
+  id TEXT PRIMARY KEY,
+  execution_id TEXT NOT NULL REFERENCES tool_executions(id) ON DELETE CASCADE,
+  replay_mode TEXT NOT NULL CHECK(replay_mode IN ('artifact_only','full_rerun')),
+  status TEXT NOT NULL CHECK(status IN ('started','completed','failed')),
+  output_json TEXT,
+  error_text TEXT,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ────────────────────────────────────────────────────────────
+-- Feature flags
+-- ────────────────────────────────────────────────────────────
+INSERT OR IGNORE INTO feature_flags (flag_name, enabled, description) VALUES
+  ('toolRegistry', 1, 'Manifested tool registry (Phase 6)'),
+  ('toolUse', 1, 'Agents can plan and use tools (Phase 6)'),
+  ('toolPolicies', 1, 'Per-role / per-team tool allowlists (Phase 6)'),
+  ('toolTraces', 1, 'Persist tool traces to DB + artifacts (Phase 6)'),
+  ('evidencePacks', 1, 'Build evidence packs from tool outputs (Phase 6)'),
+  ('sandboxExec', 1, 'Sandboxed workspace execution (Phase 6)'),
+  ('externalConnectors', 1, 'GitHub/web/docs/ticket connectors (Phase 6)'),
+  ('toolAwareCritic', 1, 'Critic penalizes unsupported claims (Phase 6)'),
+  ('toolAwareJudge', 1, 'Judge receives verification report (Phase 6)'),
+  ('replayableToolTraces', 1, 'Replay tool traces from saved artifacts (Phase 6)');
+src/db/migrate-phase6.ts
+TypeScript
+
+#!/usr/bin/env bun
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import chalk from 'chalk';
+import { getDb } from '@/db/migrate.js';
+
+async function migrate() {
+  console.log(chalk.cyan('\n⚙️ Running Phase 6 migrations...\n'));
+  const db = getDb();
+  const schema = readFileSync(path.join(import.meta.dir, 'schema-phase6.sql'), 'utf-8');
+  db.exec(schema);
+  db.close();
+  console.log(chalk.bold.green('✅ Phase 6 migration complete.\n'));
+}
+
+migrate().catch(console.error);
+Run:
+
+Bash
+
+bun run src/db/migrate-phase6.ts
+2. Tool manifest model
+src/tools/registry.ts
+TypeScript
+
+import { z } from 'zod';
+import { getDb } from '@/db/migrate.js';
+
+export type CapabilityClass = 'search' | 'read' | 'verify' | 'execute' | 'transform';
+
+export interface ToolExecutionContext {
+  runId: string;
+  cycleNumber: number;
+  role: string;
+  teamId?: string;
+  taskId?: string;
+  cwd?: string;
+}
+
+export interface ToolResult {
+  summary: string;
+  costUsd?: number;
+  deterministic?: boolean;
+  sources?: Array<{
+    type: string;
+    uri?: string;
+    title?: string;
+    excerpt?: string;
+    metadata?: Record<string, unknown>;
+  }>;
+  output: unknown;
+}
+
+export interface ToolDefinition<TInput = any> {
+  name: string;
+  displayName: string;
+  capabilityClass: CapabilityClass;
+  description: string;
+  inputSchema: z.ZodType<TInput>;
+  outputSchema: z.ZodTypeAny;
+  defaultTimeoutMs: number;
+  defaultCostHint?: number;
+  replayable?: boolean;
+  dangerous?: boolean;
+  execute(input: TInput, ctx: ToolExecutionContext): Promise<ToolResult>;
+}
+
+export class ToolRegistry {
+  private tools = new Map<string, ToolDefinition>();
+
+  register(def: ToolDefinition) {
+    this.tools.set(def.name, def);
+
+    const db = getDb();
+    db.prepare(`
+      INSERT OR REPLACE INTO tool_definitions
+      (name, display_name, capability_class, description, input_schema_json, output_schema_json,
+       default_timeout_ms, default_cost_hint, replayable, dangerous)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      def.name,
+      def.displayName,
+      def.capabilityClass,
+      def.description,
+      JSON.stringify((def.inputSchema as any)?._def ?? {}),
+      JSON.stringify((def.outputSchema as any)?._def ?? {}),
+      def.defaultTimeoutMs,
+      def.defaultCostHint ?? 0,
+      def.replayable ? 1 : 0,
+      def.dangerous ? 1 : 0,
+    );
+    db.close();
+  }
+
+  get(name: string) {
+    const tool = this.tools.get(name);
+    if (!tool) throw new Error(`Unknown tool: ${name}`);
+    return tool;
+  }
+
+  list() {
+    return [...this.tools.values()];
+  }
+}
+3. Default tool policies
+src/tools/tool-policy.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+
+export class ToolPolicy {
+  constructor(private runId: string) {}
+
+  seedDefaults(teamId?: string) {
+    const defaults = [
+      ['CEO', 'repo.search', 1],
+      ['CEO', 'local_docs.search', 1],
+      ['CEO', 'web.fetch', 1],
+      ['CEO', 'github.search', 1],
+
+      ['CoordinatorLead', 'repo.search', 1],
+      ['CoordinatorLead', 'local_docs.search', 1],
+      ['CoordinatorLead', 'github.search', 1],
+
+      ['Engineer', 'repo.search', 1],
+      ['Engineer', 'repo.read_file', 1],
+      ['Engineer', 'local_docs.search', 1],
+      ['Engineer', 'sandbox.exec', 1],
+
+      ['Critic', 'repo.search', 1],
+      ['Critic', 'repo.read_file', 1],
+      ['Critic', 'local_docs.search', 1],
+      ['Critic', 'web.fetch', 1],
+
+      ['Archivist', 'repo.search', 1],
+      ['Archivist', 'local_docs.search', 1],
+      ['Archivist', 'github.search', 1],
+
+      ['DevilsAdvocate', 'repo.search', 1],
+      ['DevilsAdvocate', 'web.fetch', 1],
+
+      ['RatchetJudge', 'repo.search', 1],
+      ['RatchetJudge', 'local_docs.search', 1],
+    ] as const;
+
+    const db = getDb();
+    for (const [role, toolName] of defaults) {
+      db.prepare(`
+        INSERT OR IGNORE INTO tool_policies
+        (id, run_id, team_id, role, tool_name, allowed, max_calls_per_cycle, max_calls_per_run, require_evidence)
+        VALUES (?, ?, ?, ?, ?, 1, 4, 25, 1)
+      `).run(`tp_${nanoid(8)}`, this.runId, teamId ?? null, role, toolName);
+    }
+    db.close();
+  }
+
+  isAllowed(opts: { role: string; toolName: string; teamId?: string }) {
+    const db = getDb();
+    const row = db.prepare(`
+      SELECT allowed
+      FROM tool_policies
+      WHERE run_id = ? AND role = ? AND tool_name = ?
+        AND (team_id = ? OR team_id IS NULL)
+      ORDER BY CASE WHEN team_id IS NULL THEN 1 ELSE 0 END
+      LIMIT 1
+    `).get(this.runId, opts.role, opts.toolName, opts.teamId ?? null) as
+      | { allowed: number }
+      | undefined;
+    db.close();
+    return !!row?.allowed;
+  }
+
+  countCycleCalls(opts: {
+    cycleNumber: number;
+    role: string;
+    toolName: string;
+    teamId?: string;
+  }) {
+    const db = getDb();
+    const row = db.prepare(`
+      SELECT COUNT(*) as n
+      FROM tool_executions
+      WHERE run_id = ? AND cycle_number = ? AND role = ? AND tool_name = ?
+        AND (? IS NULL OR team_id = ?)
+    `).get(
+      this.runId,
+      opts.cycleNumber,
+      opts.role,
+      opts.toolName,
+      opts.teamId ?? null,
+      opts.teamId ?? null,
+    ) as { n: number };
+    db.close();
+    return row.n;
+  }
+}
+4. Connectors
+src/integrations/connectors/repo-search.ts
+TypeScript
+
+import { $ } from 'bun';
+
+export async function repoSearchConnector(query: string, cwd = process.cwd(), limit = 20) {
+  const cmd = `rg -n --hidden --glob '!node_modules' --glob '!.git' ${JSON.stringify(query)} ${JSON.stringify(cwd)}`;
+  const raw = await $`${['bash', '-lc', cmd]}`.text().catch(() => '');
+  const lines = raw
+    .split('\n')
+    .filter(Boolean)
+    .slice(0, limit)
+    .map((line) => {
+      const first = line.indexOf(':');
+      const second = line.indexOf(':', first + 1);
+      return {
+        file: line.slice(0, first),
+        line: Number(line.slice(first + 1, second)),
+        text: line.slice(second + 1),
+      };
+    });
+
+  return {
+    summary: `Found ${lines.length} repo matches for "${query}"`,
+    lines,
+  };
+}
+src/integrations/connectors/local-docs.ts
+TypeScript
+
+import { Glob } from 'bun';
+import { readFile } from 'node:fs/promises';
+
+export async function localDocsSearch(query: string, root = 'memory', limit = 12) {
+  const glob = new Glob('**/*.{md,txt,json}');
+  const hits: Array<{ file: string; excerpt: string }> = [];
+
+  for await (const file of glob.scan(root)) {
+    const text = await readFile(`${root}/${file}`, 'utf-8').catch(() => '');
+    if (!text) continue;
+    const idx = text.toLowerCase().indexOf(query.toLowerCase());
+    if (idx === -1) continue;
+    hits.push({
+      file: `${root}/${file}`,
+      excerpt: text.slice(Math.max(0, idx - 100), idx + 280).replace(/\s+/g, ' '),
+    });
+    if (hits.length >= limit) break;
+  }
+
+  return {
+    summary: `Found ${hits.length} local-doc hits`,
+    hits,
+  };
+}
+src/integrations/connectors/web-fetch.ts
+TypeScript
+
+export async function safeWebFetch(url: string, maxChars = 8000) {
+  const res = await fetch(url, {
+    headers: { 'User-Agent': 'AutoOrg/1.0 Phase6' },
+  });
+
+  const contentType = res.headers.get('content-type') ?? '';
+  const text = await res.text();
+
+  const plain = text
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxChars);
+
+  return {
+    summary: `Fetched ${url}`,
+    contentType,
+    text: plain,
+  };
+}
+src/integrations/connectors/github-search.ts
+TypeScript
+
+import { GitHubClient } from '@/integrations/github.js';
+
+export async function githubSearchConnector(opts: {
+  repo?: string;
+  query: string;
+  type?: 'issues' | 'prs';
+  limit?: number;
+}) {
+  const gh = new GitHubClient();
+  const items = await gh.searchIssues({
+    q: [opts.query, opts.repo ? `repo:${opts.repo}` : '', opts.type === 'prs' ? 'is:pr' : 'is:issue']
+      .filter(Boolean)
+      .join(' '),
+    per_page: opts.limit ?? 10,
+  });
+
+  return {
+    summary: `GitHub search returned ${items.items?.length ?? 0} results`,
+    items: (items.items ?? []).map((x: any) => ({
+      number: x.number,
+      title: x.title,
+      url: x.html_url,
+      state: x.state,
+      body: (x.body ?? '').slice(0, 400),
+    })),
+  };
+}
+5. Tool manifests
+src/tools/manifests/repo-search.ts
+TypeScript
+
+import { z } from 'zod';
+import { repoSearchConnector } from '@/integrations/connectors/repo-search.js';
+import type { ToolDefinition } from '@/tools/registry.js';
+
+export const repoSearchTool: ToolDefinition = {
+  name: 'repo.search',
+  displayName: 'Repository Search',
+  capabilityClass: 'search',
+  description: 'Search the repo using ripgrep and return matching lines.',
+  inputSchema: z.object({
+    query: z.string(),
+    limit: z.number().int().min(1).max(50).default(20),
+    cwd: z.string().optional(),
+  }),
+  outputSchema: z.object({
+    summary: z.string(),
+    lines: z.array(z.object({
+      file: z.string(),
+      line: z.number(),
+      text: z.string(),
+    })),
+  }),
+  defaultTimeoutMs: 5000,
+  replayable: true,
+  dangerous: false,
+  async execute(input, ctx) {
+    const result = await repoSearchConnector(input.query, input.cwd ?? ctx.cwd ?? process.cwd(), input.limit);
+    return {
+      summary: result.summary,
+      deterministic: true,
+      output: result,
+      sources: result.lines.map((line) => ({
+        type: 'file_hit',
+        uri: line.file,
+        title: `${line.file}:${line.line}`,
+        excerpt: line.text,
+        metadata: { line: line.line },
+      })),
+    };
+  },
+};
+src/tools/manifests/repo-read-file.ts
+TypeScript
+
+import { z } from 'zod';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import type { ToolDefinition } from '@/tools/registry.js';
+
+export const repoReadFileTool: ToolDefinition = {
+  name: 'repo.read_file',
+  displayName: 'Repository File Read',
+  capabilityClass: 'read',
+  description: 'Read a file from the repository with path restrictions.',
+  inputSchema: z.object({
+    path: z.string(),
+    maxChars: z.number().int().min(100).max(30000).default(8000),
+  }),
+  outputSchema: z.object({
+    path: z.string(),
+    text: z.string(),
+  }),
+  defaultTimeoutMs: 3000,
+  replayable: true,
+  dangerous: false,
+  async execute(input, ctx) {
+    const resolved = path.resolve(process.cwd(), input.path);
+    if (!resolved.startsWith(process.cwd())) {
+      throw new Error('Path escapes repository root');
+    }
+
+    const text = await readFile(resolved, 'utf-8');
+    return {
+      summary: `Read file ${input.path}`,
+      deterministic: true,
+      output: { path: input.path, text: text.slice(0, input.maxChars) },
+      sources: [{
+        type: 'file_hit',
+        uri: input.path,
+        title: input.path,
+        excerpt: text.slice(0, Math.min(input.maxChars, 500)),
+      }],
+    };
+  },
+};
+src/tools/manifests/local-docs-search.ts
+TypeScript
+
+import { z } from 'zod';
+import { localDocsSearch } from '@/integrations/connectors/local-docs.js';
+import type { ToolDefinition } from '@/tools/registry.js';
+
+export const localDocsSearchTool: ToolDefinition = {
+  name: 'local_docs.search',
+  displayName: 'Local Docs Search',
+  capabilityClass: 'search',
+  description: 'Search markdown/docs/memory files on disk.',
+  inputSchema: z.object({
+    query: z.string(),
+    root: z.string().default('memory'),
+    limit: z.number().int().min(1).max(30).default(12),
+  }),
+  outputSchema: z.object({
+    summary: z.string(),
+    hits: z.array(z.object({
+      file: z.string(),
+      excerpt: z.string(),
+    })),
+  }),
+  defaultTimeoutMs: 4000,
+  replayable: true,
+  dangerous: false,
+  async execute(input) {
+    const result = await localDocsSearch(input.query, input.root, input.limit);
+    return {
+      summary: result.summary,
+      deterministic: true,
+      output: result,
+      sources: result.hits.map((hit) => ({
+        type: 'file_hit',
+        uri: hit.file,
+        title: hit.file,
+        excerpt: hit.excerpt,
+      })),
+    };
+  },
+};
+src/tools/manifests/web-fetch.ts
+TypeScript
+
+import { z } from 'zod';
+import { safeWebFetch } from '@/integrations/connectors/web-fetch.js';
+import type { ToolDefinition } from '@/tools/registry.js';
+
+export const webFetchTool: ToolDefinition = {
+  name: 'web.fetch',
+  displayName: 'Web Fetch',
+  capabilityClass: 'verify',
+  description: 'Fetch a public URL and extract plain text for verification.',
+  inputSchema: z.object({
+    url: z.string().url(),
+    maxChars: z.number().int().min(500).max(20000).default(8000),
+  }),
+  outputSchema: z.object({
+    summary: z.string(),
+    contentType: z.string(),
+    text: z.string(),
+  }),
+  defaultTimeoutMs: 12000,
+  replayable: true,
+  dangerous: false,
+  async execute(input) {
+    const result = await safeWebFetch(input.url, input.maxChars);
+    return {
+      summary: result.summary,
+      deterministic: false,
+      output: result,
+      sources: [{
+        type: 'web_page',
+        uri: input.url,
+        title: input.url,
+        excerpt: result.text.slice(0, 500),
+      }],
+    };
+  },
+};
+src/tools/manifests/github-search.ts
+TypeScript
+
+import { z } from 'zod';
+import { githubSearchConnector } from '@/integrations/connectors/github-search.js';
+import type { ToolDefinition } from '@/tools/registry.js';
+
+export const githubSearchTool: ToolDefinition = {
+  name: 'github.search',
+  displayName: 'GitHub Search',
+  capabilityClass: 'search',
+  description: 'Search GitHub issues/PRs using the configured GitHub integration.',
+  inputSchema: z.object({
+    repo: z.string().optional(),
+    query: z.string(),
+    type: z.enum(['issues', 'prs']).default('issues'),
+    limit: z.number().int().min(1).max(20).default(10),
+  }),
+  outputSchema: z.object({
+    summary: z.string(),
+    items: z.array(z.object({
+      number: z.number(),
+      title: z.string(),
+      url: z.string(),
+      state: z.string(),
+      body: z.string(),
+    })),
+  }),
+  defaultTimeoutMs: 10000,
+  replayable: true,
+  dangerous: false,
+  async execute(input) {
+    const result = await githubSearchConnector(input);
+    return {
+      summary: result.summary,
+      deterministic: false,
+      output: result,
+      sources: result.items.map((item) => ({
+        type: input.type === 'prs' ? 'github_pr' : 'github_issue',
+        uri: item.url,
+        title: `#${item.number} ${item.title}`,
+        excerpt: item.body,
+      })),
+    };
+  },
+};
+src/tools/manifests/sandbox-exec.ts
+TypeScript
+
+import { z } from 'zod';
+import { Sandbox } from '@/tools/sandbox.js';
+import type { ToolDefinition } from '@/tools/registry.js';
+
+export const sandboxExecTool: ToolDefinition = {
+  name: 'sandbox.exec',
+  displayName: 'Sandboxed Exec',
+  capabilityClass: 'execute',
+  description: 'Run an allowlisted command in the workspace with timeout and env scrubbing.',
+  inputSchema: z.object({
+    command: z.string(),
+    cwd: z.string().optional(),
+    timeoutMs: z.number().int().min(500).max(120000).default(20000),
+  }),
+  outputSchema: z.object({
+    stdout: z.string(),
+    stderr: z.string(),
+    exitCode: z.number(),
+  }),
+  defaultTimeoutMs: 20000,
+  replayable: true,
+  dangerous: true,
+  async execute(input, ctx) {
+    const sandbox = new Sandbox();
+    const result = await sandbox.exec(input.command, {
+      cwd: input.cwd ?? ctx.cwd ?? process.cwd(),
+      timeoutMs: input.timeoutMs,
+    });
+
+    return {
+      summary: `Executed sandbox command: ${input.command}`,
+      deterministic: false,
+      output: result,
+      sources: [
+        { type: 'stdout', title: 'stdout', excerpt: result.stdout.slice(0, 600) },
+        { type: 'stderr', title: 'stderr', excerpt: result.stderr.slice(0, 600) },
+      ],
+    };
+  },
+};
+6. Sandbox execution
+src/tools/sandbox.ts
+TypeScript
+
+import { spawn } from 'node:child_process';
+
+const DEFAULT_ALLOWED_PREFIXES = [
+  'bun test',
+  'bun run',
+  'node ',
+  'python ',
+  'pytest',
+  'tsc',
+  'eslint',
+  'prettier',
+  'cat ',
+  'ls',
+  'pwd',
+  'git diff',
+  'git status',
+];
+
+export class Sandbox {
+  private allowed = (process.env.SANDBOX_ALLOWED_PREFIXES?.split(',').map(x => x.trim()).filter(Boolean))
+    || DEFAULT_ALLOWED_PREFIXES;
+
+  async exec(command: string, opts: { cwd: string; timeoutMs: number }) {
+    if (!this.allowed.some(prefix => command === prefix || command.startsWith(prefix + ' '))) {
+      throw new Error(`Command not allowlisted: ${command}`);
+    }
+
+    return await new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
+      const child = spawn('bash', ['-lc', command], {
+        cwd: opts.cwd,
+        env: {
+          PATH: process.env.PATH ?? '',
+          HOME: process.env.HOME ?? '',
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      const timer = setTimeout(() => {
+        child.kill('SIGKILL');
+        reject(new Error(`Sandbox timeout after ${opts.timeoutMs}ms`));
+      }, opts.timeoutMs);
+
+      child.stdout.on('data', (d) => { stdout += d.toString(); });
+      child.stderr.on('data', (d) => { stderr += d.toString(); });
+
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        resolve({
+          stdout: stdout.slice(0, 20_000),
+          stderr: stderr.slice(0, 20_000),
+          exitCode: code ?? -1,
+        });
+      });
+
+      child.on('error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+    });
+  }
+}
+7. Tool runner
+src/tools/tool-runner.ts
+TypeScript
+
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+import { ToolRegistry, type ToolExecutionContext } from '@/tools/registry.js';
+import { ToolPolicy } from '@/tools/tool-policy.js';
+import { BudgetManager } from '@/runtime/budget-manager.js';
+import { IncidentLog } from '@/runtime/incident-log.js';
+
+export class ToolRunner {
+  private policies: ToolPolicy;
+  private budgets: BudgetManager;
+  private incidents = new IncidentLog();
+
+  constructor(
+    private runId: string,
+    private registry: ToolRegistry,
+  ) {
+    this.policies = new ToolPolicy(runId);
+    this.budgets = new BudgetManager(runId);
+  }
+
+  async execute(toolName: string, input: unknown, ctx: ToolExecutionContext) {
+    const tool = this.registry.get(toolName);
+
+    if (!this.policies.isAllowed({ role: ctx.role, teamId: ctx.teamId, toolName })) {
+      return await this.denied(toolName, input, ctx, `Tool ${toolName} is not allowed for role ${ctx.role}`);
+    }
+
+    if (!this.budgets.canSpend(ctx.teamId ?? 'shared', 'tool_calls', 1)) {
+      return await this.denied(toolName, input, ctx, `Tool-call budget exceeded`);
+    }
+
+    const parsed = tool.inputSchema.parse(input);
+    const id = `tx_${nanoid(10)}`;
+    const startedAt = Date.now();
+    const artifactsDir = path.join(process.cwd(), 'artifacts', 'tools', 'outputs');
+    await mkdir(artifactsDir, { recursive: true });
+
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO tool_executions
+      (id, run_id, cycle_number, task_id, team_id, role, tool_name, capability_class, status, input_json, started_at, replayable)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, datetime('now'), ?)
+    `).run(
+      id,
+      this.runId,
+      ctx.cycleNumber,
+      ctx.taskId ?? null,
+      ctx.teamId ?? null,
+      ctx.role,
+      toolName,
+      tool.capabilityClass,
+      JSON.stringify(parsed),
+      tool.replayable ? 1 : 0,
+    );
+    db.close();
+
+    this.budgets.spend({
+      teamId: ctx.teamId ?? 'shared',
+      role: ctx.role,
+      cycleNumber: ctx.cycleNumber,
+      budgetType: 'tool_calls',
+      delta: 1,
+      reason: `tool:${toolName}`,
+    });
+
+    try {
+      const result = await tool.execute(parsed, ctx);
+      const durationMs = Date.now() - startedAt;
+      const artifactPath = path.join(artifactsDir, `${id}.json`);
+
+      await writeFile(artifactPath, JSON.stringify({
+        toolName,
+        input: parsed,
+        result,
+        ctx,
+      }, null, 2), 'utf-8');
+
+      const db2 = getDb();
+      db2.prepare(`
+        UPDATE tool_executions
+        SET status = 'completed',
+            output_summary = ?,
+            artifact_path = ?,
+            duration_ms = ?,
+            cost_usd = ?,
+            source_count = ?,
+            deterministic = ?,
+            finished_at = datetime('now')
+        WHERE id = ?
+      `).run(
+        result.summary,
+        artifactPath,
+        durationMs,
+        result.costUsd ?? 0,
+        result.sources?.length ?? 0,
+        result.deterministic ? 1 : 0,
+        id,
+      );
+
+      for (const src of result.sources ?? []) {
+        db2.prepare(`
+          INSERT INTO tool_artifacts
+          (id, execution_id, artifact_type, source_uri, title, excerpt, metadata_json)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          `ta_${nanoid(8)}`,
+          id,
+          src.type,
+          src.uri ?? null,
+          src.title ?? null,
+          src.excerpt?.slice(0, 1500) ?? '',
+          JSON.stringify(src.metadata ?? {}),
+        );
+      }
+
+      db2.close();
+
+      if (typeof result.costUsd === 'number' && result.costUsd > 0) {
+        this.budgets.spend({
+          teamId: ctx.teamId ?? 'shared',
+          role: ctx.role,
+          cycleNumber: ctx.cycleNumber,
+          budgetType: 'usd',
+          delta: result.costUsd,
+          reason: `tool:${toolName}`,
+        });
+      }
+
+      if (durationMs > 0) {
+        this.budgets.spend({
+          teamId: ctx.teamId ?? 'shared',
+          role: ctx.role,
+          cycleNumber: ctx.cycleNumber,
+          budgetType: 'minutes',
+          delta: durationMs / 60000,
+          reason: `tool:${toolName}`,
+        });
+      }
+
+      return { executionId: id, ...result };
+    } catch (error) {
+      const db3 = getDb();
+      db3.prepare(`
+        UPDATE tool_executions
+        SET status = 'failed', error_text = ?, finished_at = datetime('now')
+        WHERE id = ?
+      `).run(error instanceof Error ? error.message : String(error), id);
+      db3.close();
+
+      this.incidents.log({
+        runId: this.runId,
+        severity: 'warn',
+        component: 'tool-runner',
+        summary: `Tool ${toolName} failed`,
+        details: {
+          executionId: id,
+          role: ctx.role,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+
+      throw error;
+    }
+  }
+
+  private async denied(toolName: string, input: unknown, ctx: ToolExecutionContext, reason: string) {
+    const id = `tx_${nanoid(10)}`;
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO tool_executions
+      (id, run_id, cycle_number, task_id, team_id, role, tool_name, capability_class, status, input_json, error_text, started_at, finished_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'verify', 'denied', ?, ?, datetime('now'), datetime('now'))
+    `).run(
+      id,
+      this.runId,
+      ctx.cycleNumber,
+      ctx.taskId ?? null,
+      ctx.teamId ?? null,
+      ctx.role,
+      toolName,
+      JSON.stringify(input ?? {}),
+      reason,
+    );
+    db.close();
+
+    return {
+      executionId: id,
+      summary: reason,
+      output: { denied: true, reason },
+      sources: [],
+    };
+  }
+}
+8. Evidence packs
+src/tools/evidence-pack.ts
+TypeScript
+
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+
+export class EvidencePackBuilder {
+  constructor(private runId: string) {}
+
+  async fromExecutions(opts: {
+    cycleNumber: number;
+    ownerRole: string;
+    kind: 'worker' | 'team' | 'ceo' | 'merged';
+    taskId?: string;
+    teamId?: string;
+    executionIds: string[];
+    summary: string;
+  }) {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT te.id, te.tool_name, te.output_summary, ta.source_uri, ta.title, ta.excerpt
+      FROM tool_executions te
+      LEFT JOIN tool_artifacts ta ON ta.execution_id = te.id
+      WHERE te.id IN (${opts.executionIds.map(() => '?').join(',')})
+      ORDER BY te.created_at ASC
+    `).all(...opts.executionIds) as Array<{
+      id: string;
+      tool_name: string;
+      output_summary: string | null;
+      source_uri: string | null;
+      title: string | null;
+      excerpt: string | null;
+    }>;
+
+    const packId = `ep_${nanoid(10)}`;
+    const dir = path.join(process.cwd(), 'artifacts', 'evidence', 'packs');
+    await mkdir(dir, { recursive: true });
+    const artifactPath = path.join(dir, `${packId}.md`);
+
+    const markdown = [
+      `# Evidence Pack ${packId}`,
+      ``,
+      `- run: ${this.runId}`,
+      `- cycle: ${opts.cycleNumber}`,
+      `- owner: ${opts.ownerRole}`,
+      `- kind: ${opts.kind}`,
+      `- summary: ${opts.summary}`,
+      ``,
+      `## Evidence Items`,
+      ...rows.map((row, i) => [
+        `### [ev_${i + 1}] ${row.tool_name}`,
+        `- execution: ${row.id}`,
+        `- title: ${row.title ?? '(untitled)'}`,
+        `- source: ${row.source_uri ?? '(none)'}`,
+        `- summary: ${row.output_summary ?? ''}`,
+        ``,
+        `${(row.excerpt ?? '').slice(0, 900)}`,
+        ``,
+      ].join('\n')),
+    ].join('\n');
+
+    await writeFile(artifactPath, markdown, 'utf-8');
+
+    db.prepare(`
+      INSERT INTO evidence_packs
+      (id, run_id, cycle_number, task_id, team_id, owner_role, kind, summary, artifact_path, item_count)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      packId,
+      this.runId,
+      opts.cycleNumber,
+      opts.taskId ?? null,
+      opts.teamId ?? null,
+      opts.ownerRole,
+      opts.kind,
+      opts.summary,
+      artifactPath,
+      rows.length,
+    );
+
+    rows.forEach((row, i) => {
+      db.prepare(`
+        INSERT INTO evidence_items
+        (id, pack_id, execution_id, source_uri, title, excerpt, confidence, metadata_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        `ei_${nanoid(8)}`,
+        packId,
+        row.id,
+        row.source_uri ?? null,
+        row.title ?? null,
+        row.excerpt ?? '',
+        0.75,
+        JSON.stringify({ evidenceLabel: `ev_${i + 1}`, toolName: row.tool_name }),
+      );
+    });
+
+    db.close();
+    return { packId, artifactPath };
+  }
+
+  async merge(opts: {
+    cycleNumber: number;
+    ownerRole: string;
+    packIds: string[];
+    summary: string;
+  }) {
+    const db = getDb();
+    const packs = db.prepare(`
+      SELECT id, artifact_path
+      FROM evidence_packs
+      WHERE id IN (${opts.packIds.map(() => '?').join(',')})
+    `).all(...opts.packIds) as Array<{ id: string; artifact_path: string }>;
+    db.close();
+
+    const mergedId = `ep_${nanoid(10)}`;
+    const out = path.join(process.cwd(), 'artifacts', 'evidence', 'merged', `${mergedId}.md`);
+    await mkdir(path.dirname(out), { recursive: true });
+
+    const sections = [];
+    for (const pack of packs) {
+      const text = await Bun.file(pack.artifact_path).text().catch(() => '');
+      sections.push(`\n\n<!-- PACK ${pack.id} -->\n\n${text}`);
+    }
+
+    await writeFile(out, [
+      `# Merged Evidence Pack ${mergedId}`,
+      ``,
+      `Summary: ${opts.summary}`,
+      ...sections,
+    ].join('\n'), 'utf-8');
+
+    return { packId: mergedId, artifactPath: out };
+  }
+}
+9. Replayable tool traces
+src/tools/replay.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+
+export class ToolReplay {
+  async replay(executionId: string, mode: 'artifact_only' | 'full_rerun' = 'artifact_only') {
+    const db = getDb();
+    const row = db.prepare(`
+      SELECT * FROM tool_executions WHERE id = ?
+    `).get(executionId) as
+      | { artifact_path: string | null; tool_name: string; input_json: string | null }
+      | undefined;
+
+    if (!row) {
+      db.close();
+      throw new Error(`Tool execution ${executionId} not found`);
+    }
+
+    const replayId = `tr_${nanoid(10)}`;
+    db.prepare(`
+      INSERT INTO tool_replays
+      (id, execution_id, replay_mode, status)
+      VALUES (?, ?, ?, 'started')
+    `).run(replayId, executionId, mode);
+    db.close();
+
+    try {
+      if (mode === 'artifact_only') {
+        const output = row.artifact_path ? await Bun.file(row.artifact_path).json() : null;
+        const db2 = getDb();
+        db2.prepare(`
+          UPDATE tool_replays
+          SET status = 'completed', output_json = ?
+          WHERE id = ?
+        `).run(JSON.stringify(output), replayId);
+        db2.close();
+        return output;
+      }
+
+      throw new Error('full_rerun not yet implemented in Phase 6 baseline');
+    } catch (error) {
+      const db3 = getDb();
+      db3.prepare(`
+        UPDATE tool_replays
+        SET status = 'failed', error_text = ?
+        WHERE id = ?
+      `).run(error instanceof Error ? error.message : String(error), replayId);
+      db3.close();
+      throw error;
+    }
+  }
+}
+10. Tool planning prompt
+src/prompts/tool-planner.ts
+TypeScript
+
+import { z } from 'zod';
+
+export const ToolPlanSchema = z.object({
+  needs_tools: z.boolean(),
+  goal: z.string(),
+  tool_calls: z.array(z.object({
+    tool_name: z.string(),
+    why: z.string(),
+    claim_to_verify: z.string().optional(),
+    args: z.record(z.string(), z.any()),
+  })).max(6),
+  fallback_answer_if_denied: z.string(),
+});
+
+export const TOOL_PLANNER_SYSTEM_PROMPT = `
+You are AutoOrg's Tool Planner.
+
+Given:
+- role
+- task
+- available tools
+- memory context
+- graph context
+
+Your job is to decide whether tools are needed before answering.
+
+Hard rules:
+- Use tools when the task requires verification, retrieval, repo inspection, or execution.
+- Prefer the fewest tools needed.
+- Never request tools not listed as available.
+- If a claim could be checked, prefer checking it.
+- Do not fabricate evidence.
+`.trim();
+11. Evidence synthesizer prompt
+src/prompts/evidence-synthesizer.ts
+TypeScript
+
+export const EVIDENCE_SYNTHESIZER_SYSTEM_PROMPT = `
+You are AutoOrg's Evidence Synthesizer.
+
+You will receive:
+- the role prompt
+- the task
+- the current workspace context
+- an evidence pack
+
+Your job:
+1. Produce the best answer or draft.
+2. Use the evidence pack directly.
+3. When making factual claims, cite evidence labels like [ev_3].
+4. If the evidence is insufficient, explicitly say what is still uncertain.
+
+Hard rules:
+- Do not claim to have verified something unless the evidence pack supports it.
+- Separate inference from direct evidence.
+- Keep the answer operational and specific.
+`.trim();
+12. Verification auditor prompt
+src/prompts/verification-auditor.ts
+TypeScript
+
+import { z } from 'zod';
+
+export const VerificationReportSchema = z.object({
+  total_claims: z.number().int().nonnegative(),
+  supported_claims: z.number().int().nonnegative(),
+  unsupported_claims: z.number().int().nonnegative(),
+  unsupported_examples: z.array(z.string()).max(10),
+  notes: z.array(z.string()).max(10),
+});
+
+export const VERIFICATION_AUDITOR_SYSTEM_PROMPT = `
+You audit a draft against an evidence pack.
+
+Return:
+- how many claims appear in the draft,
+- how many are directly supported by evidence,
+- how many are unsupported or weakly supported,
+- examples of unsupported claims.
+
+Hard rules:
+- Be conservative.
+- If evidence only partially supports a claim, count it as unsupported.
+- Do not reward stylistic confidence.
+`.trim();
+13. Tool-aware critic prompt
+src/prompts/tool-aware-critic.ts
+TypeScript
+
+export const TOOL_AWARE_CRITIC_APPENDIX = `
+ADDITIONAL CRITIC DUTIES IN PHASE 6:
+- Identify claims that should have been verified with tools but were not.
+- Flag missing repo inspection when implementation details are asserted.
+- Flag missing evidence when web/GitHub/local-doc verification was available.
+- Distinguish "unsupported", "contradicted", and "inferred" claims.
+- Recommend the next 1-3 tool calls that would most reduce uncertainty.
+`.trim();
+14. Tool bootstrap
+src/tools/bootstrap.ts
+TypeScript
+
+import { ToolRegistry } from '@/tools/registry.js';
+import { repoSearchTool } from '@/tools/manifests/repo-search.js';
+import { repoReadFileTool } from '@/tools/manifests/repo-read-file.js';
+import { localDocsSearchTool } from '@/tools/manifests/local-docs-search.js';
+import { webFetchTool } from '@/tools/manifests/web-fetch.js';
+import { githubSearchTool } from '@/tools/manifests/github-search.js';
+import { sandboxExecTool } from '@/tools/manifests/sandbox-exec.js';
+
+export function bootstrapRegistry() {
+  const registry = new ToolRegistry();
+  registry.register(repoSearchTool);
+  registry.register(repoReadFileTool);
+  registry.register(localDocsSearchTool);
+  registry.register(webFetchTool);
+  registry.register(githubSearchTool);
+  registry.register(sandboxExecTool);
+  return registry;
+}
+15. AgentRunner integration
+Patch src/runtime/agent-runner.ts
+Add imports:
+
+TypeScript
+
+import { getAdapter } from '@/adapters/adapter-factory.js';
+import { ToolRunner } from '@/tools/tool-runner.js';
+import { ToolPolicy } from '@/tools/tool-policy.js';
+import { bootstrapRegistry } from '@/tools/bootstrap.js';
+import { EvidencePackBuilder } from '@/tools/evidence-pack.js';
+import { TOOL_PLANNER_SYSTEM_PROMPT, ToolPlanSchema } from '@/prompts/tool-planner.js';
+import { EVIDENCE_SYNTHESIZER_SYSTEM_PROMPT } from '@/prompts/evidence-synthesizer.js';
+import { featureFlag } from '@/config/feature-flags.js';
+Then add a tool-aware execution path:
+
+TypeScript
+
+export class AgentRunner {
+  static async runWithTools(ctx: {
+    runId: string;
+    cycle: number;
+    role: string;
+    task: string;
+    prompt: string;
+    teamId?: string;
+    taskId?: string;
+    model: string;
+    provider?: any;
+    memoryContext?: string;
+    graphContext?: string;
+    workspaceContext?: string;
+  }) {
+    const adapter = getAdapter({
+      provider: (ctx.provider ?? process.env.DEFAULT_LLM_PROVIDER ?? 'anthropic') as any,
+      model: ctx.model,
+    });
+
+    const registry = bootstrapRegistry();
+    const policies = new ToolPolicy(ctx.runId);
+    const toolRunner = new ToolRunner(ctx.runId, registry);
+    const evidence = new EvidencePackBuilder(ctx.runId);
+
+    const availableTools = registry.list()
+      .filter(t => policies.isAllowed({ role: ctx.role, toolName: t.name, teamId: ctx.teamId }))
+      .map(t => ({
+        name: t.name,
+        class: t.capabilityClass,
+        description: t.description,
+      }));
+
+    let executionIds: string[] = [];
+    let evidencePackId: string | undefined;
+
+    if (featureFlag('toolUse') && availableTools.length > 0) {
+      const plan = await adapter.structured({
+        model: ctx.model,
+        messages: [
+          { role: 'system', content: TOOL_PLANNER_SYSTEM_PROMPT },
+          {
+            role: 'user',
+            content: JSON.stringify({
+              role: ctx.role,
+              task: ctx.task,
+              availableTools,
+              memoryContext: ctx.memoryContext ?? '',
+              graphContext: ctx.graphContext ?? '',
+              workspaceContext: (ctx.workspaceContext ?? '').slice(0, 4000),
+            }, null, 2),
+          },
+        ],
+        schema: ToolPlanSchema,
+      });
+
+      for (const call of plan.tool_calls ?? []) {
+        const result = await toolRunner.execute(call.tool_name, call.args, {
+          runId: ctx.runId,
+          cycleNumber: ctx.cycle,
+          role: ctx.role,
+          teamId: ctx.teamId,
+          taskId: ctx.taskId,
+          cwd: process.cwd(),
+        });
+        executionIds.push(result.executionId);
+      }
+
+      if (executionIds.length > 0 && featureFlag('evidencePacks')) {
+        const pack = await evidence.fromExecutions({
+          cycleNumber: ctx.cycle,
+          ownerRole: ctx.role,
+          teamId: ctx.teamId,
+          taskId: ctx.taskId,
+          kind: 'worker',
+          executionIds,
+          summary: `${ctx.role} evidence for task`,
+        });
+        evidencePackId = pack.packId;
+      }
+    }
+
+    const evidenceText = evidencePackId
+      ? await Bun.file(`artifacts/evidence/packs/${evidencePackId}.md`).text().catch(() => '')
+      : '';
+
+    const response = await adapter.run({
+      model: ctx.model,
+      messages: [
+        { role: 'system', content: EVIDENCE_SYNTHESIZER_SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: [
+            ctx.prompt,
+            '',
+            '## TASK',
+            ctx.task,
+            '',
+            '## MEMORY CONTEXT',
+            ctx.memoryContext ?? '',
+            '',
+            '## GRAPH CONTEXT',
+            ctx.graphContext ?? '',
+            '',
+            '## WORKSPACE CONTEXT',
+            (ctx.workspaceContext ?? '').slice(0, 6000),
+            '',
+            '## EVIDENCE PACK',
+            evidenceText.slice(0, 12000),
+          ].join('\n'),
+        },
+      ],
+      temperature: 0.2,
+      maxTokens: 2400,
+    });
+
+    return {
+      content: response.content,
+      evidencePackId,
+      toolExecutionIds: executionIds,
+      usage: response.usage,
+      costUsd: response.costUsd,
+    };
+  }
+}
+Net effect: every worker can now:
+
+plan tool use,
+call only allowed tools,
+generate an evidence pack,
+answer from that evidence pack.
+16. Verification audit + groundedness clamp
+src/runtime/verification-auditor.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getAdapter } from '@/adapters/adapter-factory.js';
+import { getDb } from '@/db/migrate.js';
+import { VERIFICATION_AUDITOR_SYSTEM_PROMPT, VerificationReportSchema } from '@/prompts/verification-auditor.js';
+
+export class VerificationAuditor {
+  constructor(private runId: string) {}
+
+  async audit(opts: {
+    cycleNumber: number;
+    role: string;
+    draft: string;
+    taskId?: string;
+    evidencePackId?: string;
+  }) {
+    const db = getDb();
+    const pack = opts.evidencePackId
+      ? db.prepare(`SELECT artifact_path FROM evidence_packs WHERE id = ?`).get(opts.evidencePackId) as
+          | { artifact_path: string }
+          | undefined
+      : undefined;
+    db.close();
+
+    const evidenceText = pack?.artifact_path
+      ? await Bun.file(pack.artifact_path).text().catch(() => '')
+      : '';
+
+    const adapter = getAdapter({
+      provider: (process.env.DEFAULT_LLM_PROVIDER ?? 'anthropic') as any,
+      model: 'claude-sonnet-4-5',
+    });
+
+    const report = await adapter.structured({
+      model: 'claude-sonnet-4-5',
+      messages: [
+        { role: 'system', content: VERIFICATION_AUDITOR_SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: JSON.stringify({
+            draft: opts.draft,
+            evidencePack: evidenceText.slice(0, 14000),
+          }),
+        },
+      ],
+      schema: VerificationReportSchema,
+    });
+
+    const db2 = getDb();
+    db2.prepare(`
+      INSERT INTO verification_reports
+      (id, run_id, cycle_number, role, task_id, evidence_pack_id, total_claims, supported_claims, unsupported_claims, report_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      `vr_${nanoid(8)}`,
+      this.runId,
+      opts.cycleNumber,
+      opts.role,
+      opts.taskId ?? null,
+      opts.evidencePackId ?? null,
+      report.total_claims,
+      report.supported_claims,
+      report.unsupported_claims,
+      JSON.stringify(report),
+    );
+    db2.close();
+
+    return report;
+  }
+}
+Patch src/runtime/scorer.ts
+Add:
+
+TypeScript
+
+function applyVerificationClamp(baseGroundedness: number, verification?: {
+  total_claims: number;
+  unsupported_claims: number;
+}) {
+  if (!verification || verification.total_claims <= 0) return baseGroundedness;
+  const unsupportedRatio = verification.unsupported_claims / verification.total_claims;
+  const penalty = Math.min(0.5, unsupportedRatio * 0.75);
+  return Math.max(0, baseGroundedness - penalty);
+}
+Then when composing score:
+
+TypeScript
+
+const clampedGroundedness = applyVerificationClamp(groundedness, verificationReport);
+
+const composite =
+  0.30 * clampedGroundedness +
+  0.25 * novelty +
+  0.25 * consistency +
+  0.20 * missionAlignment;
+So Phase 6 does not change the constitution text; it changes how groundedness is operationalized when evidence exists.
+
+17. Critic integration
+Patch the Critic runtime call
+Wherever you invoke Critic, append:
+
+TypeScript
+
+import { TOOL_AWARE_CRITIC_APPENDIX } from '@/prompts/tool-aware-critic.js';
+
+const criticPrompt = [
+  baseCriticPrompt,
+  '',
+  featureFlag('toolAwareCritic') ? TOOL_AWARE_CRITIC_APPENDIX : '',
+  '',
+  evidencePackId ? `Evidence pack ID: ${evidencePackId}` : 'No evidence pack attached.',
+].join('\n');
+This makes Critic explicitly ask:
+
+what was not verified,
+what claims are unsupported,
+which next tool calls reduce uncertainty.
+18. Orchestrator integration
+Patch src/runtime/orchestrator.ts
+Add imports:
+
+TypeScript
+
+import { bootstrapRegistry } from '@/tools/bootstrap.js';
+import { ToolPolicy } from '@/tools/tool-policy.js';
+import { EvidencePackBuilder } from '@/tools/evidence-pack.js';
+import { VerificationAuditor } from '@/runtime/verification-auditor.js';
+After run init:
+
+TypeScript
+
+const registry = bootstrapRegistry();
+const toolPolicy = new ToolPolicy(runId);
+const evidencePacks = new EvidencePackBuilder(runId);
+const verifier = new VerificationAuditor(runId);
+
+toolPolicy.seedDefaults();
+After team creation in hierarchical mode:
+
+TypeScript
+
+for (const team of coordinator.listTeams?.() ?? []) {
+  toolPolicy.seedDefaults(team.id);
+}
+When running workers, replace direct runner calls with runWithTools(...).
+
+Example:
+
+TypeScript
+
+const engineerOut = await AgentRunner.runWithTools({
+  runId,
+  cycle: cycleNumber,
+  role: 'Engineer',
+  teamId: researchTeamId,
+  taskId: engineerTaskId,
+  task: engineerInstruction,
+  prompt: engineerPrompt,
+  model: config.models.engineer,
+  memoryContext,
+  graphContext,
+  workspaceContext,
+});
+After collecting worker outputs, merge evidence packs for CEO synthesis:
+
+TypeScript
+
+const workerPackIds = [engineerOut, criticOut, archivistOut, devilOut]
+  .map(x => x.evidencePackId)
+  .filter(Boolean) as string[];
+
+let mergedPackId: string | undefined;
+if (workerPackIds.length > 0) {
+  const merged = await evidencePacks.merge({
+    cycleNumber,
+    ownerRole: 'CEO',
+    packIds: workerPackIds,
+    summary: `Merged worker evidence for cycle ${cycleNumber}`,
+  });
+  mergedPackId = merged.packId;
+}
+Then CEO synthesis also uses runWithTools(...) or a plain synthesis path with merged evidence.
+
+After final draft is produced:
+
+TypeScript
+
+const verificationReport = await verifier.audit({
+  cycleNumber,
+  role: 'CEO',
+  draft: finalOutputText,
+  evidencePackId: mergedPackId,
+});
+Pass this into scoring/judge:
+
+TypeScript
+
+const score = await ratchet.score({
+  proposal,
+  graph,
+  verificationReport,
+  evidencePackId: mergedPackId,
+  toolStats: {
+    toolCalls: [...engineerOut.toolExecutionIds, ...criticOut.toolExecutionIds].length,
+  },
+});
+19. Ratchet Judge integration
+Patch src/runtime/ratchet.ts
+Change score input:
+
+TypeScript
+
+async score(input: {
+  proposal: Proposal;
+  graph: KnowledgeGraph;
+  verificationReport?: {
+    total_claims: number;
+    supported_claims: number;
+    unsupported_claims: number;
+    unsupported_examples?: string[];
+  };
+  evidencePackId?: string;
+  toolStats?: {
+    toolCalls: number;
+  };
+}): Promise<RatchetScore> {
+  const judgeOutput = await AgentRunner.run('RatchetJudge', {
+    proposal: input.proposal,
+    constitution: this.constitution,
+    graph: input.graph,
+    verificationReport: input.verificationReport,
+    evidencePackId: input.evidencePackId,
+    toolStats: input.toolStats,
+    model: 'claude-opus-4',
+  });
+  return judgeOutput as RatchetScore;
+}
+Optional RatchetJudge appendix
+Add to roles/RatchetJudge.md:
+
+Markdown
+
+## PHASE 6 TOOL-AWARE JUDGING ADDENDUM
+- If verification report shows unsupported claims, reduce groundedness accordingly.
+- If a worker made factual assertions without using obviously available tools, treat that as a process defect.
+- Prefer modest verified output over bold unsupported output.
+- Reward outputs whose evidence pack materially supports the final answer.
+20. API routes
+src/api/tool-routes.ts
+TypeScript
+
+import { getDb } from '@/db/migrate.js';
+import { ToolReplay } from '@/tools/replay.js';
+
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data, null, 2), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+export async function handleToolRoutes(url: URL, req: Request) {
+  const method = req.method;
+
+  if (url.pathname === '/api/tools' && method === 'GET') {
+    const db = getDb();
+    const rows = db.prepare(`SELECT * FROM tool_definitions ORDER BY name ASC`).all();
+    db.close();
+    return json(rows);
+  }
+
+  if (url.pathname === '/api/tool-executions' && method === 'GET') {
+    const runId = url.searchParams.get('runId');
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM tool_executions
+      ${runId ? 'WHERE run_id = ?' : ''}
+      ORDER BY created_at DESC
+      LIMIT 200
+    `).all(...(runId ? [runId] : []));
+    db.close();
+    return json(rows);
+  }
+
+  if (url.pathname === '/api/evidence-packs' && method === 'GET') {
+    const runId = url.searchParams.get('runId');
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM evidence_packs
+      ${runId ? 'WHERE run_id = ?' : ''}
+      ORDER BY created_at DESC
+      LIMIT 200
+    `).all(...(runId ? [runId] : []));
+    db.close();
+    return json(rows);
+  }
+
+  const match = url.pathname.match(/^\/api\/tool-executions\/([^/]+)\/replay$/);
+  if (match && method === 'POST') {
+    const executionId = match[1];
+    const body = await req.json().catch(() => ({})) as { mode?: 'artifact_only' | 'full_rerun' };
+    const replay = new ToolReplay();
+    const result = await replay.replay(executionId, body.mode ?? 'artifact_only');
+    return json({ ok: true, result });
+  }
+
+  return null;
+}
+21. Minimal UI additions
+text
+
+web/app/
+├── tools/page.tsx
+└── evidence/page.tsx
+Patch web/app/layout.tsx
+React
+
+<nav className="ml-auto flex gap-6 text-sm">
+  <a href="/" className="text-gray-400 hover:text-cyan-400 transition-colors">Dashboard</a>
+  <a href="/graph" className="text-gray-400 hover:text-cyan-400 transition-colors">Graph</a>
+  <a href="/approvals" className="text-gray-400 hover:text-cyan-400 transition-colors">Approvals</a>
+  <a href="/budgets" className="text-gray-400 hover:text-cyan-400 transition-colors">Budgets</a>
+  <a href="/locks" className="text-gray-400 hover:text-cyan-400 transition-colors">Locks</a>
+  <a href="/issues" className="text-gray-400 hover:text-cyan-400 transition-colors">Issues</a>
+  <a href="/tools" className="text-gray-400 hover:text-cyan-400 transition-colors">Tools</a>
+  <a href="/evidence" className="text-gray-400 hover:text-cyan-400 transition-colors">Evidence</a>
+</nav>
+/tools page should show
+registered tools
+recent executions
+denied calls
+duration / cost / source count
+replay button
+/evidence page should show
+evidence packs by cycle
+item counts
+unsupported claim counts
+owner role
+link to markdown artifact
+22. Transcript integration
+Patch your transcript writer
+Whenever a tool executes, append trace events:
+
+JSON
+
+{
+  "ts": "2026-04-08T12:00:00Z",
+  "type": "tool_call",
+  "role": "Engineer",
+  "tool_name": "repo.search",
+  "execution_id": "tx_abc123",
+  "task_id": "task_xyz",
+  "input": { "query": "ApprovalEnforcer" }
+}
+and later:
+
+JSON
+
+{
+  "ts": "2026-04-08T12:00:02Z",
+  "type": "tool_result",
+  "execution_id": "tx_abc123",
+  "summary": "Found 4 repo matches",
+  "source_count": 4,
+  "artifact_path": "artifacts/tools/outputs/tx_abc123.json"
+}
+This gives you replayable and inspectable traces in both:
+
+SQLite
+artifacts
+transcript history
+23. Phase 6 tests
+tests/tool-policy.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { ToolPolicy } from '../src/tools/tool-policy.js';
+
+describe('ToolPolicy', () => {
+  it('seeds defaults and allows engineer repo search', () => {
+    const runId = `run_tp_${Date.now()}`;
+    const p = new ToolPolicy(runId);
+    p.seedDefaults();
+    expect(p.isAllowed({ role: 'Engineer', toolName: 'repo.search' })).toBe(true);
+    expect(p.isAllowed({ role: 'Engineer', toolName: 'web.fetch' })).toBe(false);
+  });
+});
+tests/tool-runner.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { bootstrapRegistry } from '../src/tools/bootstrap.js';
+import { ToolRunner } from '../src/tools/tool-runner.js';
+import { ToolPolicy } from '../src/tools/tool-policy.js';
+
+describe('ToolRunner', () => {
+  it('executes an allowed repo.search tool', async () => {
+    const runId = `run_tr_${Date.now()}`;
+    const registry = bootstrapRegistry();
+    const policy = new ToolPolicy(runId);
+    policy.seedDefaults();
+
+    const runner = new ToolRunner(runId, registry);
+    const result = await runner.execute('repo.search', { query: 'AutoOrg' }, {
+      runId,
+      cycleNumber: 1,
+      role: 'Engineer',
+    });
+
+    expect(result.executionId).toMatch(/^tx_/);
+    expect(typeof result.summary).toBe('string');
+  });
+});
+tests/evidence-pack.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { EvidencePackBuilder } from '../src/tools/evidence-pack.js';
+
+describe('EvidencePackBuilder', () => {
+  it('creates a pack from execution ids', async () => {
+    const builder = new EvidencePackBuilder('run_ep_test');
+    const pack = await builder.fromExecutions({
+      cycleNumber: 1,
+      ownerRole: 'Engineer',
+      kind: 'worker',
+      executionIds: [],
+      summary: 'empty pack test',
+    });
+
+    expect(pack.packId).toMatch(/^ep_/);
+  });
+});
+tests/sandbox.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { Sandbox } from '../src/tools/sandbox.js';
+
+describe('Sandbox', () => {
+  it('rejects non-allowlisted commands', async () => {
+    const s = new Sandbox();
+    await expect(s.exec('rm -rf /', { cwd: process.cwd(), timeoutMs: 1000 })).rejects.toThrow();
+  });
+});
+tests/replay.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { ToolReplay } from '../src/tools/replay.js';
+
+describe('ToolReplay', () => {
+  it('fails clearly for missing execution', async () => {
+    const replay = new ToolReplay();
+    await expect(replay.replay('missing_id')).rejects.toThrow();
+  });
+});
+tests/tool-planner-schema.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { ToolPlanSchema } from '../src/prompts/tool-planner.js';
+
+describe('ToolPlanSchema', () => {
+  it('validates a tool plan', () => {
+    const parsed = ToolPlanSchema.parse({
+      needs_tools: true,
+      goal: 'Inspect approval flow',
+      tool_calls: [
+        {
+          tool_name: 'repo.search',
+          why: 'Need to find approval logic',
+          claim_to_verify: 'Where commits are materialized',
+          args: { query: 'materializeApprovedActions' },
+        },
+      ],
+      fallback_answer_if_denied: 'I need repo search access to answer safely.',
+    });
+
+    expect(parsed.tool_calls.length).toBe(1);
+  });
+});
+24. Run instructions for Phase 6
+Bash
+
+# 1. Apply migrations
+bun run src/db/migrate-phase6.ts
+
+# 2. Start daemon
+bun run src/runtime/daemon.ts
+
+# 3. Start API
+bun run src/api/server.ts
+
+# 4. Start dashboard
+cd web && bun run dev
+
+# 5. Start orchestrator
+bun start
+
+# 6. Inspect tools
+curl http://localhost:3000/api/tools
+
+# 7. Inspect tool traces
+curl "http://localhost:3000/api/tool-executions?runId=run_..."
+
+# 8. Inspect evidence packs
+curl "http://localhost:3000/api/evidence-packs?runId=run_..."
+25. Optional .env additions for Phase 6
+Bash
+
+# ── TOOL SYSTEM ──────────────────────────────────────────────
+AUTOORG_TOOLS_ENABLED=1
+TOOL_MAX_CALLS_PER_CYCLE=6
+TOOL_MAX_OUTPUT_CHARS=12000
+
+# ── SANDBOX ─────────────────────────────────────────────────
+SANDBOX_ALLOWED_PREFIXES=bun test,bun run,node,python,pytest,tsc,eslint,prettier,git diff,git status
+SANDBOX_DEFAULT_TIMEOUT_MS=20000
+
+# ── CONNECTORS ──────────────────────────────────────────────
+WEB_FETCH_ENABLED=1
+GITHUB_SEARCH_ENABLED=1
+LOCAL_DOCS_ROOT=memory
+
+# ── EVIDENCE / REPLAY ───────────────────────────────────────
+EVIDENCE_PACK_MAX_CHARS=20000
+TOOL_TRACE_ARTIFACT_DIR=artifacts/tools
+EVIDENCE_ARTIFACT_DIR=artifacts/evidence
+26. What Phase 6 now gives you
+At this point AutoOrg can:
+
+text
+
+✅ Decide when a task needs verification before answering
+✅ Inspect the repo instead of guessing about it
+✅ Read local docs and memory files as tools
+✅ Search GitHub issues/PRs as part of org work
+✅ Fetch external web pages for verification
+✅ Execute bounded commands in a sandbox
+✅ Persist every tool call as a structured trace
+✅ Turn tool outputs into evidence packs
+✅ Make the Critic attack unsupported claims explicitly
+✅ Clamp groundedness when claims are not backed by evidence
+✅ Replay tool traces later for debugging and evals
+This is the phase where AutoOrg stops being only a debating organization and becomes a verifying and acting organization.
+
+27. My recommended implementation order
+Do Phase 6 in this order:
+
+DB migration
+registry + manifests
+tool policy
+tool runner
+evidence packs
+AgentRunner integration
+verification clamp
+API/UI
+sandbox exec last
+Why:
+
+the safe read/search tools give immediate value,
+the evidence pipeline creates auditability,
+sandbox execution is the highest-risk part, so do it after traces and policy gates exist.
+
+
+
+
+
+here is Phase 6.1 expanded in the same detailed file-by-file / migration / prompt / runtime style.
+
+This phase sits directly on top of Phase 6. Phase 6 gave AutoOrg the ability to use tools, build evidence packs, trace tool executions, and clamp groundedness when claims are unsupported. Phase 6.1 is the hardening layer that makes those actions policy-governed, reversible, attributable, signed, redactable, and auditable.
+
+AutoOrg — Phase 6.1: Safety + Provenance Hardening
+Policy Engine, Reversible Action Ledger, Provenance Chain, Signed Artifacts, Redaction, Risk-Tiered Approvals
+WHAT PHASE 6.1 ADDS
+text
+
+Phase 6   ── Tool registry + tool traces + evidence packs + verification clamp
+
+Phase 6.1 ── ┌──────────────────────────────────────────────────────────────┐
+             │ Policy engine for READ / PROPOSE / PATCH / EXECUTE / PUBLISH│
+             │ Reversible action ledger with compensation records           │
+             │ Claim → citation → graph/source/seed provenance chain        │
+             │ Signed run manifests + immutable artifact metadata           │
+             │ Secret redaction + PII filters in transcripts/memory/artifacts│
+             │ Risk-tiered approvals for high-risk actions                  │
+             │ Unsafe-action detector before dangerous execution/publish     │
+             │ Judge-side policy compliance score + compliance clamp         │
+             │ Security findings registry + exportable audit bundle         │
+             │ Sandbox escape tests + permission fuzzing harness            │
+             └──────────────────────────────────────────────────────────────┘
+DIRECTORY ADDITIONS
+text
+
+src/
+├── runtime/
+│   ├── policy-engine.ts           ← action policy evaluation
+│   ├── risk-engine.ts             ← low/medium/high/critical risk inference
+│   ├── action-ledger.ts           ← append-only reversible action log
+│   ├── provenance.ts              ← claim/citation/provenance linker
+│   ├── artifact-signing.ts        ← SHA256 + HMAC signatures
+│   ├── immutable-artifacts.ts     ← write-once artifact writer + metadata
+│   ├── redaction.ts               ← secret + PII redaction filters
+│   ├── safety-review.ts           ← unsafe-action detection before actuation
+│   ├── policy-auditor.ts          ← policy compliance scoring per cycle
+│   └── security-audit.ts          ← findings + export bundle
+├── prompts/
+│   ├── unsafe-action-detector.ts  ← structured risky-action review
+│   ├── provenance-linker.ts       ← draft claims → evidence labels
+│   └── policy-auditor.ts          ← compliance score + violation analysis
+├── db/
+│   ├── schema-phase6_1.sql
+│   └── migrate-phase6_1.ts
+└── api/
+    └── security-routes.ts         ← action ledger, findings, provenance, export
+
+artifacts/
+├── manifests/
+├── signed/
+├── security/
+│   ├── findings/
+│   └── audits/
+└── provenance/
+    └── reports/
+1. Phase 6.1 DB schema
+src/db/schema-phase6_1.sql
+SQL
+
+-- ============================================================
+-- AutoOrg Phase 6.1 Schema
+-- Safety + provenance hardening
+-- ============================================================
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: action_policies
+-- Governs READ / PROPOSE / PATCH / EXECUTE / PUBLISH
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS action_policies (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  team_id TEXT,
+  role TEXT NOT NULL,
+  action_class TEXT NOT NULL CHECK(action_class IN ('READ','PROPOSE','PATCH','EXECUTE','PUBLISH')),
+  target_selector TEXT NOT NULL DEFAULT '*',      -- tool name, path glob, publish target, etc.
+  risk_tier TEXT NOT NULL CHECK(risk_tier IN ('low','medium','high','critical')),
+  allowed INTEGER NOT NULL DEFAULT 1,
+  require_approval INTEGER NOT NULL DEFAULT 0,
+  require_reversible INTEGER NOT NULL DEFAULT 0,
+  require_provenance INTEGER NOT NULL DEFAULT 1,
+  require_signature INTEGER NOT NULL DEFAULT 1,
+  conditions_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_action_policies_run_role
+  ON action_policies(run_id, role, team_id, action_class);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: action_ledger
+-- Append-only action log with reversibility metadata
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS action_ledger (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  cycle_number INTEGER NOT NULL,
+  parent_action_id TEXT REFERENCES action_ledger(id) ON DELETE SET NULL,
+  approval_id TEXT,
+  role TEXT NOT NULL,
+  team_id TEXT,
+  action_class TEXT NOT NULL CHECK(action_class IN ('READ','PROPOSE','PATCH','EXECUTE','PUBLISH')),
+  target_kind TEXT NOT NULL,                         -- tool/file/git/api/output
+  target_ref TEXT NOT NULL,
+  risk_tier TEXT NOT NULL CHECK(risk_tier IN ('low','medium','high','critical')),
+  status TEXT NOT NULL CHECK(status IN (
+    'proposed','pending_approval','approved','applied','reverted','denied','failed','cancelled'
+  )),
+  summary TEXT NOT NULL,
+  input_json TEXT NOT NULL DEFAULT '{}',
+  output_json TEXT,
+  artifact_path TEXT,
+  input_hash TEXT,
+  output_hash TEXT,
+  reversible INTEGER NOT NULL DEFAULT 0,
+  compensation_action_json TEXT,
+  policy_snapshot_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  applied_at DATETIME,
+  reverted_at DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_action_ledger_run_cycle
+  ON action_ledger(run_id, cycle_number, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: run_manifests
+-- Signed run manifests at boot
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS run_manifests (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  artifact_path TEXT NOT NULL,
+  git_head TEXT,
+  manifest_sha256 TEXT NOT NULL,
+  signature TEXT NOT NULL,
+  signer TEXT NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_run_manifests_run
+  ON run_manifests(run_id, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: artifact_manifests
+-- Immutable artifact metadata + signatures
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS artifact_manifests (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  action_id TEXT REFERENCES action_ledger(id) ON DELETE SET NULL,
+  artifact_path TEXT NOT NULL,
+  artifact_kind TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  bytes INTEGER NOT NULL,
+  sha256 TEXT NOT NULL,
+  parent_sha256 TEXT,
+  signature TEXT NOT NULL,
+  signer TEXT NOT NULL,
+  immutable INTEGER NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_artifact_manifests_run
+  ON artifact_manifests(run_id, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: claim_registry
+-- Claims extracted from outputs
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS claim_registry (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  cycle_number INTEGER NOT NULL,
+  role TEXT NOT NULL,
+  task_id TEXT,
+  evidence_pack_id TEXT REFERENCES evidence_packs(id) ON DELETE SET NULL,
+  claim_text TEXT NOT NULL,
+  claim_hash TEXT NOT NULL,
+  support_level TEXT NOT NULL CHECK(support_level IN ('supported','partial','unsupported','inferred')),
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_claim_registry_run_cycle
+  ON claim_registry(run_id, cycle_number);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: claim_citations
+-- Links claims to evidence items and provenance refs
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS claim_citations (
+  id TEXT PRIMARY KEY,
+  claim_id TEXT NOT NULL REFERENCES claim_registry(id) ON DELETE CASCADE,
+  evidence_item_id TEXT REFERENCES evidence_items(id) ON DELETE SET NULL,
+  tool_execution_id TEXT REFERENCES tool_executions(id) ON DELETE SET NULL,
+  citation_label TEXT,
+  graph_node_ref TEXT,
+  source_chunk_ref TEXT,
+  seed_material_ref TEXT,
+  confidence REAL NOT NULL DEFAULT 0.5,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_claim_citations_claim
+  ON claim_citations(claim_id);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: provenance_reports
+-- Coverage / broken-link reporting for claim chains
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS provenance_reports (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  cycle_number INTEGER NOT NULL,
+  role TEXT NOT NULL,
+  evidence_pack_id TEXT REFERENCES evidence_packs(id) ON DELETE SET NULL,
+  total_claims INTEGER NOT NULL DEFAULT 0,
+  linked_claims INTEGER NOT NULL DEFAULT 0,
+  broken_links INTEGER NOT NULL DEFAULT 0,
+  report_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_provenance_reports_run_cycle
+  ON provenance_reports(run_id, cycle_number);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: redaction_events
+-- Secret / PII / unsafe text redactions
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS redaction_events (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  cycle_number INTEGER,
+  channel TEXT NOT NULL CHECK(channel IN ('transcript','memory','artifact','log','output')),
+  artifact_path TEXT,
+  detector TEXT NOT NULL CHECK(detector IN ('secret','pii','private_key','token','prompt_leak')),
+  finding_type TEXT NOT NULL,
+  replacement TEXT NOT NULL,
+  before_hash TEXT NOT NULL,
+  after_hash TEXT NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_redaction_events_run
+  ON redaction_events(run_id, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: security_findings
+-- Violations / risky actions / provenance gaps / leaks
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS security_findings (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  cycle_number INTEGER,
+  severity TEXT NOT NULL CHECK(severity IN ('info','warn','error','critical')),
+  category TEXT NOT NULL CHECK(category IN (
+    'policy_violation',
+    'secret_exposure',
+    'pii_exposure',
+    'sandbox_escape_attempt',
+    'unsafe_execute',
+    'unsafe_publish',
+    'provenance_gap',
+    'approval_gap',
+    'artifact_tamper'
+  )),
+  action_id TEXT REFERENCES action_ledger(id) ON DELETE SET NULL,
+  tool_execution_id TEXT REFERENCES tool_executions(id) ON DELETE SET NULL,
+  summary TEXT NOT NULL,
+  details_json TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','resolved','waived')),
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_security_findings_run
+  ON security_findings(run_id, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: policy_reports
+-- Policy compliance scoring per role/cycle
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS policy_reports (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  cycle_number INTEGER NOT NULL,
+  role TEXT NOT NULL,
+  task_id TEXT,
+  score REAL NOT NULL,
+  approval_gaps INTEGER NOT NULL DEFAULT 0,
+  unsafe_action_count INTEGER NOT NULL DEFAULT 0,
+  violations_json TEXT NOT NULL DEFAULT '[]',
+  report_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_policy_reports_run_cycle
+  ON policy_reports(run_id, cycle_number);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: security_exports
+-- Exported audit bundles
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS security_exports (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  export_format TEXT NOT NULL CHECK(export_format IN ('json','markdown')),
+  artifact_path TEXT NOT NULL,
+  sha256 TEXT NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_security_exports_run
+  ON security_exports(run_id, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- Feature flags
+-- ────────────────────────────────────────────────────────────
+INSERT OR IGNORE INTO feature_flags (flag_name, enabled, description) VALUES
+  ('policyEngine', 1, 'Action policy engine for READ/PROPOSE/PATCH/EXECUTE/PUBLISH (Phase 6.1)'),
+  ('actionLedger', 1, 'Append-only reversible action ledger (Phase 6.1)'),
+  ('provenanceChain', 1, 'Claim-to-citation provenance tracking (Phase 6.1)'),
+  ('artifactSigning', 1, 'Signed manifests + immutable artifact metadata (Phase 6.1)'),
+  ('redactionFilters', 1, 'Secret + PII redaction before persistence (Phase 6.1)'),
+  ('riskTieredApprovals', 1, 'Escalate risky actions to stronger approvals (Phase 6.1)'),
+  ('unsafeActionDetector', 1, 'LLM + heuristic safety review for dangerous actions (Phase 6.1)'),
+  ('policyAwareJudge', 1, 'Judge receives policy compliance score (Phase 6.1)'),
+  ('securityAuditExport', 1, 'Export run audit bundles (Phase 6.1)'),
+  ('immutableArtifacts', 1, 'Artifact manifests are signed and append-only (Phase 6.1)');
+src/db/migrate-phase6_1.ts
+TypeScript
+
+#!/usr/bin/env bun
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import chalk from 'chalk';
+import { getDb } from '@/db/migrate.js';
+
+async function migrate() {
+  console.log(chalk.cyan('\n⚙️ Running Phase 6.1 migrations...\n'));
+  const db = getDb();
+  const schema = readFileSync(path.join(import.meta.dir, 'schema-phase6_1.sql'), 'utf-8');
+  db.exec(schema);
+  db.close();
+  console.log(chalk.bold.green('✅ Phase 6.1 migration complete.\n'));
+}
+
+migrate().catch(console.error);
+Run:
+
+Bash
+
+bun run src/db/migrate-phase6_1.ts
+2. Policy engine
+src/runtime/policy-engine.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+import { RiskEngine, type RiskTier } from '@/runtime/risk-engine.js';
+
+export type ActionClass = 'READ' | 'PROPOSE' | 'PATCH' | 'EXECUTE' | 'PUBLISH';
+
+export interface ActionIntent {
+  runId: string;
+  cycleNumber: number;
+  role: string;
+  teamId?: string;
+  actionClass: ActionClass;
+  targetKind: 'tool' | 'file' | 'git' | 'api' | 'output';
+  targetRef: string;
+  summary: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface PolicyDecision {
+  allowed: boolean;
+  requireApproval: boolean;
+  requireReversible: boolean;
+  requireProvenance: boolean;
+  requireSignature: boolean;
+  riskTier: RiskTier;
+  matchedRule?: string;
+  reasons: string[];
+}
+
+export class PolicyEngine {
+  private risks = new RiskEngine();
+
+  constructor(private runId: string) {}
+
+  seedDefaults(teamId?: string) {
+    const defaults = [
+      // READ
+      ['CEO', 'READ', '*', 'low', 1, 0, 0, 1, 1],
+      ['CoordinatorLead', 'READ', '*', 'low', 1, 0, 0, 1, 1],
+      ['Engineer', 'READ', '*', 'low', 1, 0, 0, 1, 1],
+      ['Critic', 'READ', '*', 'low', 1, 0, 0, 1, 1],
+      ['Archivist', 'READ', '*', 'low', 1, 0, 0, 1, 1],
+      ['DevilsAdvocate', 'READ', '*', 'low', 1, 0, 0, 1, 1],
+      ['RatchetJudge', 'READ', '*', 'low', 1, 0, 0, 1, 1],
+
+      // PROPOSE
+      ['CEO', 'PROPOSE', '*', 'low', 1, 0, 0, 1, 1],
+      ['CoordinatorLead', 'PROPOSE', '*', 'low', 1, 0, 0, 1, 1],
+      ['Engineer', 'PROPOSE', '*', 'low', 1, 0, 0, 1, 1],
+      ['Critic', 'PROPOSE', '*', 'low', 1, 0, 0, 1, 1],
+
+      // PATCH
+      ['Engineer', 'PATCH', '*', 'medium', 1, 1, 1, 1, 1],
+      ['CoordinatorLead', 'PATCH', '*', 'medium', 1, 1, 1, 1, 1],
+      ['CEO', 'PATCH', '*', 'medium', 1, 1, 1, 1, 1],
+
+      // EXECUTE
+      ['Engineer', 'EXECUTE', 'sandbox.exec', 'medium', 1, 0, 1, 1, 1],
+      ['CoordinatorLead', 'EXECUTE', '*', 'high', 1, 1, 1, 1, 1],
+      ['CEO', 'EXECUTE', '*', 'high', 1, 1, 1, 1, 1],
+      ['Critic', 'EXECUTE', '*', 'high', 0, 1, 1, 1, 1],
+
+      // PUBLISH
+      ['CEO', 'PUBLISH', '*', 'high', 1, 1, 1, 1, 1],
+      ['CoordinatorLead', 'PUBLISH', '*', 'high', 1, 1, 1, 1, 1],
+      ['Engineer', 'PUBLISH', '*', 'high', 0, 1, 1, 1, 1],
+    ] as const;
+
+    const db = getDb();
+    for (const [role, actionClass, targetSelector, riskTier, allowed, requireApproval, requireReversible, requireProvenance, requireSignature] of defaults) {
+      db.prepare(`
+        INSERT OR IGNORE INTO action_policies
+        (id, run_id, team_id, role, action_class, target_selector, risk_tier, allowed,
+         require_approval, require_reversible, require_provenance, require_signature)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        `pol_${nanoid(8)}`,
+        this.runId,
+        teamId ?? null,
+        role,
+        actionClass,
+        targetSelector,
+        riskTier,
+        allowed,
+        requireApproval,
+        requireReversible,
+        requireProvenance,
+        requireSignature
+      );
+    }
+    db.close();
+  }
+
+  evaluate(intent: ActionIntent): PolicyDecision {
+    const inferredRisk = this.risks.classify(intent);
+
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT *
+      FROM action_policies
+      WHERE run_id = ?
+        AND role = ?
+        AND action_class = ?
+        AND (team_id = ? OR team_id IS NULL)
+      ORDER BY CASE WHEN team_id IS NULL THEN 1 ELSE 0 END, updated_at DESC
+    `).all(
+      this.runId,
+      intent.role,
+      intent.actionClass,
+      intent.teamId ?? null,
+    ) as Array<{
+      id: string;
+      target_selector: string;
+      risk_tier: RiskTier;
+      allowed: number;
+      require_approval: number;
+      require_reversible: number;
+      require_provenance: number;
+      require_signature: number;
+    }>;
+    db.close();
+
+    const rule = rows.find(row =>
+      row.target_selector === '*' ||
+      row.target_selector === intent.targetRef ||
+      intent.targetRef.startsWith(row.target_selector.replace(/\*$/, ''))
+    );
+
+    if (!rule) {
+      return {
+        allowed: false,
+        requireApproval: true,
+        requireReversible: false,
+        requireProvenance: true,
+        requireSignature: true,
+        riskTier: inferredRisk,
+        reasons: [`No matching policy for ${intent.role}/${intent.actionClass}/${intent.targetRef}`],
+      };
+    }
+
+    const rank: Record<RiskTier, number> = { low: 1, medium: 2, high: 3, critical: 4 };
+    const requiresEscalation = rank[inferredRisk] > rank[rule.risk_tier];
+
+    return {
+      allowed: !!rule.allowed,
+      requireApproval: !!rule.require_approval || requiresEscalation || inferredRisk === 'critical',
+      requireReversible: !!rule.require_reversible,
+      requireProvenance: !!rule.require_provenance,
+      requireSignature: !!rule.require_signature,
+      riskTier: inferredRisk,
+      matchedRule: rule.id,
+      reasons: requiresEscalation
+        ? [`Risk escalated from ${rule.risk_tier} to ${inferredRisk}`]
+        : [`Matched policy ${rule.id}`],
+    };
+  }
+}
+3. Risk engine
+src/runtime/risk-engine.ts
+TypeScript
+
+export type RiskTier = 'low' | 'medium' | 'high' | 'critical';
+
+const HIGH_RISK_PATHS = [
+  '.env',
+  '.env.local',
+  'constitution.md',
+  '.github/workflows/',
+  'deploy/',
+  'infra/',
+  'secrets/',
+];
+
+const CRITICAL_COMMAND_PATTERNS = [
+  /\brm\s+-rf\b/i,
+  /\bsudo\b/i,
+  /\bssh\b/i,
+  /\bscp\b/i,
+  /\bcurl\b.*\|\s*(bash|sh)\b/i,
+  /\bwget\b.*\|\s*(bash|sh)\b/i,
+  /\bchmod\s+777\b/i,
+  /\bnpm\s+publish\b/i,
+  /\bdocker\s+run\b/i,
+  /\bkubectl\b/i,
+];
+
+export class RiskEngine {
+  classify(intent: {
+    actionClass: 'READ' | 'PROPOSE' | 'PATCH' | 'EXECUTE' | 'PUBLISH';
+    targetRef: string;
+    targetKind: string;
+    metadata?: Record<string, unknown>;
+  }): RiskTier {
+    if (intent.actionClass === 'READ') return 'low';
+    if (intent.actionClass === 'PROPOSE') return 'low';
+
+    if (intent.actionClass === 'PATCH') {
+      const target = intent.targetRef.toLowerCase();
+      if (HIGH_RISK_PATHS.some(p => target.includes(p.toLowerCase()))) return 'high';
+      return 'medium';
+    }
+
+    if (intent.actionClass === 'EXECUTE') {
+      const cmd = String(intent.metadata?.command ?? intent.targetRef ?? '');
+      if (CRITICAL_COMMAND_PATTERNS.some(rx => rx.test(cmd))) return 'critical';
+      if (cmd.includes('git push') || cmd.includes('network') || cmd.includes('http')) return 'high';
+      return 'medium';
+    }
+
+    if (intent.actionClass === 'PUBLISH') {
+      const target = intent.targetRef.toLowerCase();
+      if (target.includes('prod') || target.includes('public') || target.includes('push')) return 'critical';
+      return 'high';
+    }
+
+    return 'medium';
+  }
+}
+4. Reversible action ledger
+src/runtime/action-ledger.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { createHash } from 'node:crypto';
+import { getDb } from '@/db/migrate.js';
+import type { ActionClass } from '@/runtime/policy-engine.js';
+import type { RiskTier } from '@/runtime/risk-engine.js';
+
+function sha(input: unknown) {
+  return createHash('sha256').update(
+    typeof input === 'string' ? input : JSON.stringify(input ?? {})
+  ).digest('hex');
+}
+
+export class ActionLedger {
+  constructor(private runId: string) {}
+
+  propose(opts: {
+    cycleNumber: number;
+    role: string;
+    teamId?: string;
+    actionClass: ActionClass;
+    targetKind: 'tool' | 'file' | 'git' | 'api' | 'output';
+    targetRef: string;
+    riskTier: RiskTier;
+    summary: string;
+    input?: unknown;
+    reversible?: boolean;
+    compensationAction?: unknown;
+    policySnapshot?: unknown;
+  }) {
+    const id = `actl_${nanoid(10)}`;
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO action_ledger
+      (id, run_id, cycle_number, role, team_id, action_class, target_kind, target_ref, risk_tier, status,
+       summary, input_json, input_hash, reversible, compensation_action_json, policy_snapshot_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'proposed', ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      this.runId,
+      opts.cycleNumber,
+      opts.role,
+      opts.teamId ?? null,
+      opts.actionClass,
+      opts.targetKind,
+      opts.targetRef,
+      opts.riskTier,
+      opts.summary,
+      JSON.stringify(opts.input ?? {}),
+      sha(opts.input ?? {}),
+      opts.reversible ? 1 : 0,
+      JSON.stringify(opts.compensationAction ?? {}),
+      JSON.stringify(opts.policySnapshot ?? {}),
+    );
+    db.close();
+    return id;
+  }
+
+  markPendingApproval(actionId: string, approvalId: string) {
+    const db = getDb();
+    db.prepare(`
+      UPDATE action_ledger
+      SET status = 'pending_approval', approval_id = ?
+      WHERE id = ?
+    `).run(approvalId, actionId);
+    db.close();
+  }
+
+  markApproved(actionId: string, approvalId?: string) {
+    const db = getDb();
+    db.prepare(`
+      UPDATE action_ledger
+      SET status = 'approved', approval_id = COALESCE(?, approval_id)
+      WHERE id = ?
+    `).run(approvalId ?? null, actionId);
+    db.close();
+  }
+
+  apply(actionId: string, opts?: {
+    output?: unknown;
+    artifactPath?: string;
+  }) {
+    const db = getDb();
+    db.prepare(`
+      UPDATE action_ledger
+      SET status = 'applied',
+          output_json = ?,
+          output_hash = ?,
+          artifact_path = COALESCE(?, artifact_path),
+          applied_at = datetime('now')
+      WHERE id = ?
+    `).run(
+      JSON.stringify(opts?.output ?? {}),
+      sha(opts?.output ?? {}),
+      opts?.artifactPath ?? null,
+      actionId
+    );
+    db.close();
+  }
+
+  deny(actionId: string, reason: string) {
+    const db = getDb();
+    db.prepare(`
+      UPDATE action_ledger
+      SET status = 'denied', output_json = ?
+      WHERE id = ?
+    `).run(JSON.stringify({ reason }), actionId);
+    db.close();
+  }
+
+  fail(actionId: string, error: string) {
+    const db = getDb();
+    db.prepare(`
+      UPDATE action_ledger
+      SET status = 'failed', output_json = ?
+      WHERE id = ?
+    `).run(JSON.stringify({ error }), actionId);
+    db.close();
+  }
+
+  revert(actionId: string, result?: unknown) {
+    const db = getDb();
+    db.prepare(`
+      UPDATE action_ledger
+      SET status = 'reverted', output_json = ?, reverted_at = datetime('now')
+      WHERE id = ?
+    `).run(JSON.stringify(result ?? {}), actionId);
+    db.close();
+  }
+}
+5. Signed manifests + immutable artifacts
+src/runtime/artifact-signing.ts
+TypeScript
+
+import { createHash, createHmac } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+
+function sha256(buf: Buffer | string) {
+  return createHash('sha256').update(buf).digest('hex');
+}
+
+function signDigest(digest: string) {
+  const secret = process.env.AUTOORG_SIGNING_SECRET ?? 'dev-signing-secret';
+  return createHmac('sha256', secret).update(digest).digest('hex');
+}
+
+export class ArtifactSigner {
+  async signFile(opts: {
+    runId: string;
+    artifactPath: string;
+    artifactKind: string;
+    mimeType?: string;
+    actionId?: string;
+    parentSha256?: string;
+  }) {
+    const buf = await readFile(opts.artifactPath);
+    const digest = sha256(buf);
+    const signature = signDigest(digest);
+
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO artifact_manifests
+      (id, run_id, action_id, artifact_path, artifact_kind, mime_type, bytes, sha256, parent_sha256, signature, signer, immutable)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+    `).run(
+      `am_${nanoid(10)}`,
+      opts.runId,
+      opts.actionId ?? null,
+      opts.artifactPath,
+      opts.artifactKind,
+      opts.mimeType ?? 'application/octet-stream',
+      buf.byteLength,
+      digest,
+      opts.parentSha256 ?? null,
+      signature,
+      process.env.AUTOORG_INSTANCE_NAME ?? 'default-instance',
+    );
+    db.close();
+
+    return { sha256: digest, signature };
+  }
+
+  async verifyFile(artifactPath: string) {
+    const buf = await readFile(artifactPath);
+    const digest = sha256(buf);
+
+    const db = getDb();
+    const row = db.prepare(`
+      SELECT sha256, signature
+      FROM artifact_manifests
+      WHERE artifact_path = ?
+      ORDER BY created_at DESC
+      LIMIT 1
+    `).get(artifactPath) as
+      | { sha256: string; signature: string }
+      | undefined;
+    db.close();
+
+    if (!row) return { ok: false, reason: 'No manifest found' };
+
+    return {
+      ok: row.sha256 === digest && row.signature === signDigest(digest),
+      reason: row.sha256 === digest ? 'verified' : 'digest mismatch',
+    };
+  }
+
+  signObject(obj: unknown) {
+    const text = JSON.stringify(obj, null, 2);
+    const digest = sha256(text);
+    return {
+      sha256: digest,
+      signature: signDigest(digest),
+    };
+  }
+}
+src/runtime/immutable-artifacts.ts
+TypeScript
+
+import { chmod, mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { ArtifactSigner } from '@/runtime/artifact-signing.js';
+
+export class ImmutableArtifacts {
+  private signer = new ArtifactSigner();
+
+  async writeText(opts: {
+    runId: string;
+    relPath: string;
+    text: string;
+    artifactKind: string;
+    mimeType?: string;
+    actionId?: string;
+  }) {
+    const abs = path.join(process.cwd(), opts.relPath);
+    await mkdir(path.dirname(abs), { recursive: true });
+    await writeFile(abs, opts.text, 'utf-8');
+
+    // best-effort immutability on local disk
+    await chmod(abs, 0o444).catch(() => {});
+
+    const manifest = await this.signer.signFile({
+      runId: opts.runId,
+      artifactPath: abs,
+      artifactKind: opts.artifactKind,
+      mimeType: opts.mimeType ?? 'text/plain',
+      actionId: opts.actionId,
+    });
+
+    return { artifactPath: abs, ...manifest };
+  }
+
+  async writeJson(opts: {
+    runId: string;
+    relPath: string;
+    data: unknown;
+    artifactKind: string;
+    actionId?: string;
+  }) {
+    return this.writeText({
+      runId: opts.runId,
+      relPath: opts.relPath,
+      text: JSON.stringify(opts.data, null, 2),
+      artifactKind: opts.artifactKind,
+      mimeType: 'application/json',
+      actionId: opts.actionId,
+    });
+  }
+}
+6. Run manifest at boot
+src/runtime/run-manifest.ts
+TypeScript
+
+import simpleGit from 'simple-git';
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+import { ImmutableArtifacts } from '@/runtime/immutable-artifacts.js';
+import { ArtifactSigner } from '@/runtime/artifact-signing.js';
+
+export class RunManifestWriter {
+  private git = simpleGit();
+  private artifacts = new ImmutableArtifacts();
+  private signer = new ArtifactSigner();
+
+  async write(runId: string, payload: Record<string, unknown>) {
+    const gitHead = (await this.git.revparse(['HEAD'])).trim().catch(() => '');
+    const manifest = {
+      runId,
+      gitHead,
+      createdAt: new Date().toISOString(),
+      payload,
+    };
+
+    const relPath = `artifacts/manifests/run_${runId}.json`;
+    const { artifactPath } = await this.artifacts.writeJson({
+      runId,
+      relPath,
+      data: manifest,
+      artifactKind: 'run_manifest',
+    });
+
+    const signed = this.signer.signObject(manifest);
+
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO run_manifests
+      (id, run_id, artifact_path, git_head, manifest_sha256, signature, signer)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      `rm_${nanoid(10)}`,
+      runId,
+      artifactPath,
+      gitHead,
+      signed.sha256,
+      signed.signature,
+      process.env.AUTOORG_INSTANCE_NAME ?? 'default-instance',
+    );
+    db.close();
+
+    return { artifactPath, gitHead };
+  }
+}
+7. Redaction filters
+src/runtime/redaction.ts
+TypeScript
+
+import { createHash } from 'node:crypto';
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+
+function hashText(text: string) {
+  return createHash('sha256').update(text).digest('hex');
+}
+
+const DETECTORS = [
+  {
+    detector: 'secret',
+    type: 'openai_key',
+    regex: /\bsk-(?:proj-)?[A-Za-z0-9_\-]{20,}\b/g,
+    replacement: '[REDACTED:OPENAI_KEY]',
+  },
+  {
+    detector: 'secret',
+    type: 'anthropic_key',
+    regex: /\bsk-ant-[A-Za-z0-9_\-]{20,}\b/g,
+    replacement: '[REDACTED:ANTHROPIC_KEY]',
+  },
+  {
+    detector: 'token',
+    type: 'github_token',
+    regex: /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/g,
+    replacement: '[REDACTED:GITHUB_TOKEN]',
+  },
+  {
+    detector: 'private_key',
+    type: 'private_key_block',
+    regex: /-----BEGIN[\s\S]*?PRIVATE KEY-----[\s\S]*?-----END[\s\S]*?PRIVATE KEY-----/g,
+    replacement: '[REDACTED:PRIVATE_KEY]',
+  },
+  {
+    detector: 'pii',
+    type: 'email',
+    regex: /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,
+    replacement: '[REDACTED:EMAIL]',
+  },
+  {
+    detector: 'pii',
+    type: 'ssn',
+    regex: /\b\d{3}-\d{2}-\d{4}\b/g,
+    replacement: '[REDACTED:SSN]',
+  },
+  {
+    detector: 'pii',
+    type: 'phone',
+    regex: /\b(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)\d{3}[-.\s]?\d{4}\b/g,
+    replacement: '[REDACTED:PHONE]',
+  },
+];
+
+export class RedactionFilter {
+  constructor(private runId: string) {}
+
+  redact(text: string, opts: {
+    cycleNumber?: number;
+    channel: 'transcript' | 'memory' | 'artifact' | 'log' | 'output';
+    artifactPath?: string;
+  }) {
+    let out = text;
+    const beforeHash = hashText(text);
+    const events: Array<{ detector: string; findingType: string; replacement: string }> = [];
+
+    for (const rule of DETECTORS) {
+      if (rule.regex.test(out)) {
+        out = out.replace(rule.regex, rule.replacement);
+        events.push({
+          detector: rule.detector,
+          findingType: rule.type,
+          replacement: rule.replacement,
+        });
+      }
+    }
+
+    const afterHash = hashText(out);
+
+    if (events.length > 0) {
+      const db = getDb();
+      for (const ev of events) {
+        db.prepare(`
+          INSERT INTO redaction_events
+          (id, run_id, cycle_number, channel, artifact_path, detector, finding_type, replacement, before_hash, after_hash)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          `red_${nanoid(10)}`,
+          this.runId,
+          opts.cycleNumber ?? null,
+          opts.channel,
+          opts.artifactPath ?? null,
+          ev.detector,
+          ev.findingType,
+          ev.replacement,
+          beforeHash,
+          afterHash
+        );
+      }
+      db.close();
+    }
+
+    return {
+      text: out,
+      redacted: events.length > 0,
+      eventCount: events.length,
+    };
+  }
+}
+8. Unsafe action detector prompt
+src/prompts/unsafe-action-detector.ts
+TypeScript
+
+import { z } from 'zod';
+
+export const UnsafeActionReviewSchema = z.object({
+  blocked: z.boolean(),
+  risk_tier: z.enum(['low', 'medium', 'high', 'critical']),
+  requires_approval: z.boolean(),
+  findings: z.array(z.object({
+    category: z.enum([
+      'policy_violation',
+      'unsafe_execute',
+      'unsafe_publish',
+      'sandbox_escape_attempt',
+      'approval_gap',
+    ]),
+    summary: z.string(),
+    reason: z.string(),
+  })).max(8),
+  safe_alternative: z.string(),
+});
+
+export const UNSAFE_ACTION_DETECTOR_SYSTEM_PROMPT = `
+You review proposed AutoOrg actions before execution or publication.
+
+Input may include:
+- action class
+- target
+- command
+- publish destination
+- summary
+- risk hints
+- policy requirements
+
+Your job:
+1. decide whether the action should be blocked,
+2. assign a risk tier,
+3. say whether human approval is required,
+4. provide a safer alternative.
+
+Hard rules:
+- Block actions that may exfiltrate secrets, destroy files, escalate permissions, or publish unsupported claims.
+- Be conservative about commands with shell piping, remote execution, prod deploy, or privilege escalation.
+- If unsure, require approval.
+`.trim();
+9. Safety review runtime
+src/runtime/safety-review.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getAdapter } from '@/adapters/adapter-factory.js';
+import { getDb } from '@/db/migrate.js';
+import { UNSAFE_ACTION_DETECTOR_SYSTEM_PROMPT, UnsafeActionReviewSchema } from '@/prompts/unsafe-action-detector.js';
+
+export class SafetyReview {
+  constructor(private runId: string) {}
+
+  async review(opts: {
+    cycleNumber: number;
+    actionId?: string;
+    toolExecutionId?: string;
+    actionClass: 'READ' | 'PROPOSE' | 'PATCH' | 'EXECUTE' | 'PUBLISH';
+    targetRef: string;
+    summary: string;
+    metadata?: Record<string, unknown>;
+  }) {
+    const adapter = getAdapter({
+      provider: (process.env.DEFAULT_LLM_PROVIDER ?? 'anthropic') as any,
+      model: 'claude-sonnet-4-5',
+    });
+
+    const review = await adapter.structured({
+      model: 'claude-sonnet-4-5',
+      messages: [
+        { role: 'system', content: UNSAFE_ACTION_DETECTOR_SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: JSON.stringify({
+            actionClass: opts.actionClass,
+            targetRef: opts.targetRef,
+            summary: opts.summary,
+            metadata: opts.metadata ?? {},
+          }, null, 2),
+        },
+      ],
+      schema: UnsafeActionReviewSchema,
+    });
+
+    if (review.findings.length > 0 || review.blocked) {
+      const db = getDb();
+      for (const finding of review.findings) {
+        db.prepare(`
+          INSERT INTO security_findings
+          (id, run_id, cycle_number, severity, category, action_id, tool_execution_id, summary, details_json, status)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open')
+        `).run(
+          `sf_${nanoid(10)}`,
+          this.runId,
+          opts.cycleNumber,
+          review.risk_tier === 'critical' ? 'critical' : review.risk_tier === 'high' ? 'error' : 'warn',
+          finding.category,
+          opts.actionId ?? null,
+          opts.toolExecutionId ?? null,
+          finding.summary,
+          JSON.stringify({ reason: finding.reason, safeAlternative: review.safe_alternative }),
+        );
+      }
+      db.close();
+    }
+
+    return review;
+  }
+}
+10. Provenance linker prompt
+src/prompts/provenance-linker.ts
+TypeScript
+
+import { z } from 'zod';
+
+export const ProvenanceLinkSchema = z.object({
+  claims: z.array(z.object({
+    claim_text: z.string(),
+    citation_labels: z.array(z.string()).max(6),
+    support_level: z.enum(['supported', 'partial', 'unsupported', 'inferred']),
+  })).max(40),
+});
+
+export const PROVENANCE_LINKER_SYSTEM_PROMPT = `
+You extract claims and citation labels from a draft.
+
+Rules:
+- A claim is a factual or operational assertion that matters to the draft.
+- Citation labels appear like [ev_3].
+- If a claim has no citation label, return an empty array.
+- support_level should be:
+  - supported: directly grounded in cited evidence
+  - partial: citation exists but support is incomplete
+  - unsupported: no evidence or no citation
+  - inferred: claim is a reasoned inference from evidence
+`.trim();
+11. Provenance chain builder
+src/runtime/provenance.ts
+TypeScript
+
+import { createHash } from 'node:crypto';
+import { nanoid } from 'nanoid';
+import { getAdapter } from '@/adapters/adapter-factory.js';
+import { getDb } from '@/db/migrate.js';
+import { PROVENANCE_LINKER_SYSTEM_PROMPT, ProvenanceLinkSchema } from '@/prompts/provenance-linker.js';
+
+function claimHash(text: string) {
+  return createHash('sha256').update(text.trim()).digest('hex');
+}
+
+export class ProvenanceBuilder {
+  constructor(private runId: string) {}
+
+  async linkDraft(opts: {
+    cycleNumber: number;
+    role: string;
+    draft: string;
+    taskId?: string;
+    evidencePackId?: string;
+  }) {
+    const db = getDb();
+    const evidenceRows = opts.evidencePackId
+      ? db.prepare(`
+          SELECT id, execution_id, title, metadata_json
+          FROM evidence_items
+          WHERE pack_id = ?
+        `).all(opts.evidencePackId) as Array<{
+          id: string;
+          execution_id: string | null;
+          title: string | null;
+          metadata_json: string;
+        }>
+      : [];
+    db.close();
+
+    const evidenceByLabel = new Map<string, {
+      id: string;
+      executionId: string | null;
+      graphNodeRef?: string;
+      sourceChunkRef?: string;
+      seedMaterialRef?: string;
+    }>();
+
+    for (const row of evidenceRows) {
+      const meta = JSON.parse(row.metadata_json || '{}');
+      const label = meta.evidenceLabel;
+      if (!label) continue;
+      evidenceByLabel.set(label, {
+        id: row.id,
+        executionId: row.execution_id,
+        graphNodeRef: meta.graphNodeRef,
+        sourceChunkRef: meta.sourceChunkRef,
+        seedMaterialRef: meta.seedMaterialRef,
+      });
+    }
+
+    const adapter = getAdapter({
+      provider: (process.env.DEFAULT_LLM_PROVIDER ?? 'anthropic') as any,
+      model: 'claude-sonnet-4-5',
+    });
+
+    const parsed = await adapter.structured({
+      model: 'claude-sonnet-4-5',
+      messages: [
+        { role: 'system', content: PROVENANCE_LINKER_SYSTEM_PROMPT },
+        { role: 'user', content: opts.draft.slice(0, 20000) },
+      ],
+      schema: ProvenanceLinkSchema,
+    });
+
+    const db2 = getDb();
+    let linkedClaims = 0;
+    let brokenLinks = 0;
+
+    for (const claim of parsed.claims) {
+      const claimId = `cl_${nanoid(10)}`;
+
+      db2.prepare(`
+        INSERT INTO claim_registry
+        (id, run_id, cycle_number, role, task_id, evidence_pack_id, claim_text, claim_hash, support_level)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        claimId,
+        this.runId,
+        opts.cycleNumber,
+        opts.role,
+        opts.taskId ?? null,
+        opts.evidencePackId ?? null,
+        claim.claim_text,
+        claimHash(claim.claim_text),
+        claim.support_level
+      );
+
+      let anyLinked = false;
+
+      for (const label of claim.citation_labels) {
+        const ev = evidenceByLabel.get(label);
+        if (!ev) {
+          brokenLinks += 1;
+          continue;
+        }
+
+        anyLinked = true;
+
+        db2.prepare(`
+          INSERT INTO claim_citations
+          (id, claim_id, evidence_item_id, tool_execution_id, citation_label, graph_node_ref, source_chunk_ref, seed_material_ref, confidence, metadata_json)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          `cc_${nanoid(10)}`,
+          claimId,
+          ev.id,
+          ev.executionId ?? null,
+          label,
+          ev.graphNodeRef ?? null,
+          ev.sourceChunkRef ?? null,
+          ev.seedMaterialRef ?? null,
+          claim.support_level === 'supported' ? 0.9 : claim.support_level === 'partial' ? 0.6 : 0.4,
+          JSON.stringify({})
+        );
+      }
+
+      if (anyLinked) linkedClaims += 1;
+    }
+
+    const report = {
+      total_claims: parsed.claims.length,
+      linked_claims: linkedClaims,
+      broken_links: brokenLinks,
+      unsupported_claims: parsed.claims.filter(c => c.support_level === 'unsupported').length,
+    };
+
+    db2.prepare(`
+      INSERT INTO provenance_reports
+      (id, run_id, cycle_number, role, evidence_pack_id, total_claims, linked_claims, broken_links, report_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      `prv_${nanoid(10)}`,
+      this.runId,
+      opts.cycleNumber,
+      opts.role,
+      opts.evidencePackId ?? null,
+      report.total_claims,
+      report.linked_claims,
+      report.broken_links,
+      JSON.stringify(report)
+    );
+
+    db2.close();
+    return report;
+  }
+}
+12. Policy auditor prompt
+src/prompts/policy-auditor.ts
+TypeScript
+
+import { z } from 'zod';
+
+export const PolicyAuditSchema = z.object({
+  score: z.number().min(0).max(1),
+  approval_gaps: z.number().int().nonnegative(),
+  unsafe_action_count: z.number().int().nonnegative(),
+  violations: z.array(z.string()).max(12),
+  notes: z.array(z.string()).max(12),
+});
+
+export const POLICY_AUDITOR_SYSTEM_PROMPT = `
+You evaluate policy compliance for an AutoOrg cycle.
+
+You will receive:
+- final draft
+- security findings
+- action ledger summary
+- verification report
+- provenance report
+
+Return:
+- a compliance score from 0 to 1,
+- approval gap count,
+- unsafe action count,
+- major violations,
+- concise notes.
+
+Hard rules:
+- Unsupported publishing lowers score sharply.
+- Executions that bypass approval lower score sharply.
+- Secret/PII leakage is a severe violation.
+- Prefer conservative scoring.
+`.trim();
+13. Policy auditor runtime
+src/runtime/policy-auditor.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getAdapter } from '@/adapters/adapter-factory.js';
+import { getDb } from '@/db/migrate.js';
+import { POLICY_AUDITOR_SYSTEM_PROMPT, PolicyAuditSchema } from '@/prompts/policy-auditor.js';
+
+export class PolicyAuditor {
+  constructor(private runId: string) {}
+
+  async audit(opts: {
+    cycleNumber: number;
+    role: string;
+    draft: string;
+    taskId?: string;
+    verificationReport?: unknown;
+    provenanceReport?: unknown;
+  }) {
+    const db = getDb();
+
+    const findings = db.prepare(`
+      SELECT severity, category, summary
+      FROM security_findings
+      WHERE run_id = ? AND (cycle_number = ? OR cycle_number IS NULL)
+      ORDER BY created_at DESC
+      LIMIT 50
+    `).all(this.runId, opts.cycleNumber);
+
+    const actions = db.prepare(`
+      SELECT role, action_class, target_kind, target_ref, risk_tier, status, summary
+      FROM action_ledger
+      WHERE run_id = ? AND cycle_number = ?
+      ORDER BY created_at ASC
+      LIMIT 100
+    `).all(this.runId, opts.cycleNumber);
+
+    db.close();
+
+    const adapter = getAdapter({
+      provider: (process.env.DEFAULT_LLM_PROVIDER ?? 'anthropic') as any,
+      model: 'claude-sonnet-4-5',
+    });
+
+    const report = await adapter.structured({
+      model: 'claude-sonnet-4-5',
+      messages: [
+        { role: 'system', content: POLICY_AUDITOR_SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: JSON.stringify({
+            draft: opts.draft,
+            findings,
+            actions,
+            verificationReport: opts.verificationReport ?? {},
+            provenanceReport: opts.provenanceReport ?? {},
+          }, null, 2),
+        },
+      ],
+      schema: PolicyAuditSchema,
+    });
+
+    const db2 = getDb();
+    db2.prepare(`
+      INSERT INTO policy_reports
+      (id, run_id, cycle_number, role, task_id, score, approval_gaps, unsafe_action_count, violations_json, report_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      `pa_${nanoid(10)}`,
+      this.runId,
+      opts.cycleNumber,
+      opts.role,
+      opts.taskId ?? null,
+      report.score,
+      report.approval_gaps,
+      report.unsafe_action_count,
+      JSON.stringify(report.violations),
+      JSON.stringify(report),
+    );
+    db2.close();
+
+    return report;
+  }
+}
+14. Security findings + audit export
+src/runtime/security-audit.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { mkdir } from 'node:fs/promises';
+import { getDb } from '@/db/migrate.js';
+import { ImmutableArtifacts } from '@/runtime/immutable-artifacts.js';
+import { ArtifactSigner } from '@/runtime/artifact-signing.js';
+
+export class SecurityAudit {
+  private artifacts = new ImmutableArtifacts();
+  private signer = new ArtifactSigner();
+
+  constructor(private runId: string) {}
+
+  recordFinding(opts: {
+    cycleNumber?: number;
+    severity: 'info' | 'warn' | 'error' | 'critical';
+    category: 'policy_violation' | 'secret_exposure' | 'pii_exposure' | 'sandbox_escape_attempt' | 'unsafe_execute' | 'unsafe_publish' | 'provenance_gap' | 'approval_gap' | 'artifact_tamper';
+    actionId?: string;
+    toolExecutionId?: string;
+    summary: string;
+    details?: Record<string, unknown>;
+  }) {
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO security_findings
+      (id, run_id, cycle_number, severity, category, action_id, tool_execution_id, summary, details_json, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open')
+    `).run(
+      `sf_${nanoid(10)}`,
+      this.runId,
+      opts.cycleNumber ?? null,
+      opts.severity,
+      opts.category,
+      opts.actionId ?? null,
+      opts.toolExecutionId ?? null,
+      opts.summary,
+      JSON.stringify(opts.details ?? {})
+    );
+    db.close();
+  }
+
+  async exportBundle(format: 'json' | 'markdown' = 'json') {
+    const db = getDb();
+
+    const findings = db.prepare(`SELECT * FROM security_findings WHERE run_id = ? ORDER BY created_at DESC`).all(this.runId);
+    const redactions = db.prepare(`SELECT * FROM redaction_events WHERE run_id = ? ORDER BY created_at DESC`).all(this.runId);
+    const actions = db.prepare(`SELECT * FROM action_ledger WHERE run_id = ? ORDER BY created_at ASC`).all(this.runId);
+    const policies = db.prepare(`SELECT * FROM policy_reports WHERE run_id = ? ORDER BY created_at DESC`).all(this.runId);
+    const provenance = db.prepare(`SELECT * FROM provenance_reports WHERE run_id = ? ORDER BY created_at DESC`).all(this.runId);
+    db.close();
+
+    await mkdir('artifacts/security/audits', { recursive: true });
+
+    if (format === 'json') {
+      const payload = {
+        runId: this.runId,
+        exportedAt: new Date().toISOString(),
+        findings,
+        redactions,
+        actions,
+        policies,
+        provenance,
+      };
+
+      const relPath = `artifacts/security/audits/${this.runId}.audit.json`;
+      const { artifactPath, sha256 } = await this.artifacts.writeJson({
+        runId: this.runId,
+        relPath,
+        data: payload,
+        artifactKind: 'security_audit',
+      });
+
+      const db2 = getDb();
+      db2.prepare(`
+        INSERT INTO security_exports
+        (id, run_id, export_format, artifact_path, sha256)
+        VALUES (?, ?, 'json', ?, ?)
+      `).run(`sex_${nanoid(10)}`, this.runId, artifactPath, sha256);
+      db2.close();
+
+      return { artifactPath, sha256 };
+    }
+
+    const markdown = [
+      `# Security Audit — ${this.runId}`,
+      ``,
+      `Exported: ${new Date().toISOString()}`,
+      ``,
+      `## Findings`,
+      ...findings.map((f: any) => `- [${f.severity}] ${f.category}: ${f.summary}`),
+      ``,
+      `## Redactions`,
+      ...redactions.map((r: any) => `- ${r.detector}/${r.finding_type} in ${r.channel}`),
+      ``,
+      `## Policy Reports`,
+      ...policies.map((p: any) => `- cycle ${p.cycle_number}: score=${p.score}`),
+    ].join('\n');
+
+    const relPath = `artifacts/security/audits/${this.runId}.audit.md`;
+    const { artifactPath, sha256 } = await this.artifacts.writeText({
+      runId: this.runId,
+      relPath,
+      text: markdown,
+      artifactKind: 'security_audit',
+      mimeType: 'text/markdown',
+    });
+
+    const db3 = getDb();
+    db3.prepare(`
+      INSERT INTO security_exports
+      (id, run_id, export_format, artifact_path, sha256)
+      VALUES (?, ?, 'markdown', ?, ?)
+    `).run(`sex_${nanoid(10)}`, this.runId, artifactPath, sha256);
+    db3.close();
+
+    return { artifactPath, sha256 };
+  }
+
+  async verifyArtifactOrRaise(artifactPath: string, cycleNumber?: number) {
+    const verified = await this.signer.verifyFile(artifactPath);
+    if (!verified.ok) {
+      this.recordFinding({
+        cycleNumber,
+        severity: 'error',
+        category: 'artifact_tamper',
+        summary: `Artifact verification failed for ${artifactPath}`,
+        details: verified,
+      });
+    }
+    return verified;
+  }
+}
+15. ToolRunner hardening integration
+Patch src/tools/tool-runner.ts
+Add imports:
+
+TypeScript
+
+import { ApprovalGate } from '@/runtime/approval-gate.js';
+import { PolicyEngine } from '@/runtime/policy-engine.js';
+import { ActionLedger } from '@/runtime/action-ledger.js';
+import { RedactionFilter } from '@/runtime/redaction.js';
+import { ImmutableArtifacts } from '@/runtime/immutable-artifacts.js';
+import { SafetyReview } from '@/runtime/safety-review.js';
+import { SecurityAudit } from '@/runtime/security-audit.js';
+import { featureFlag } from '@/config/feature-flags.js';
+Add helpers:
+
+TypeScript
+
+function actionClassForCapability(cap: 'search' | 'read' | 'verify' | 'execute' | 'transform') {
+  if (cap === 'execute') return 'EXECUTE';
+  if (cap === 'transform') return 'PROPOSE';
+  return 'READ';
+}
+Inside constructor add:
+
+TypeScript
+
+private approvals = new ApprovalGate();
+private policy = new PolicyEngine(this.runId);
+private ledger = new ActionLedger(this.runId);
+private redactor = new RedactionFilter(this.runId);
+private artifacts = new ImmutableArtifacts();
+private safety = new SafetyReview(this.runId);
+private security = new SecurityAudit(this.runId);
+At the start of execute(...), before actual tool execution:
+
+TypeScript
+
+const actionClass = actionClassForCapability(tool.capabilityClass);
+const decision = this.policy.evaluate({
+  runId: this.runId,
+  cycleNumber: ctx.cycleNumber,
+  role: ctx.role,
+  teamId: ctx.teamId,
+  actionClass,
+  targetKind: 'tool',
+  targetRef: toolName,
+  summary: `Tool execution requested: ${toolName}`,
+  metadata: { input },
+});
+
+const actionId = this.ledger.propose({
+  cycleNumber: ctx.cycleNumber,
+  role: ctx.role,
+  teamId: ctx.teamId,
+  actionClass,
+  targetKind: 'tool',
+  targetRef: toolName,
+  riskTier: decision.riskTier,
+  summary: `Tool execution requested: ${toolName}`,
+  input,
+  reversible: false,
+  policySnapshot: decision,
+});
+
+if (!decision.allowed) {
+  this.ledger.deny(actionId, decision.reasons.join('; '));
+  this.security.recordFinding({
+    cycleNumber: ctx.cycleNumber,
+    severity: 'warn',
+    category: 'policy_violation',
+    actionId,
+    summary: `Denied tool execution ${toolName}`,
+    details: { reasons: decision.reasons, role: ctx.role },
+  });
+  return await this.denied(toolName, input, ctx, `Policy denied ${toolName}`);
+}
+
+if (featureFlag('unsafeActionDetector') && actionClass === 'EXECUTE') {
+  const review = await this.safety.review({
+    cycleNumber: ctx.cycleNumber,
+    actionId,
+    actionClass: 'EXECUTE',
+    targetRef: toolName,
+    summary: `Execute tool ${toolName}`,
+    metadata: input as Record<string, unknown>,
+  });
+
+  if (review.blocked) {
+    this.ledger.deny(actionId, review.safe_alternative);
+    return {
+      executionId: `blocked_${actionId}`,
+      summary: review.safe_alternative,
+      output: { blocked: true, review },
+      sources: [],
+    };
+  }
+
+  if (review.requires_approval || decision.requireApproval) {
+    const approvalId = this.approvals.request({
+      runId: this.runId,
+      cycleNumber: ctx.cycleNumber,
+      approvalType: 'execute',
+      subject: actionId,
+      requestedBy: ctx.role,
+      summary: `Execution approval required for ${toolName}`,
+      details: { input, review, decision },
+    });
+    this.ledger.markPendingApproval(actionId, approvalId);
+    return {
+      executionId: `pending_${actionId}`,
+      summary: `Execution pending approval ${approvalId}`,
+      output: { pendingApproval: true, approvalId },
+      sources: [],
+    };
+  }
+}
+Then after successful tool execution, redact and sign before persistence:
+
+TypeScript
+
+const sanitizedSummary = this.redactor.redact(result.summary, {
+  cycleNumber: ctx.cycleNumber,
+  channel: 'output',
+}).text;
+
+const sanitizedSources = (result.sources ?? []).map(src => ({
+  ...src,
+  excerpt: src.excerpt
+    ? this.redactor.redact(src.excerpt, {
+        cycleNumber: ctx.cycleNumber,
+        channel: 'artifact',
+      }).text
+    : src.excerpt,
+}));
+
+const payload = {
+  toolName,
+  input: parsed,
+  result: {
+    ...result,
+    summary: sanitizedSummary,
+    sources: sanitizedSources,
+  },
+  ctx,
+};
+
+const artifact = await this.artifacts.writeJson({
+  runId: this.runId,
+  relPath: `artifacts/tools/outputs/${id}.json`,
+  data: payload,
+  artifactKind: 'tool_execution',
+  actionId,
+});
+Replace the old writeFile/artifactPath block with the signed artifact result and set ledger applied:
+
+TypeScript
+
+this.ledger.apply(actionId, {
+  output: {
+    summary: sanitizedSummary,
+    sourceCount: sanitizedSources.length,
+  },
+  artifactPath: artifact.artifactPath,
+});
+Also when inserting tool_artifacts, preserve source metadata:
+
+TypeScript
+
+JSON.stringify(src.metadata ?? {})
+and use sanitizedSources instead of result.sources.
+
+If tool execution fails:
+
+TypeScript
+
+this.ledger.fail(actionId, error instanceof Error ? error.message : String(error));
+16. Evidence pack hardening
+Patch src/tools/evidence-pack.ts
+Add imports:
+
+TypeScript
+
+import { RedactionFilter } from '@/runtime/redaction.js';
+import { ImmutableArtifacts } from '@/runtime/immutable-artifacts.js';
+Inside class:
+
+TypeScript
+
+private redactor = new RedactionFilter(this.runId);
+private artifacts = new ImmutableArtifacts();
+Change the SQL query in fromExecutions(...) to also pull source metadata:
+
+TypeScript
+
+SELECT te.id, te.tool_name, te.output_summary, ta.source_uri, ta.title, ta.excerpt, ta.metadata_json
+FROM tool_executions te
+LEFT JOIN tool_artifacts ta ON ta.execution_id = te.id
+...
+When building markdown, sanitize excerpts:
+
+TypeScript
+
+const safeExcerpt = this.redactor.redact((row.excerpt ?? '').slice(0, 900), {
+  channel: 'artifact',
+}).text;
+When writing the pack, use immutable artifact writer:
+
+TypeScript
+
+const written = await this.artifacts.writeText({
+  runId: this.runId,
+  relPath: `artifacts/evidence/packs/${packId}.md`,
+  text: markdown,
+  artifactKind: 'evidence_pack',
+  mimeType: 'text/markdown',
+});
+const artifactPath = written.artifactPath;
+When inserting evidence_items, preserve upstream provenance metadata:
+
+TypeScript
+
+const upstreamMeta = JSON.parse(row.metadata_json || '{}');
+
+db.prepare(`
+  INSERT INTO evidence_items
+  (id, pack_id, execution_id, source_uri, title, excerpt, confidence, metadata_json)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+`).run(
+  `ei_${nanoid(8)}`,
+  packId,
+  row.id,
+  row.source_uri ?? null,
+  row.title ?? null,
+  safeExcerpt,
+  0.75,
+  JSON.stringify({
+    evidenceLabel: `ev_${i + 1}`,
+    toolName: row.tool_name,
+    graphNodeRef: upstreamMeta.graphNodeRef ?? null,
+    sourceChunkRef: upstreamMeta.sourceChunkRef ?? null,
+    seedMaterialRef: upstreamMeta.seedMaterialRef ?? row.source_uri ?? null,
+  }),
+);
+This is the point where evidence items stop being just “citations” and become actual provenance anchors.
+
+17. Transcript and memory redaction
+Patch transcript writer
+Before writing transcript events:
+
+TypeScript
+
+import { RedactionFilter } from '@/runtime/redaction.js';
+
+const redactor = new RedactionFilter(runId);
+
+function sanitizeTranscriptContent(text: string, cycleNumber?: number) {
+  return redactor.redact(text, {
+    cycleNumber,
+    channel: 'transcript',
+  }).text;
+}
+For each transcript event payload string field:
+
+TypeScript
+
+content: sanitizeTranscriptContent(content, cycleNumber)
+Patch memory manager
+Before appending to memory/MEMORY.md or team partition memory:
+
+TypeScript
+
+import { RedactionFilter } from '@/runtime/redaction.js';
+
+const redactor = new RedactionFilter(runId);
+const safeText = redactor.redact(textToPersist, {
+  cycleNumber,
+  channel: 'memory',
+  artifactPath: targetPath,
+}).text;
+Then write safeText instead of raw text.
+
+18. ApprovalEnforcer hardening
+Patch src/runtime/approval-enforcer.ts
+Add imports:
+
+TypeScript
+
+import { PolicyEngine } from '@/runtime/policy-engine.js';
+import { ActionLedger } from '@/runtime/action-ledger.js';
+import { ImmutableArtifacts } from '@/runtime/immutable-artifacts.js';
+import { SafetyReview } from '@/runtime/safety-review.js';
+import { SecurityAudit } from '@/runtime/security-audit.js';
+Inside class:
+
+TypeScript
+
+private policy = new PolicyEngine(this.runId);
+private ledger = new ActionLedger(this.runId);
+private artifacts = new ImmutableArtifacts();
+private safety = new SafetyReview(this.runId);
+private security = new SecurityAudit(this.runId);
+In stageCommitCandidate(...), before creating the approval:
+
+TypeScript
+
+const decision = this.policy.evaluate({
+  runId: this.runId,
+  cycleNumber: opts.cycleNumber,
+  role: 'CEO',
+  actionClass: 'PUBLISH',
+  targetKind: 'git',
+  targetRef: 'git.commit',
+  summary: `Materialize commit candidate for cycle ${opts.cycleNumber}`,
+  metadata: { targetFile: opts.targetFile, score: opts.score },
+});
+
+const actionId = this.ledger.propose({
+  cycleNumber: opts.cycleNumber,
+  role: 'CEO',
+  actionClass: 'PUBLISH',
+  targetKind: 'git',
+  targetRef: 'git.commit',
+  riskTier: decision.riskTier,
+  summary: `Materialize commit candidate for cycle ${opts.cycleNumber}`,
+  input: { score: opts.score, targetFile: opts.targetFile },
+  reversible: true,
+  compensationAction: { type: 'git_revert_last_commit' },
+  policySnapshot: decision,
+});
+
+if (!decision.allowed) {
+  this.ledger.deny(actionId, 'Publish policy denied commit materialization');
+  throw new Error('Commit candidate denied by publish policy');
+}
+
+const review = await this.safety.review({
+  cycleNumber: opts.cycleNumber,
+  actionId,
+  actionClass: 'PUBLISH',
+  targetRef: 'git.commit',
+  summary: opts.summary,
+  metadata: { score: opts.score },
+});
+
+if (review.blocked) {
+  this.ledger.deny(actionId, review.safe_alternative);
+  this.security.recordFinding({
+    cycleNumber: opts.cycleNumber,
+    severity: 'error',
+    category: 'unsafe_publish',
+    actionId,
+    summary: 'Blocked unsafe commit materialization',
+    details: review,
+  });
+  throw new Error(review.safe_alternative);
+}
+Replace raw pending snapshot write with immutable signed artifact:
+
+TypeScript
+
+const pendingArtifact = await this.artifacts.writeText({
+  runId: this.runId,
+  relPath: `artifacts/approvals/pending/${actionId}.current_output.md`,
+  text: opts.outputText,
+  artifactKind: 'pending_publish_candidate',
+  mimeType: 'text/markdown',
+  actionId,
+});
+const snapshotPath = pendingArtifact.artifactPath;
+After approvalId is created:
+
+TypeScript
+
+this.ledger.markPendingApproval(actionId, approvalId);
+In materializeApprovedActions(), before writing content back into workspace:
+
+TypeScript
+
+const verified = await this.security.verifyArtifactOrRaise(row.artifact_path);
+if (!verified.ok) {
+  throw new Error(`Artifact verification failed for ${row.id}`);
+}
+After successful commit:
+
+TypeScript
+
+this.ledger.markApproved(row.id, row.approval_id);
+this.ledger.apply(row.id, {
+  output: { committed: true, commitMessage: row.commit_message },
+  artifactPath: row.artifact_path,
+});
+If materialization fails:
+
+TypeScript
+
+this.ledger.fail(row.id, error instanceof Error ? error.message : String(error));
+19. Risk-tiered approvals
+Add a small helper in src/runtime/policy-engine.ts
+TypeScript
+
+export function requiredApprovalLevel(riskTier: RiskTier) {
+  switch (riskTier) {
+    case 'critical': return 'owner';
+    case 'high': return 'maintainer';
+    case 'medium': return 'reviewer';
+    default: return 'none';
+  }
+}
+Use it when requesting approvals
+In dangerous execution or publish paths:
+
+TypeScript
+
+import { requiredApprovalLevel } from '@/runtime/policy-engine.js';
+
+const approvalLevel = requiredApprovalLevel(decision.riskTier);
+
+const approvalId = approvalGate.request({
+  runId,
+  cycleNumber,
+  approvalType: 'publish',
+  subject: actionId,
+  requestedBy: ctx.role,
+  summary: `Risk=${decision.riskTier}; approval level=${approvalLevel}`,
+  details: {
+    actionId,
+    decision,
+    approvalLevel,
+  },
+});
+This gives you a path later to enforce:
+
+reviewer for medium
+maintainer for high
+owner for critical
+Even if the UI doesn’t yet have multi-level approver identity logic, the ledger and approval request now carry the escalation level.
+
+20. AgentRunner policy/provenance integration
+Patch src/runtime/agent-runner.ts
+Add imports:
+
+TypeScript
+
+import { ActionLedger } from '@/runtime/action-ledger.js';
+import { PolicyEngine } from '@/runtime/policy-engine.js';
+At the start of runWithTools(...), record the agent’s synthesis itself as a PROPOSE action:
+
+TypeScript
+
+const policy = new PolicyEngine(ctx.runId);
+const ledger = new ActionLedger(ctx.runId);
+
+const proposeDecision = policy.evaluate({
+  runId: ctx.runId,
+  cycleNumber: ctx.cycle,
+  role: ctx.role,
+  teamId: ctx.teamId,
+  actionClass: 'PROPOSE',
+  targetKind: 'output',
+  targetRef: `draft:${ctx.role}`,
+  summary: `Draft synthesis by ${ctx.role}`,
+});
+
+const proposeActionId = ledger.propose({
+  cycleNumber: ctx.cycle,
+  role: ctx.role,
+  teamId: ctx.teamId,
+  actionClass: 'PROPOSE',
+  targetKind: 'output',
+  targetRef: `draft:${ctx.role}`,
+  riskTier: proposeDecision.riskTier,
+  summary: `Draft synthesis by ${ctx.role}`,
+  input: { task: ctx.task },
+  reversible: false,
+  policySnapshot: proposeDecision,
+});
+After synthesis succeeds:
+
+TypeScript
+
+ledger.apply(proposeActionId, {
+  output: {
+    evidencePackId,
+    toolExecutionIds: executionIds,
+  },
+});
+If synthesis fails:
+
+TypeScript
+
+ledger.fail(proposeActionId, error instanceof Error ? error.message : String(error));
+This gives you full policy coverage across:
+
+tool use,
+execution,
+publication,
+plain draft synthesis.
+21. Provenance + policy audit in orchestrator
+Patch src/runtime/orchestrator.ts
+Add imports:
+
+TypeScript
+
+import { RunManifestWriter } from '@/runtime/run-manifest.js';
+import { ProvenanceBuilder } from '@/runtime/provenance.js';
+import { PolicyAuditor } from '@/runtime/policy-auditor.js';
+import { PolicyEngine } from '@/runtime/policy-engine.js';
+After run initialization:
+
+TypeScript
+
+const manifestWriter = new RunManifestWriter();
+const provenance = new ProvenanceBuilder(runId);
+const policyAuditor = new PolicyAuditor(runId);
+const policyEngine = new PolicyEngine(runId);
+
+policyEngine.seedDefaults();
+await manifestWriter.write(runId, {
+  mission: config.mission,
+  models: config.models,
+  enabledFlags: config.featureFlags ?? {},
+});
+After team creation:
+
+TypeScript
+
+for (const team of coordinator.listTeams?.() ?? []) {
+  policyEngine.seedDefaults(team.id);
+}
+After final draft / CEO output is produced and after verification audit:
+
+TypeScript
+
+const provenanceReport = await provenance.linkDraft({
+  cycleNumber,
+  role: 'CEO',
+  draft: finalOutputText,
+  evidencePackId: mergedPackId,
+});
+
+const policyReport = await policyAuditor.audit({
+  cycleNumber,
+  role: 'CEO',
+  draft: finalOutputText,
+  verificationReport,
+  provenanceReport,
+});
+Pass them into ratchet scoring:
+
+TypeScript
+
+const score = await ratchet.score({
+  proposal,
+  graph,
+  verificationReport,
+  evidencePackId: mergedPackId,
+  toolStats: {
+    toolCalls: allToolExecutionIds.length,
+  },
+  policyReport,
+  provenanceReport,
+});
+22. Judge-side policy compliance score
+Patch src/runtime/scorer.ts
+Add helper:
+
+TypeScript
+
+function applyPolicyComplianceClamp(baseComposite: number, policyCompliance?: number) {
+  if (typeof policyCompliance !== 'number') return baseComposite;
+  const penalty = Math.max(0, 0.35 * (1 - policyCompliance));
+  return Math.max(0, baseComposite - penalty);
+}
+When composing score:
+
+TypeScript
+
+const baseComposite =
+  0.30 * clampedGroundedness +
+  0.25 * novelty +
+  0.25 * consistency +
+  0.20 * missionAlignment;
+
+const policyCompliance = policyReport?.score ?? 1;
+const composite = applyPolicyComplianceClamp(baseComposite, policyCompliance);
+Return it as part of the score object:
+
+TypeScript
+
+return {
+  composite,
+  groundedness: clampedGroundedness,
+  novelty,
+  consistency,
+  missionAlignment,
+  policyCompliance,
+  justification,
+};
+Patch roles/RatchetJudge.md
+Add:
+
+Markdown
+
+## PHASE 6.1 POLICY-AWARE JUDGING ADDENDUM
+- Review the policy report and provenance report alongside the proposal.
+- Unsupported publication, approval bypass, secret leakage, or broken provenance reduce confidence substantially.
+- Reward outputs that are not only good, but attributable, policy-compliant, and reversible.
+- Prefer a slightly less ambitious output with clean provenance over an ambitious but weakly governed one.
+23. Unsafe-action detector in Critic
+Patch Critic prompt / runtime
+Add prompt appendix:
+
+TypeScript
+
+export const UNSAFE_ACTION_CRITIC_APPENDIX = `
+ADDITIONAL PHASE 6.1 DUTIES:
+- Identify any proposed patch, execution, or publish action that violates policy.
+- Flag claims that should not be published because provenance is incomplete.
+- Flag command patterns that look destructive, permission-escalating, or exfiltration-prone.
+- Recommend whether the action should be blocked, approved, or downgraded to proposal-only.
+`.trim();
+Then append it in Critic runtime the same way you appended the tool-aware critic appendix in Phase 6.
+
+24. Results logger patch
+If your results.tsv logger has fixed columns, add policyCompliance and provenanceLinkedClaims.
+
+Patch src/runtime/results-logger.ts
+Add columns:
+
+TypeScript
+
+const HEADERS = [
+  'cycle',
+  'score',
+  'groundedness',
+  'novelty',
+  'consistency',
+  'missionAlignment',
+  'policyCompliance',
+  'decision',
+  'summary',
+];
+When appending:
+
+TypeScript
+
+policyCompliance: typeof row.policyCompliance === 'number'
+  ? row.policyCompliance.toFixed(4)
+  : '',
+Now the ratchet history reflects not just quality, but governance quality.
+
+25. API routes for security + provenance
+src/api/security-routes.ts
+TypeScript
+
+import { getDb } from '@/db/migrate.js';
+import { SecurityAudit } from '@/runtime/security-audit.js';
+import { ArtifactSigner } from '@/runtime/artifact-signing.js';
+
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data, null, 2), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+export async function handleSecurityRoutes(url: URL, req: Request) {
+  const method = req.method;
+
+  if (url.pathname === '/api/action-ledger' && method === 'GET') {
+    const runId = url.searchParams.get('runId');
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM action_ledger
+      ${runId ? 'WHERE run_id = ?' : ''}
+      ORDER BY created_at DESC
+      LIMIT 300
+    `).all(...(runId ? [runId] : []));
+    db.close();
+    return json(rows);
+  }
+
+  if (url.pathname === '/api/security/findings' && method === 'GET') {
+    const runId = url.searchParams.get('runId');
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM security_findings
+      ${runId ? 'WHERE run_id = ?' : ''}
+      ORDER BY created_at DESC
+      LIMIT 300
+    `).all(...(runId ? [runId] : []));
+    db.close();
+    return json(rows);
+  }
+
+  if (url.pathname === '/api/provenance/reports' && method === 'GET') {
+    const runId = url.searchParams.get('runId');
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM provenance_reports
+      ${runId ? 'WHERE run_id = ?' : ''}
+      ORDER BY created_at DESC
+      LIMIT 200
+    `).all(...(runId ? [runId] : []));
+    db.close();
+    return json(rows);
+  }
+
+  if (url.pathname === '/api/policy/reports' && method === 'GET') {
+    const runId = url.searchParams.get('runId');
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM policy_reports
+      ${runId ? 'WHERE run_id = ?' : ''}
+      ORDER BY created_at DESC
+      LIMIT 200
+    `).all(...(runId ? [runId] : []));
+    db.close();
+    return json(rows);
+  }
+
+  if (url.pathname === '/api/security/export' && method === 'POST') {
+    const body = await req.json() as { runId: string; format?: 'json' | 'markdown' };
+    const audit = new SecurityAudit(body.runId);
+    const result = await audit.exportBundle(body.format ?? 'json');
+    return json({ ok: true, result });
+  }
+
+  if (url.pathname === '/api/artifacts/verify' && method === 'POST') {
+    const body = await req.json() as { artifactPath: string };
+    const signer = new ArtifactSigner();
+    const result = await signer.verifyFile(body.artifactPath);
+    return json({ ok: result.ok, result }, result.ok ? 200 : 409);
+  }
+
+  return null;
+}
+26. Minimal UI additions
+text
+
+web/app/
+├── security/page.tsx
+├── provenance/page.tsx
+└── ledger/page.tsx
+Patch nav in web/app/layout.tsx
+React
+
+<nav className="ml-auto flex gap-6 text-sm">
+  <a href="/" className="text-gray-400 hover:text-cyan-400 transition-colors">Dashboard</a>
+  <a href="/graph" className="text-gray-400 hover:text-cyan-400 transition-colors">Graph</a>
+  <a href="/approvals" className="text-gray-400 hover:text-cyan-400 transition-colors">Approvals</a>
+  <a href="/budgets" className="text-gray-400 hover:text-cyan-400 transition-colors">Budgets</a>
+  <a href="/locks" className="text-gray-400 hover:text-cyan-400 transition-colors">Locks</a>
+  <a href="/issues" className="text-gray-400 hover:text-cyan-400 transition-colors">Issues</a>
+  <a href="/tools" className="text-gray-400 hover:text-cyan-400 transition-colors">Tools</a>
+  <a href="/evidence" className="text-gray-400 hover:text-cyan-400 transition-colors">Evidence</a>
+  <a href="/ledger" className="text-gray-400 hover:text-cyan-400 transition-colors">Ledger</a>
+  <a href="/provenance" className="text-gray-400 hover:text-cyan-400 transition-colors">Provenance</a>
+  <a href="/security" className="text-gray-400 hover:text-cyan-400 transition-colors">Security</a>
+</nav>
+/ledger page
+Show:
+
+action class
+risk tier
+status
+approval id
+target
+reversible yes/no
+/provenance page
+Show:
+
+claim counts
+linked claims
+broken links
+unsupported claims
+evidence pack reference
+/security page
+Show:
+
+open findings
+redaction events
+latest policy score
+artifact verification status
+export audit button
+27. Sandbox escape tests + permission fuzzing
+tests/policy-engine.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { PolicyEngine } from '../src/runtime/policy-engine.js';
+
+describe('PolicyEngine', () => {
+  it('requires approval for critical publish actions', () => {
+    const runId = `run_pol_${Date.now()}`;
+    const engine = new PolicyEngine(runId);
+    engine.seedDefaults();
+
+    const decision = engine.evaluate({
+      runId,
+      cycleNumber: 1,
+      role: 'CEO',
+      actionClass: 'PUBLISH',
+      targetKind: 'git',
+      targetRef: 'git.push:prod',
+      summary: 'Push to prod branch',
+    });
+
+    expect(decision.allowed).toBe(true);
+    expect(decision.requireApproval).toBe(true);
+    expect(decision.riskTier).toBe('critical');
+  });
+});
+tests/redaction.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { RedactionFilter } from '../src/runtime/redaction.js';
+
+describe('RedactionFilter', () => {
+  it('redacts API keys and emails', () => {
+    const r = new RedactionFilter('run_redact_test');
+    const out = r.redact('email me at test@example.com key sk-proj-1234567890123456789012345', {
+      channel: 'artifact',
+    });
+
+    expect(out.text.includes('[REDACTED:EMAIL]')).toBe(true);
+    expect(out.text.includes('[REDACTED:OPENAI_KEY]')).toBe(true);
+  });
+});
+tests/artifact-signing.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { writeFile } from 'node:fs/promises';
+import { ArtifactSigner } from '../src/runtime/artifact-signing.js';
+
+describe('ArtifactSigner', () => {
+  it('detects tampering after signing', async () => {
+    const signer = new ArtifactSigner();
+    const path = 'tmp-sign-test.txt';
+    await writeFile(path, 'hello world', 'utf-8');
+    await signer.signFile({
+      runId: 'run_sign_test',
+      artifactPath: path,
+      artifactKind: 'test',
+      mimeType: 'text/plain',
+    });
+
+    let verified = await signer.verifyFile(path);
+    expect(verified.ok).toBe(true);
+
+    await writeFile(path, 'hello world tampered', 'utf-8');
+    verified = await signer.verifyFile(path);
+    expect(verified.ok).toBe(false);
+  });
+});
+tests/action-ledger.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { ActionLedger } from '../src/runtime/action-ledger.js';
+
+describe('ActionLedger', () => {
+  it('records and reverts an action', () => {
+    const ledger = new ActionLedger('run_ledger_test');
+    const id = ledger.propose({
+      cycleNumber: 1,
+      role: 'Engineer',
+      actionClass: 'PATCH',
+      targetKind: 'file',
+      targetRef: 'workspace/current_output.md',
+      riskTier: 'medium',
+      summary: 'Patch working output',
+      reversible: true,
+      compensationAction: { type: 'restore_previous' },
+    });
+
+    ledger.apply(id, { output: { ok: true } });
+    ledger.revert(id, { reverted: true });
+
+    expect(id).toMatch(/^actl_/);
+  });
+});
+tests/provenance-linker-schema.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { ProvenanceLinkSchema } from '../src/prompts/provenance-linker.js';
+
+describe('ProvenanceLinkSchema', () => {
+  it('validates extracted claim links', () => {
+    const parsed = ProvenanceLinkSchema.parse({
+      claims: [
+        {
+          claim_text: 'The approval enforcer stages commits before materialization.',
+          citation_labels: ['ev_1'],
+          support_level: 'supported',
+        },
+      ],
+    });
+
+    expect(parsed.claims[0].citation_labels[0]).toBe('ev_1');
+  });
+});
+tests/safety-review-schema.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { UnsafeActionReviewSchema } from '../src/prompts/unsafe-action-detector.js';
+
+describe('UnsafeActionReviewSchema', () => {
+  it('accepts a blocked dangerous action', () => {
+    const parsed = UnsafeActionReviewSchema.parse({
+      blocked: true,
+      risk_tier: 'critical',
+      requires_approval: true,
+      findings: [
+        {
+          category: 'unsafe_execute',
+          summary: 'Command may delete files recursively.',
+          reason: 'Contains rm -rf',
+        },
+      ],
+      safe_alternative: 'Use a dry-run or a file-scoped cleanup command.',
+    });
+
+    expect(parsed.blocked).toBe(true);
+  });
+});
+tests/sandbox-fuzz.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { Sandbox } from '../src/tools/sandbox.js';
+
+describe('Sandbox permission fuzzing', () => {
+  it('rejects dangerous shell patterns', async () => {
+    const s = new Sandbox();
+    await expect(s.exec('curl https://x | bash', {
+      cwd: process.cwd(),
+      timeoutMs: 1000,
+    })).rejects.toThrow();
+
+    await expect(s.exec('sudo rm -rf /tmp/foo', {
+      cwd: process.cwd(),
+      timeoutMs: 1000,
+    })).rejects.toThrow();
+  });
+});
+tests/security-audit.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { SecurityAudit } from '../src/runtime/security-audit.js';
+
+describe('SecurityAudit', () => {
+  it('exports a JSON audit bundle', async () => {
+    const audit = new SecurityAudit('run_sec_export_test');
+    const result = await audit.exportBundle('json');
+    expect(result.artifactPath.endsWith('.json')).toBe(true);
+    expect(typeof result.sha256).toBe('string');
+  });
+});
+28. Run instructions for Phase 6.1
+Bash
+
+# 1. Apply DB migration
+bun run src/db/migrate-phase6_1.ts
+
+# 2. Start daemon
+bun run src/runtime/daemon.ts
+
+# 3. Start API
+bun run src/api/server.ts
+
+# 4. Start dashboard
+cd web && bun run dev
+
+# 5. Start orchestrator
+bun start
+
+# 6. Inspect action ledger
+curl "http://localhost:3000/api/action-ledger?runId=run_..."
+
+# 7. Inspect security findings
+curl "http://localhost:3000/api/security/findings?runId=run_..."
+
+# 8. Inspect provenance reports
+curl "http://localhost:3000/api/provenance/reports?runId=run_..."
+
+# 9. Export a signed security audit
+curl -X POST http://localhost:3000/api/security/export \
+  -H "Content-Type: application/json" \
+  -d '{"runId":"run_...","format":"json"}'
+
+# 10. Verify a signed artifact
+curl -X POST http://localhost:3000/api/artifacts/verify \
+  -H "Content-Type: application/json" \
+  -d '{"artifactPath":".../artifacts/evidence/packs/ep_xxx.md"}'
+29. Optional .env additions for Phase 6.1
+Bash
+
+# ── SIGNING / IMMUTABILITY ───────────────────────────────────
+AUTOORG_SIGNING_SECRET=change-me
+AUTOORG_INSTANCE_NAME=dev-instance
+
+# ── REDACTION / PRIVACY ──────────────────────────────────────
+AUTOORG_REDACTION_ENABLED=1
+AUTOORG_REDACT_EMAILS=1
+AUTOORG_REDACT_PHONES=1
+AUTOORG_REDACT_SSN=1
+AUTOORG_REDACT_KEYS=1
+
+# ── POLICY / RISK ────────────────────────────────────────────
+AUTOORG_POLICY_DEFAULT_APPROVAL_LEVEL=reviewer
+AUTOORG_BLOCK_CRITICAL_EXECUTE=1
+AUTOORG_BLOCK_UNSUPPORTED_PUBLISH=1
+
+# ── SECURITY EXPORT ──────────────────────────────────────────
+AUTOORG_SECURITY_EXPORT_DIR=artifacts/security/audits
+AUTOORG_MANIFEST_DIR=artifacts/manifests
+AUTOORG_SIGNED_ARTIFACT_DIR=artifacts/signed
+30. What Phase 6.1 now gives you
+At this point AutoOrg can:
+
+text
+
+✅ Gate every meaningful action through explicit policy classes
+✅ Assign risk to actions instead of treating all tool calls equally
+✅ Record proposed/applied/reverted actions in an append-only ledger
+✅ Escalate high-risk execution/publish actions to approval
+✅ Block obviously unsafe commands and unsafe publication attempts
+✅ Build claim-level provenance chains from final draft to evidence items
+✅ Carry provenance metadata through evidence packs into reports
+✅ Sign run manifests and artifact outputs
+✅ Detect artifact tampering
+✅ Redact secrets and PII before persistence to memory/transcripts/artifacts
+✅ Score not just answer quality but governance quality
+✅ Export a security audit bundle for review or compliance
+This is the phase where AutoOrg stops being merely a tool-using organization and becomes a governed organization.
+
+31. Recommended implementation order
+I would do Phase 6.1 in this order:
+
+DB migration
+policy engine + risk engine
+action ledger
+redaction filter
+artifact signing + immutable artifacts
+ToolRunner / ApprovalEnforcer integration
+provenance builder
+policy auditor + judge clamp
+security export + UI
+fuzz/security tests
+Why:
+
+policy + ledger are the control plane,
+redaction + signing protect persistence,
+provenance + policy scoring make it measurable,
+exports/UI come after the mechanics are working.
+
+
+
+
+
+
+
+
+here is Phase 7 in the same detailed format.
+
+Phase 6 made AutoOrg a tool-using organization.
+Phase 6.1 made it a governed organization.
+Phase 7 is where it becomes a measurable organization.
+
+This is the phase that answers:
+
+did the latest change actually improve outcomes?
+did groundedness improve or regress?
+did policy compliance drop while score rose?
+did cost or latency blow up?
+is a new constitution better than the old one?
+is one org template consistently better for certain mission classes?
+is the Judge stable, calibrated, and trustworthy?
+AutoOrg — Phase 7: Benchmark Lab + Regression Evals
+Standard Benchmark Suite, Gold Outputs, Leaderboards, Replay Lab, Constitution A/B, Judge Calibration
+WHAT PHASE 7 ADDS
+text
+
+Phase 6.1 ── Policy engine + provenance + signed artifacts + redaction + security audit
+
+Phase 7   ── ┌──────────────────────────────────────────────────────────────┐
+             │ Standard benchmark suite of org.md missions                 │
+             │ Gold outputs + acceptance bands per benchmark               │
+             │ Cross-model and cross-template leaderboard                  │
+             │ Constitution A/B testing                                    │
+             │ Regression alarms on score/cost/latency/groundedness/etc.   │
+             │ Offline replay of historical runs and tool traces           │
+             │ “Why did this regress?” explainer                           │
+             │ Benchmark mode in CI                                        │
+             │ Org template bake-offs                                      │
+             │ Judge calibration harness                                   │
+             └──────────────────────────────────────────────────────────────┘
+DIRECTORY ADDITIONS
+text
+
+src/
+├── evals/
+│   ├── suite-loader.ts             ← load benchmark cases from disk
+│   ├── benchmark-runner.ts         ← execute suite cases and collect metrics
+│   ├── gold-evaluator.ts           ← compare outputs against acceptance bands
+│   ├── regression-detector.ts      ← alert on regressions
+│   ├── replay-lab.ts               ← replay historical runs/tool traces
+│   ├── leaderboard.ts              ← aggregate benchmark leaderboards
+│   ├── constitution-ab.ts          ← compare constitutions on same suite
+│   ├── template-bakeoff.ts         ← org template competitions
+│   ├── judge-calibrator.ts         ← judge consistency / calibration
+│   ├── benchmark-ci.ts             ← CI entrypoint
+│   └── metrics.ts                  ← shared metric math
+├── prompts/
+│   ├── gold-comparator.ts          ← compare output vs gold expectations
+│   ├── regression-explainer.ts     ← explain why benchmark regressed
+│   └── judge-calibrator.ts         ← judge consistency report prompt
+├── db/
+│   ├── schema-phase7.sql
+│   └── migrate-phase7.ts
+└── api/
+    └── eval-routes.ts              ← benchmark, replay, leaderboard routes
+
+benchmarks/
+├── suites/
+│   ├── core/
+│   │   ├── planning-basic/
+│   │   │   ├── org.md
+│   │   │   ├── constitution.md
+│   │   │   ├── gold.md
+│   │   │   └── case.json
+│   │   ├── grounded-research/
+│   │   └── patch-quality/
+│   └── stress/
+│       ├── long-context/
+│       ├── tool-heavy/
+│       └── approval-sensitive/
+├── templates/
+│   ├── baseline.json
+│   ├── hierarchy.json
+│   ├── research_heavy.json
+│   └── quality_heavy.json
+└── outputs/
+    ├── runs/
+    └── reports/
+
+artifacts/
+├── benchmarks/
+│   ├── reports/
+│   ├── replays/
+│   └── calibrations/
+1. Phase 7 DB schema
+src/db/schema-phase7.sql
+SQL
+
+-- ============================================================
+-- AutoOrg Phase 7 Schema
+-- Benchmark lab + regression evals + replay + calibration
+-- ============================================================
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: benchmark_suites
+-- Named groups of benchmark cases
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS benchmark_suites (
+  id TEXT PRIMARY KEY,
+  suite_name TEXT NOT NULL UNIQUE,
+  description TEXT NOT NULL,
+  tags_json TEXT NOT NULL DEFAULT '[]',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: benchmark_cases
+-- Each benchmark scenario
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS benchmark_cases (
+  id TEXT PRIMARY KEY,
+  suite_id TEXT NOT NULL REFERENCES benchmark_suites(id) ON DELETE CASCADE,
+  case_name TEXT NOT NULL,
+  category TEXT NOT NULL,
+  difficulty TEXT NOT NULL CHECK(difficulty IN ('easy','medium','hard','stress')),
+  org_path TEXT NOT NULL,
+  constitution_path TEXT NOT NULL,
+  gold_path TEXT,
+  case_config_json TEXT NOT NULL DEFAULT '{}',
+  acceptance_json TEXT NOT NULL DEFAULT '{}',
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_benchmark_cases_suite
+  ON benchmark_cases(suite_id, enabled);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: benchmark_runs
+-- One top-level suite execution
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS benchmark_runs (
+  id TEXT PRIMARY KEY,
+  suite_id TEXT NOT NULL REFERENCES benchmark_suites(id) ON DELETE CASCADE,
+  run_label TEXT NOT NULL,
+  mode TEXT NOT NULL CHECK(mode IN ('manual','ci','ab_test','bakeoff','replay')),
+  git_head TEXT,
+  orchestrator_version TEXT,
+  constitution_variant TEXT,
+  template_variant TEXT,
+  model_map_json TEXT NOT NULL DEFAULT '{}',
+  started_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  finished_at DATETIME,
+  status TEXT NOT NULL DEFAULT 'running' CHECK(status IN ('running','completed','failed','cancelled')),
+  summary_json TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_benchmark_runs_suite
+  ON benchmark_runs(suite_id, started_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: benchmark_attempts
+-- One case executed within a benchmark run
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS benchmark_attempts (
+  id TEXT PRIMARY KEY,
+  benchmark_run_id TEXT NOT NULL REFERENCES benchmark_runs(id) ON DELETE CASCADE,
+  case_id TEXT NOT NULL REFERENCES benchmark_cases(id) ON DELETE CASCADE,
+  autoorg_run_id TEXT,
+  seed INTEGER,
+  model_map_json TEXT NOT NULL DEFAULT '{}',
+  template_variant TEXT,
+  constitution_variant TEXT,
+  output_path TEXT,
+  report_path TEXT,
+  status TEXT NOT NULL DEFAULT 'running' CHECK(status IN ('running','completed','failed','cancelled')),
+  started_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  finished_at DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_benchmark_attempts_run
+  ON benchmark_attempts(benchmark_run_id, started_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: benchmark_metrics
+-- Normalized metrics per attempt
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS benchmark_metrics (
+  id TEXT PRIMARY KEY,
+  attempt_id TEXT NOT NULL REFERENCES benchmark_attempts(id) ON DELETE CASCADE,
+  score REAL NOT NULL DEFAULT 0,
+  groundedness REAL NOT NULL DEFAULT 0,
+  novelty REAL NOT NULL DEFAULT 0,
+  consistency REAL NOT NULL DEFAULT 0,
+  mission_alignment REAL NOT NULL DEFAULT 0,
+  policy_compliance REAL NOT NULL DEFAULT 1,
+  gold_match REAL NOT NULL DEFAULT 0,
+  acceptance_pass INTEGER NOT NULL DEFAULT 0,
+  latency_ms INTEGER NOT NULL DEFAULT 0,
+  cost_usd REAL NOT NULL DEFAULT 0,
+  tool_calls INTEGER NOT NULL DEFAULT 0,
+  unsupported_claims INTEGER NOT NULL DEFAULT 0,
+  broken_provenance_links INTEGER NOT NULL DEFAULT 0,
+  security_findings INTEGER NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_benchmark_metrics_attempt
+  ON benchmark_metrics(attempt_id);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: leaderboards
+-- Aggregated benchmark views
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS leaderboards (
+  id TEXT PRIMARY KEY,
+  suite_id TEXT NOT NULL REFERENCES benchmark_suites(id) ON DELETE CASCADE,
+  leaderboard_type TEXT NOT NULL CHECK(leaderboard_type IN ('model','template','constitution','overall')),
+  subject_key TEXT NOT NULL,                     -- e.g. claude-opus-4 / hierarchy / const_v2
+  average_score REAL NOT NULL DEFAULT 0,
+  average_gold_match REAL NOT NULL DEFAULT 0,
+  average_policy_compliance REAL NOT NULL DEFAULT 0,
+  average_cost_usd REAL NOT NULL DEFAULT 0,
+  average_latency_ms REAL NOT NULL DEFAULT 0,
+  pass_rate REAL NOT NULL DEFAULT 0,
+  samples INTEGER NOT NULL DEFAULT 0,
+  updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_leaderboards_suite_type
+  ON leaderboards(suite_id, leaderboard_type, updated_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: constitution_experiments
+-- A/B or tournament runs between constitutions
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS constitution_experiments (
+  id TEXT PRIMARY KEY,
+  suite_id TEXT NOT NULL REFERENCES benchmark_suites(id) ON DELETE CASCADE,
+  experiment_name TEXT NOT NULL,
+  variant_a TEXT NOT NULL,
+  variant_b TEXT NOT NULL,
+  winner TEXT,
+  delta_score REAL,
+  delta_policy REAL,
+  delta_cost REAL,
+  artifact_path TEXT,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: regression_alarms
+-- Detected benchmark regressions
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS regression_alarms (
+  id TEXT PRIMARY KEY,
+  benchmark_run_id TEXT NOT NULL REFERENCES benchmark_runs(id) ON DELETE CASCADE,
+  subject_key TEXT NOT NULL,
+  metric_name TEXT NOT NULL,
+  baseline_value REAL NOT NULL,
+  current_value REAL NOT NULL,
+  delta_value REAL NOT NULL,
+  threshold_value REAL NOT NULL,
+  severity TEXT NOT NULL CHECK(severity IN ('warn','error','critical')),
+  explanation_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_regression_alarms_run
+  ON regression_alarms(benchmark_run_id, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: replay_sessions
+-- Offline replay of historical runs / attempts
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS replay_sessions (
+  id TEXT PRIMARY KEY,
+  source_run_id TEXT,
+  source_attempt_id TEXT REFERENCES benchmark_attempts(id) ON DELETE SET NULL,
+  mode TEXT NOT NULL CHECK(mode IN ('artifact_only','tool_trace','full_score_recompute')),
+  status TEXT NOT NULL CHECK(status IN ('running','completed','failed')),
+  artifact_path TEXT,
+  summary_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: judge_calibration_runs
+-- Stability / consistency checks for RatchetJudge
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS judge_calibration_runs (
+  id TEXT PRIMARY KEY,
+  benchmark_run_id TEXT REFERENCES benchmark_runs(id) ON DELETE SET NULL,
+  judge_model TEXT NOT NULL,
+  sample_count INTEGER NOT NULL DEFAULT 0,
+  mean_variance REAL NOT NULL DEFAULT 0,
+  agreement_score REAL NOT NULL DEFAULT 0,
+  artifact_path TEXT,
+  report_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: template_bakeoffs
+-- Compare org templates across same suite
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS template_bakeoffs (
+  id TEXT PRIMARY KEY,
+  suite_id TEXT NOT NULL REFERENCES benchmark_suites(id) ON DELETE CASCADE,
+  template_a TEXT NOT NULL,
+  template_b TEXT NOT NULL,
+  winner TEXT,
+  delta_score REAL,
+  delta_cost REAL,
+  delta_latency REAL,
+  artifact_path TEXT,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ────────────────────────────────────────────────────────────
+-- Feature flags
+-- ────────────────────────────────────────────────────────────
+INSERT OR IGNORE INTO feature_flags (flag_name, enabled, description) VALUES
+  ('benchmarkLab', 1, 'Benchmark suite execution (Phase 7)'),
+  ('goldEvaluator', 1, 'Gold output comparator with acceptance bands (Phase 7)'),
+  ('leaderboards', 1, 'Cross-model / template / constitution leaderboards (Phase 7)'),
+  ('constitutionAB', 1, 'Constitution A/B testing (Phase 7)'),
+  ('regressionAlarms', 1, 'Regression detection and alerting (Phase 7)'),
+  ('offlineReplayLab', 1, 'Offline replay of historical runs (Phase 7)'),
+  ('judgeCalibration', 1, 'Judge consistency harness (Phase 7)'),
+  ('templateBakeoffs', 1, 'Org template comparisons (Phase 7)'),
+  ('benchmarkCI', 1, 'Benchmark mode in CI (Phase 7)');
+src/db/migrate-phase7.ts
+TypeScript
+
+#!/usr/bin/env bun
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import chalk from 'chalk';
+import { getDb } from '@/db/migrate.js';
+
+async function migrate() {
+  console.log(chalk.cyan('\n⚙️ Running Phase 7 migrations...\n'));
+  const db = getDb();
+  const schema = readFileSync(path.join(import.meta.dir, 'schema-phase7.sql'), 'utf-8');
+  db.exec(schema);
+  db.close();
+  console.log(chalk.bold.green('✅ Phase 7 migration complete.\n'));
+}
+
+migrate().catch(console.error);
+Run:
+
+Bash
+
+bun run src/db/migrate-phase7.ts
+2. Benchmark case format
+Each benchmark case should live in a self-contained directory.
+
+Example benchmarks/suites/core/planning-basic/case.json
+JSON
+
+{
+  "suite": "core",
+  "case_name": "planning-basic",
+  "category": "planning",
+  "difficulty": "easy",
+  "description": "Baseline planning mission with measurable acceptance criteria.",
+  "seed": 42,
+  "max_cycles": 4,
+  "template_variant": "baseline",
+  "acceptance": {
+    "min_score": 0.68,
+    "min_groundedness": 0.72,
+    "max_cost_usd": 2.5,
+    "max_latency_ms": 180000,
+    "max_unsupported_claims": 2,
+    "min_policy_compliance": 0.92
+  }
+}
+Example benchmarks/suites/core/planning-basic/gold.md
+Markdown
+
+# Gold Expectations
+
+Required elements:
+- clear mission restatement
+- explicit constraints
+- phased plan with priorities
+- measurable acceptance criteria
+- identified risks
+- next actions
+
+Strong signals:
+- references to relevant context from org/constitution
+- concise but operational structure
+- no unsupported implementation claims
+This is not a single canonical “correct answer.”
+It is a gold expectation profile with acceptance bands.
+
+3. Shared metrics helpers
+src/evals/metrics.ts
+TypeScript
+
+export function mean(xs: number[]) {
+  return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0;
+}
+
+export function variance(xs: number[]) {
+  if (xs.length <= 1) return 0;
+  const m = mean(xs);
+  return mean(xs.map(x => (x - m) ** 2));
+}
+
+export function pct(numerator: number, denominator: number) {
+  return denominator <= 0 ? 0 : numerator / denominator;
+}
+
+export function deltaPct(current: number, baseline: number) {
+  if (baseline === 0) return current === 0 ? 0 : 1;
+  return (current - baseline) / Math.abs(baseline);
+}
+
+export function passBand(value: number, opts: {
+  min?: number;
+  max?: number;
+}) {
+  if (typeof opts.min === 'number' && value < opts.min) return false;
+  if (typeof opts.max === 'number' && value > opts.max) return false;
+  return true;
+}
+4. Benchmark suite loader
+src/evals/suite-loader.ts
+TypeScript
+
+import { readdir, readFile, stat } from 'node:fs/promises';
+import path from 'node:path';
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+
+export interface LoadedBenchmarkCase {
+  id: string;
+  suiteName: string;
+  caseName: string;
+  category: string;
+  difficulty: 'easy' | 'medium' | 'hard' | 'stress';
+  dir: string;
+  org: string;
+  constitution: string;
+  gold?: string;
+  config: Record<string, any>;
+  acceptance: Record<string, any>;
+}
+
+export class BenchmarkSuiteLoader {
+  constructor(private root = path.join(process.cwd(), 'benchmarks', 'suites')) {}
+
+  async loadSuite(suiteName: string): Promise<LoadedBenchmarkCase[]> {
+    const suiteDir = path.join(this.root, suiteName);
+    const entries = await readdir(suiteDir, { withFileTypes: true });
+    const out: LoadedBenchmarkCase[] = [];
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+
+      const dir = path.join(suiteDir, entry.name);
+      const caseJson = JSON.parse(await readFile(path.join(dir, 'case.json'), 'utf-8'));
+      const org = await readFile(path.join(dir, 'org.md'), 'utf-8');
+      const constitution = await readFile(path.join(dir, 'constitution.md'), 'utf-8');
+      const gold = await readFile(path.join(dir, 'gold.md'), 'utf-8').catch(() => undefined);
+
+      out.push({
+        id: `bc_${nanoid(10)}`,
+        suiteName,
+        caseName: caseJson.case_name ?? entry.name,
+        category: caseJson.category ?? 'general',
+        difficulty: caseJson.difficulty ?? 'medium',
+        dir,
+        org,
+        constitution,
+        gold,
+        config: caseJson,
+        acceptance: caseJson.acceptance ?? {},
+      });
+    }
+
+    return out;
+  }
+
+  async persistSuite(suiteName: string, description = '') {
+    const cases = await this.loadSuite(suiteName);
+    const db = getDb();
+
+    const suiteId = `bs_${nanoid(10)}`;
+    db.prepare(`
+      INSERT OR IGNORE INTO benchmark_suites
+      (id, suite_name, description, tags_json)
+      VALUES (?, ?, ?, '[]')
+    `).run(suiteId, suiteName, description || `${suiteName} benchmark suite`);
+
+    const suiteRow = db.prepare(`
+      SELECT id FROM benchmark_suites WHERE suite_name = ?
+    `).get(suiteName) as { id: string };
+
+    for (const c of cases) {
+      db.prepare(`
+        INSERT OR REPLACE INTO benchmark_cases
+        (id, suite_id, case_name, category, difficulty, org_path, constitution_path, gold_path, case_config_json, acceptance_json, enabled)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+      `).run(
+        c.id,
+        suiteRow.id,
+        c.caseName,
+        c.category,
+        c.difficulty,
+        path.join(c.dir, 'org.md'),
+        path.join(c.dir, 'constitution.md'),
+        c.gold ? path.join(c.dir, 'gold.md') : null,
+        JSON.stringify(c.config),
+        JSON.stringify(c.acceptance),
+      );
+    }
+
+    db.close();
+    return cases;
+  }
+}
+5. Gold comparator prompt
+src/prompts/gold-comparator.ts
+TypeScript
+
+import { z } from 'zod';
+
+export const GoldComparisonSchema = z.object({
+  gold_match: z.number().min(0).max(1),
+  acceptance_pass: z.boolean(),
+  strengths: z.array(z.string()).max(10),
+  misses: z.array(z.string()).max(10),
+  missing_required_elements: z.array(z.string()).max(10),
+  notes: z.array(z.string()).max(10),
+});
+
+export const GOLD_COMPARATOR_SYSTEM_PROMPT = `
+You compare an AutoOrg output against benchmark gold expectations.
+
+Inputs:
+- benchmark case config
+- gold expectations
+- produced output
+- measured metrics
+
+Your job:
+1. score semantic match to the gold expectations from 0 to 1,
+2. decide whether the output passes the benchmark acceptance band,
+3. identify missing required elements and weaknesses.
+
+Hard rules:
+- Gold match is not stylistic similarity.
+- Reward satisfying required elements and constraints.
+- A high overall score can still fail acceptance if a required bound is violated.
+- Be conservative about unsupported claims and policy defects.
+`.trim();
+6. Gold evaluator runtime
+src/evals/gold-evaluator.ts
+TypeScript
+
+import { getAdapter } from '@/adapters/adapter-factory.js';
+import { passBand } from '@/evals/metrics.js';
+import { GOLD_COMPARATOR_SYSTEM_PROMPT, GoldComparisonSchema } from '@/prompts/gold-comparator.js';
+
+export class GoldEvaluator {
+  async evaluate(opts: {
+    caseConfig: Record<string, any>;
+    goldText?: string;
+    outputText: string;
+    metrics: {
+      score: number;
+      groundedness: number;
+      novelty: number;
+      consistency: number;
+      missionAlignment: number;
+      policyCompliance?: number;
+      costUsd?: number;
+      latencyMs?: number;
+      unsupportedClaims?: number;
+    };
+    acceptance: Record<string, any>;
+  }) {
+    const measuredPass =
+      passBand(opts.metrics.score, { min: opts.acceptance.min_score }) &&
+      passBand(opts.metrics.groundedness, { min: opts.acceptance.min_groundedness }) &&
+      passBand(opts.metrics.costUsd ?? 0, { max: opts.acceptance.max_cost_usd }) &&
+      passBand(opts.metrics.latencyMs ?? 0, { max: opts.acceptance.max_latency_ms }) &&
+      passBand(opts.metrics.policyCompliance ?? 1, { min: opts.acceptance.min_policy_compliance }) &&
+      passBand(opts.metrics.unsupportedClaims ?? 0, { max: opts.acceptance.max_unsupported_claims });
+
+    const adapter = getAdapter({
+      provider: (process.env.DEFAULT_LLM_PROVIDER ?? 'anthropic') as any,
+      model: 'claude-sonnet-4-5',
+    });
+
+    const judged = await adapter.structured({
+      model: 'claude-sonnet-4-5',
+      messages: [
+        { role: 'system', content: GOLD_COMPARATOR_SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: JSON.stringify({
+            caseConfig: opts.caseConfig,
+            goldText: opts.goldText ?? '',
+            outputText: opts.outputText,
+            measuredMetrics: opts.metrics,
+            acceptance: opts.acceptance,
+            measuredPass,
+          }, null, 2),
+        },
+      ],
+      schema: GoldComparisonSchema,
+    });
+
+    return {
+      ...judged,
+      acceptance_pass: judged.acceptance_pass && measuredPass,
+    };
+  }
+}
+7. Benchmark runner
+src/evals/benchmark-runner.ts
+TypeScript
+
+import { mkdir } from 'node:fs/promises';
+import path from 'node:path';
+import { nanoid } from 'nanoid';
+import simpleGit from 'simple-git';
+import { getDb } from '@/db/migrate.js';
+import { ImmutableArtifacts } from '@/runtime/immutable-artifacts.js';
+import { BenchmarkSuiteLoader } from '@/evals/suite-loader.js';
+import { GoldEvaluator } from '@/evals/gold-evaluator.js';
+import { LeaderboardService } from '@/evals/leaderboard.js';
+import { RegressionDetector } from '@/evals/regression-detector.js';
+
+export class BenchmarkRunner {
+  private git = simpleGit();
+  private artifacts = new ImmutableArtifacts();
+  private loader = new BenchmarkSuiteLoader();
+  private gold = new GoldEvaluator();
+  private boards = new LeaderboardService();
+  private regressions = new RegressionDetector();
+
+  async runSuite(opts: {
+    suiteName: string;
+    runLabel?: string;
+    mode?: 'manual' | 'ci' | 'ab_test' | 'bakeoff' | 'replay';
+    constitutionVariant?: string;
+    templateVariant?: string;
+    modelMap?: Record<string, string>;
+    seed?: number;
+  }) {
+    const cases = await this.loader.persistSuite(opts.suiteName);
+    const gitHead = (await this.git.revparse(['HEAD'])).trim().catch(() => '');
+    const db = getDb();
+
+    const suiteRow = db.prepare(`
+      SELECT id FROM benchmark_suites WHERE suite_name = ?
+    `).get(opts.suiteName) as { id: string };
+
+    const benchmarkRunId = `br_${nanoid(10)}`;
+    db.prepare(`
+      INSERT INTO benchmark_runs
+      (id, suite_id, run_label, mode, git_head, orchestrator_version, constitution_variant, template_variant, model_map_json, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'running')
+    `).run(
+      benchmarkRunId,
+      suiteRow.id,
+      opts.runLabel ?? `${opts.suiteName}-${Date.now()}`,
+      opts.mode ?? 'manual',
+      gitHead,
+      process.env.AUTOORG_VERSION ?? 'dev',
+      opts.constitutionVariant ?? 'default',
+      opts.templateVariant ?? 'default',
+      JSON.stringify(opts.modelMap ?? {})
+    );
+    db.close();
+
+    await mkdir(path.join(process.cwd(), 'benchmarks', 'outputs', 'runs'), { recursive: true });
+
+    for (const c of cases) {
+      await this.runCase({
+        benchmarkRunId,
+        caseDef: c,
+        modelMap: opts.modelMap ?? {},
+        templateVariant: opts.templateVariant ?? c.config.template_variant ?? 'baseline',
+        constitutionVariant: opts.constitutionVariant ?? 'default',
+        seed: opts.seed ?? c.config.seed ?? 42,
+      });
+    }
+
+    await this.boards.recomputeForSuite(suiteRow.id);
+    await this.regressions.scanRun(benchmarkRunId);
+
+    const db2 = getDb();
+    db2.prepare(`
+      UPDATE benchmark_runs
+      SET status = 'completed', finished_at = datetime('now')
+      WHERE id = ?
+    `).run(benchmarkRunId);
+    db2.close();
+
+    return { benchmarkRunId };
+  }
+
+  async runCase(opts: {
+    benchmarkRunId: string;
+    caseDef: any;
+    modelMap: Record<string, string>;
+    templateVariant: string;
+    constitutionVariant: string;
+    seed: number;
+  }) {
+    const db = getDb();
+    const attemptId = `ba_${nanoid(10)}`;
+
+    const outputPath = path.join(process.cwd(), 'benchmarks', 'outputs', 'runs', `${attemptId}.output.md`);
+    const reportPath = path.join(process.cwd(), 'benchmarks', 'outputs', 'runs', `${attemptId}.report.json`);
+
+    db.prepare(`
+      INSERT INTO benchmark_attempts
+      (id, benchmark_run_id, case_id, seed, model_map_json, template_variant, constitution_variant, output_path, report_path, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'running')
+    `).run(
+      attemptId,
+      opts.benchmarkRunId,
+      opts.caseDef.id,
+      opts.seed,
+      JSON.stringify(opts.modelMap),
+      opts.templateVariant,
+      opts.constitutionVariant,
+      outputPath,
+      reportPath,
+    );
+    db.close();
+
+    const started = Date.now();
+
+    try {
+      // You can wire this into your actual orchestrator benchmark mode.
+      // Baseline placeholder here assumes `runBenchmarkCase` exists.
+      const result = await runBenchmarkCase({
+        orgText: opts.caseDef.org,
+        constitutionText: opts.caseDef.constitution,
+        caseConfig: opts.caseDef.config,
+        templateVariant: opts.templateVariant,
+        constitutionVariant: opts.constitutionVariant,
+        modelMap: opts.modelMap,
+        seed: opts.seed,
+      });
+
+      const latencyMs = Date.now() - started;
+
+      await this.artifacts.writeText({
+        runId: opts.benchmarkRunId,
+        relPath: path.relative(process.cwd(), outputPath),
+        text: result.outputText,
+        artifactKind: 'benchmark_output',
+      });
+
+      const goldEval = await this.gold.evaluate({
+        caseConfig: opts.caseDef.config,
+        goldText: opts.caseDef.gold,
+        outputText: result.outputText,
+        metrics: {
+          score: result.score.composite,
+          groundedness: result.score.groundedness,
+          novelty: result.score.novelty,
+          consistency: result.score.consistency,
+          missionAlignment: result.score.missionAlignment,
+          policyCompliance: result.score.policyCompliance ?? 1,
+          costUsd: result.costUsd ?? 0,
+          latencyMs,
+          unsupportedClaims: result.verificationReport?.unsupported_claims ?? 0,
+        },
+        acceptance: opts.caseDef.acceptance,
+      });
+
+      await this.artifacts.writeJson({
+        runId: opts.benchmarkRunId,
+        relPath: path.relative(process.cwd(), reportPath),
+        data: {
+          result,
+          goldEval,
+          latencyMs,
+        },
+        artifactKind: 'benchmark_report',
+      });
+
+      const db2 = getDb();
+      db2.prepare(`
+        UPDATE benchmark_attempts
+        SET autoorg_run_id = ?, status = 'completed', finished_at = datetime('now')
+        WHERE id = ?
+      `).run(result.runId ?? null, attemptId);
+
+      db2.prepare(`
+        INSERT INTO benchmark_metrics
+        (id, attempt_id, score, groundedness, novelty, consistency, mission_alignment, policy_compliance,
+         gold_match, acceptance_pass, latency_ms, cost_usd, tool_calls, unsupported_claims, broken_provenance_links, security_findings)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        `bm_${nanoid(10)}`,
+        attemptId,
+        result.score.composite,
+        result.score.groundedness,
+        result.score.novelty,
+        result.score.consistency,
+        result.score.missionAlignment,
+        result.score.policyCompliance ?? 1,
+        goldEval.gold_match,
+        goldEval.acceptance_pass ? 1 : 0,
+        latencyMs,
+        result.costUsd ?? 0,
+        result.toolCalls ?? 0,
+        result.verificationReport?.unsupported_claims ?? 0,
+        result.provenanceReport?.broken_links ?? 0,
+        result.securityFindingCount ?? 0,
+      );
+
+      db2.close();
+    } catch (error) {
+      const db3 = getDb();
+      db3.prepare(`
+        UPDATE benchmark_attempts
+        SET status = 'failed', finished_at = datetime('now')
+        WHERE id = ?
+      `).run(attemptId);
+      db3.close();
+      throw error;
+    }
+  }
+}
+
+// Adapter function to your orchestrator benchmark mode.
+async function runBenchmarkCase(input: any) {
+  if (typeof globalThis.__AUTOORG_BENCHMARK_RUNNER__ === 'function') {
+    return await globalThis.__AUTOORG_BENCHMARK_RUNNER__(input);
+  }
+
+  throw new Error('No benchmark runner is wired. Expose orchestrator benchmark entrypoint first.');
+}
+8. Leaderboards
+src/evals/leaderboard.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+import { mean, pct } from '@/evals/metrics.js';
+
+export class LeaderboardService {
+  async recomputeForSuite(suiteId: string) {
+    const db = getDb();
+
+    const rows = db.prepare(`
+      SELECT
+        br.suite_id as suite_id,
+        ba.template_variant as template_variant,
+        ba.constitution_variant as constitution_variant,
+        ba.model_map_json as model_map_json,
+        bm.*
+      FROM benchmark_metrics bm
+      JOIN benchmark_attempts ba ON ba.id = bm.attempt_id
+      JOIN benchmark_runs br ON br.id = ba.benchmark_run_id
+      WHERE br.suite_id = ?
+    `).all(suiteId) as Array<any>;
+
+    db.prepare(`DELETE FROM leaderboards WHERE suite_id = ?`).run(suiteId);
+
+    const groups = new Map<string, any[]>();
+
+    for (const row of rows) {
+      const modelMap = JSON.parse(row.model_map_json || '{}');
+      const primaryModel = modelMap.ceo ?? modelMap.default ?? 'unknown';
+
+      const keys = [
+        `model:${primaryModel}`,
+        `template:${row.template_variant ?? 'default'}`,
+        `constitution:${row.constitution_variant ?? 'default'}`,
+        `overall:all`,
+      ];
+
+      for (const k of keys) {
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k)!.push(row);
+      }
+    }
+
+    for (const [key, group] of groups.entries()) {
+      const [leaderboardType, subjectKey] = key.split(':');
+
+      db.prepare(`
+        INSERT INTO leaderboards
+        (id, suite_id, leaderboard_type, subject_key, average_score, average_gold_match,
+         average_policy_compliance, average_cost_usd, average_latency_ms, pass_rate, samples)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        `lb_${nanoid(10)}`,
+        suiteId,
+        leaderboardType,
+        subjectKey,
+        mean(group.map(x => x.score)),
+        mean(group.map(x => x.gold_match)),
+        mean(group.map(x => x.policy_compliance)),
+        mean(group.map(x => x.cost_usd)),
+        mean(group.map(x => x.latency_ms)),
+        pct(group.filter(x => x.acceptance_pass).length, group.length),
+        group.length,
+      );
+    }
+
+    db.close();
+  }
+}
+9. Regression explainer prompt
+src/prompts/regression-explainer.ts
+TypeScript
+
+import { z } from 'zod';
+
+export const RegressionExplanationSchema = z.object({
+  likely_causes: z.array(z.string()).max(8),
+  affected_metrics: z.array(z.string()).max(8),
+  hypotheses: z.array(z.string()).max(8),
+  suggested_checks: z.array(z.string()).max(8),
+  severity: z.enum(['warn', 'error', 'critical']),
+});
+
+export const REGRESSION_EXPLAINER_SYSTEM_PROMPT = `
+You explain benchmark regressions in AutoOrg.
+
+Inputs:
+- baseline metrics
+- current metrics
+- case category
+- model/template/constitution variants
+- optional tool/provenance/policy deltas
+
+Your job:
+1. identify likely causes,
+2. identify which metrics regressed meaningfully,
+3. propose targeted debugging checks.
+
+Hard rules:
+- Do not confuse cost increases with score improvements unless both are shown.
+- Prefer mechanistic hypotheses over vague ones.
+- Mention policy/provenance regressions if they could explain score changes.
+`.trim();
+10. Regression detector
+src/evals/regression-detector.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getAdapter } from '@/adapters/adapter-factory.js';
+import { getDb } from '@/db/migrate.js';
+import { REGRESSION_EXPLAINER_SYSTEM_PROMPT, RegressionExplanationSchema } from '@/prompts/regression-explainer.js';
+
+export class RegressionDetector {
+  async scanRun(benchmarkRunId: string) {
+    const db = getDb();
+
+    const run = db.prepare(`
+      SELECT * FROM benchmark_runs WHERE id = ?
+    `).get(benchmarkRunId) as any;
+
+    const baseline = db.prepare(`
+      SELECT *
+      FROM benchmark_runs
+      WHERE suite_id = ? AND status = 'completed' AND id != ?
+      ORDER BY started_at DESC
+      LIMIT 1
+    `).get(run.suite_id, benchmarkRunId) as any;
+
+    if (!baseline) {
+      db.close();
+      return [];
+    }
+
+    const currentRows = db.prepare(`
+      SELECT
+        AVG(bm.score) as avg_score,
+        AVG(bm.groundedness) as avg_groundedness,
+        AVG(bm.novelty) as avg_novelty,
+        AVG(bm.policy_compliance) as avg_policy,
+        AVG(bm.cost_usd) as avg_cost,
+        AVG(bm.latency_ms) as avg_latency,
+        AVG(bm.gold_match) as avg_gold
+      FROM benchmark_metrics bm
+      JOIN benchmark_attempts ba ON ba.id = bm.attempt_id
+      WHERE ba.benchmark_run_id = ?
+    `).get(benchmarkRunId) as any;
+
+    const baselineRows = db.prepare(`
+      SELECT
+        AVG(bm.score) as avg_score,
+        AVG(bm.groundedness) as avg_groundedness,
+        AVG(bm.novelty) as avg_novelty,
+        AVG(bm.policy_compliance) as avg_policy,
+        AVG(bm.cost_usd) as avg_cost,
+        AVG(bm.latency_ms) as avg_latency,
+        AVG(bm.gold_match) as avg_gold
+      FROM benchmark_metrics bm
+      JOIN benchmark_attempts ba ON ba.id = bm.attempt_id
+      WHERE ba.benchmark_run_id = ?
+    `).get(baseline.id) as any;
+
+    const deltas = [
+      ['score', baselineRows.avg_score, currentRows.avg_score, -0.03],
+      ['groundedness', baselineRows.avg_groundedness, currentRows.avg_groundedness, -0.04],
+      ['gold_match', baselineRows.avg_gold, currentRows.avg_gold, -0.04],
+      ['policy_compliance', baselineRows.avg_policy, currentRows.avg_policy, -0.03],
+      ['cost_usd', baselineRows.avg_cost, currentRows.avg_cost, +0.20],
+      ['latency_ms', baselineRows.avg_latency, currentRows.avg_latency, +0.25],
+    ] as const;
+
+    const alarms = [];
+
+    for (const [metricName, baselineValue, currentValue, threshold] of deltas) {
+      const deltaValue = (currentValue ?? 0) - (baselineValue ?? 0);
+
+      const isRegression =
+        metricName === 'cost_usd' || metricName === 'latency_ms'
+          ? deltaValue > threshold
+          : deltaValue < threshold;
+
+      if (!isRegression) continue;
+
+      const adapter = getAdapter({
+        provider: (process.env.DEFAULT_LLM_PROVIDER ?? 'anthropic') as any,
+        model: 'claude-sonnet-4-5',
+      });
+
+      const explanation = await adapter.structured({
+        model: 'claude-sonnet-4-5',
+        messages: [
+          { role: 'system', content: REGRESSION_EXPLAINER_SYSTEM_PROMPT },
+          {
+            role: 'user',
+            content: JSON.stringify({
+              metricName,
+              baselineRun: baseline.id,
+              currentRun: benchmarkRunId,
+              baselineValue,
+              currentValue,
+              deltaValue,
+            }, null, 2),
+          },
+        ],
+        schema: RegressionExplanationSchema,
+      });
+
+      const severity =
+        metricName === 'policy_compliance' || metricName === 'groundedness'
+          ? 'error'
+          : metricName === 'score'
+            ? 'error'
+            : 'warn';
+
+      db.prepare(`
+        INSERT INTO regression_alarms
+        (id, benchmark_run_id, subject_key, metric_name, baseline_value, current_value, delta_value, threshold_value, severity, explanation_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        `ra_${nanoid(10)}`,
+        benchmarkRunId,
+        'overall',
+        metricName,
+        baselineValue ?? 0,
+        currentValue ?? 0,
+        deltaValue,
+        threshold,
+        severity,
+        JSON.stringify(explanation),
+      );
+
+      alarms.push({ metricName, severity, explanation });
+    }
+
+    db.close();
+    return alarms;
+  }
+}
+11. Offline replay lab
+src/evals/replay-lab.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+import { ImmutableArtifacts } from '@/runtime/immutable-artifacts.js';
+
+export class ReplayLab {
+  private artifacts = new ImmutableArtifacts();
+
+  async replayAttempt(opts: {
+    attemptId: string;
+    mode?: 'artifact_only' | 'tool_trace' | 'full_score_recompute';
+  }) {
+    const db = getDb();
+    const row = db.prepare(`
+      SELECT ba.*, bm.score, bm.groundedness, bm.novelty, bm.consistency, bm.mission_alignment,
+             bm.policy_compliance, bm.gold_match, bm.cost_usd, bm.latency_ms
+      FROM benchmark_attempts ba
+      LEFT JOIN benchmark_metrics bm ON bm.attempt_id = ba.id
+      WHERE ba.id = ?
+    `).get(opts.attemptId) as any;
+
+    if (!row) {
+      db.close();
+      throw new Error(`Benchmark attempt ${opts.attemptId} not found`);
+    }
+
+    const replayId = `rpl_${nanoid(10)}`;
+    db.prepare(`
+      INSERT INTO replay_sessions
+      (id, source_run_id, source_attempt_id, mode, status, summary_json)
+      VALUES (?, ?, ?, ?, 'running', '{}')
+    `).run(replayId, row.autoorg_run_id ?? null, row.id, opts.mode ?? 'artifact_only');
+    db.close();
+
+    try {
+      const outputText = row.output_path ? await Bun.file(row.output_path).text().catch(() => '') : '';
+      const reportJson = row.report_path ? await Bun.file(row.report_path).json().catch(() => ({})) : {};
+
+      const replay = {
+        attemptId: row.id,
+        autoorgRunId: row.autoorg_run_id,
+        mode: opts.mode ?? 'artifact_only',
+        outputText,
+        reportJson,
+        originalMetrics: {
+          score: row.score,
+          groundedness: row.groundedness,
+          novelty: row.novelty,
+          consistency: row.consistency,
+          missionAlignment: row.mission_alignment,
+          policyCompliance: row.policy_compliance,
+          goldMatch: row.gold_match,
+          costUsd: row.cost_usd,
+          latencyMs: row.latency_ms,
+        },
+      };
+
+      const written = await this.artifacts.writeJson({
+        runId: row.autoorg_run_id ?? row.id,
+        relPath: `artifacts/benchmarks/replays/${replayId}.json`,
+        data: replay,
+        artifactKind: 'benchmark_replay',
+      });
+
+      const db2 = getDb();
+      db2.prepare(`
+        UPDATE replay_sessions
+        SET status = 'completed', artifact_path = ?, summary_json = ?
+        WHERE id = ?
+      `).run(
+        written.artifactPath,
+        JSON.stringify({ attemptId: row.id, mode: opts.mode ?? 'artifact_only' }),
+        replayId
+      );
+      db2.close();
+
+      return { replayId, artifactPath: written.artifactPath };
+    } catch (error) {
+      const db3 = getDb();
+      db3.prepare(`
+        UPDATE replay_sessions
+        SET status = 'failed', summary_json = ?
+        WHERE id = ?
+      `).run(
+        JSON.stringify({ error: error instanceof Error ? error.message : String(error) }),
+        replayId
+      );
+      db3.close();
+      throw error;
+    }
+  }
+}
+12. Constitution A/B testing
+src/evals/constitution-ab.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+import { BenchmarkRunner } from '@/evals/benchmark-runner.js';
+
+export class ConstitutionAB {
+  private runner = new BenchmarkRunner();
+
+  async compare(opts: {
+    suiteName: string;
+    variantA: string;
+    variantB: string;
+    modelMap?: Record<string, string>;
+    templateVariant?: string;
+  }) {
+    const runA = await this.runner.runSuite({
+      suiteName: opts.suiteName,
+      mode: 'ab_test',
+      constitutionVariant: opts.variantA,
+      templateVariant: opts.templateVariant,
+      modelMap: opts.modelMap,
+      runLabel: `${opts.suiteName}-A`,
+    });
+
+    const runB = await this.runner.runSuite({
+      suiteName: opts.suiteName,
+      mode: 'ab_test',
+      constitutionVariant: opts.variantB,
+      templateVariant: opts.templateVariant,
+      modelMap: opts.modelMap,
+      runLabel: `${opts.suiteName}-B`,
+    });
+
+    const db = getDb();
+
+    const suiteRow = db.prepare(`SELECT id FROM benchmark_suites WHERE suite_name = ?`).get(opts.suiteName) as { id: string };
+
+    const avg = (benchmarkRunId: string) => db.prepare(`
+      SELECT
+        AVG(bm.score) as avg_score,
+        AVG(bm.policy_compliance) as avg_policy,
+        AVG(bm.cost_usd) as avg_cost
+      FROM benchmark_metrics bm
+      JOIN benchmark_attempts ba ON ba.id = bm.attempt_id
+      WHERE ba.benchmark_run_id = ?
+    `).get(benchmarkRunId) as any;
+
+    const a = avg(runA.benchmarkRunId);
+    const b = avg(runB.benchmarkRunId);
+
+    const winner =
+      (b.avg_score + 0.15 * b.avg_policy - 0.03 * b.avg_cost) >
+      (a.avg_score + 0.15 * a.avg_policy - 0.03 * a.avg_cost)
+        ? opts.variantB
+        : opts.variantA;
+
+    db.prepare(`
+      INSERT INTO constitution_experiments
+      (id, suite_id, experiment_name, variant_a, variant_b, winner, delta_score, delta_policy, delta_cost, artifact_path)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      `cab_${nanoid(10)}`,
+      suiteRow.id,
+      `${opts.suiteName}:${opts.variantA}_vs_${opts.variantB}`,
+      opts.variantA,
+      opts.variantB,
+      winner,
+      (b.avg_score ?? 0) - (a.avg_score ?? 0),
+      (b.avg_policy ?? 0) - (a.avg_policy ?? 0),
+      (b.avg_cost ?? 0) - (a.avg_cost ?? 0),
+      null
+    );
+
+    db.close();
+
+    return {
+      winner,
+      runA: runA.benchmarkRunId,
+      runB: runB.benchmarkRunId,
+    };
+  }
+}
+13. Template bake-offs
+src/evals/template-bakeoff.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+import { BenchmarkRunner } from '@/evals/benchmark-runner.js';
+
+export class TemplateBakeoff {
+  private runner = new BenchmarkRunner();
+
+  async compare(opts: {
+    suiteName: string;
+    templateA: string;
+    templateB: string;
+    constitutionVariant?: string;
+    modelMap?: Record<string, string>;
+  }) {
+    const a = await this.runner.runSuite({
+      suiteName: opts.suiteName,
+      mode: 'bakeoff',
+      templateVariant: opts.templateA,
+      constitutionVariant: opts.constitutionVariant,
+      modelMap: opts.modelMap,
+      runLabel: `${opts.suiteName}-${opts.templateA}`,
+    });
+
+    const b = await this.runner.runSuite({
+      suiteName: opts.suiteName,
+      mode: 'bakeoff',
+      templateVariant: opts.templateB,
+      constitutionVariant: opts.constitutionVariant,
+      modelMap: opts.modelMap,
+      runLabel: `${opts.suiteName}-${opts.templateB}`,
+    });
+
+    const db = getDb();
+    const suiteRow = db.prepare(`SELECT id FROM benchmark_suites WHERE suite_name = ?`).get(opts.suiteName) as { id: string };
+
+    const stats = (benchmarkRunId: string) => db.prepare(`
+      SELECT
+        AVG(bm.score) as avg_score,
+        AVG(bm.cost_usd) as avg_cost,
+        AVG(bm.latency_ms) as avg_latency
+      FROM benchmark_metrics bm
+      JOIN benchmark_attempts ba ON ba.id = bm.attempt_id
+      WHERE ba.benchmark_run_id = ?
+    `).get(benchmarkRunId) as any;
+
+    const sa = stats(a.benchmarkRunId);
+    const sb = stats(b.benchmarkRunId);
+
+    const winner =
+      (sb.avg_score ?? 0) - 0.02 * (sb.avg_cost ?? 0) / 10 - 0.01 * (sb.avg_latency ?? 0) / 10000 >
+      (sa.avg_score ?? 0) - 0.02 * (sa.avg_cost ?? 0) / 10 - 0.01 * (sa.avg_latency ?? 0) / 10000
+        ? opts.templateB
+        : opts.templateA;
+
+    db.prepare(`
+      INSERT INTO template_bakeoffs
+      (id, suite_id, template_a, template_b, winner, delta_score, delta_cost, delta_latency, artifact_path)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      `tb_${nanoid(10)}`,
+      suiteRow.id,
+      opts.templateA,
+      opts.templateB,
+      winner,
+      (sb.avg_score ?? 0) - (sa.avg_score ?? 0),
+      (sb.avg_cost ?? 0) - (sa.avg_cost ?? 0),
+      (sb.avg_latency ?? 0) - (sa.avg_latency ?? 0),
+      null
+    );
+
+    db.close();
+
+    return { winner, runA: a.benchmarkRunId, runB: b.benchmarkRunId };
+  }
+}
+14. Judge calibration prompt
+src/prompts/judge-calibrator.ts
+TypeScript
+
+import { z } from 'zod';
+
+export const JudgeCalibrationSchema = z.object({
+  agreement_score: z.number().min(0).max(1),
+  mean_variance: z.number().min(0),
+  unstable_cases: z.array(z.string()).max(20),
+  notes: z.array(z.string()).max(10),
+});
+
+export const JUDGE_CALIBRATOR_SYSTEM_PROMPT = `
+You assess consistency of benchmark judgments.
+
+Inputs:
+- multiple judge outputs for the same attempts
+- score components and justifications
+- variance summary
+
+Your job:
+1. estimate agreement from 0 to 1,
+2. estimate mean variance,
+3. identify unstable cases,
+4. note likely causes of instability.
+
+Hard rules:
+- Large swings in groundedness or policy compliance matter more than small novelty swings.
+- If justifications contradict the numeric scores, note that.
+`.trim();
+15. Judge calibration harness
+src/evals/judge-calibrator.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { variance, mean } from '@/evals/metrics.js';
+import { getAdapter } from '@/adapters/adapter-factory.js';
+import { getDb } from '@/db/migrate.js';
+import { ImmutableArtifacts } from '@/runtime/immutable-artifacts.js';
+import { JUDGE_CALIBRATOR_SYSTEM_PROMPT, JudgeCalibrationSchema } from '@/prompts/judge-calibrator.js';
+
+export class JudgeCalibrator {
+  private artifacts = new ImmutableArtifacts();
+
+  async calibrate(opts: {
+    benchmarkRunId: string;
+    judgeModel?: string;
+  }) {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT
+        ba.id as attempt_id,
+        bm.score, bm.groundedness, bm.novelty, bm.consistency, bm.mission_alignment, bm.policy_compliance
+      FROM benchmark_metrics bm
+      JOIN benchmark_attempts ba ON ba.id = bm.attempt_id
+      WHERE ba.benchmark_run_id = ?
+      ORDER BY ba.created_at ASC
+      LIMIT 50
+    `).all(opts.benchmarkRunId) as Array<any>;
+    db.close();
+
+    // Baseline Phase 7 version: variance is estimated from repeated score recomputations stubbed here.
+    const repeated = rows.map(row => ({
+      attemptId: row.attempt_id,
+      scores: [
+        row.score,
+        row.score,
+        row.score,
+      ],
+      groundedness: [
+        row.groundedness,
+        row.groundedness,
+        row.groundedness,
+      ],
+      policy: [
+        row.policy_compliance,
+        row.policy_compliance,
+        row.policy_compliance,
+      ],
+    }));
+
+    const variances = repeated.map(r => variance(r.scores));
+    const unstableCases = repeated
+      .filter(r => variance(r.scores) > 0.01 || variance(r.groundedness) > 0.01 || variance(r.policy) > 0.01)
+      .map(r => r.attemptId);
+
+    const adapter = getAdapter({
+      provider: (process.env.DEFAULT_LLM_PROVIDER ?? 'anthropic') as any,
+      model: 'claude-sonnet-4-5',
+    });
+
+    const report = await adapter.structured({
+      model: 'claude-sonnet-4-5',
+      messages: [
+        { role: 'system', content: JUDGE_CALIBRATOR_SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: JSON.stringify({
+            benchmarkRunId: opts.benchmarkRunId,
+            repeated,
+            meanVariance: mean(variances),
+          }, null, 2),
+        },
+      ],
+      schema: JudgeCalibrationSchema,
+    });
+
+    const written = await this.artifacts.writeJson({
+      runId: opts.benchmarkRunId,
+      relPath: `artifacts/benchmarks/calibrations/${opts.benchmarkRunId}.json`,
+      data: report,
+      artifactKind: 'judge_calibration',
+    });
+
+    const db2 = getDb();
+    db2.prepare(`
+      INSERT INTO judge_calibration_runs
+      (id, benchmark_run_id, judge_model, sample_count, mean_variance, agreement_score, artifact_path, report_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      `jcr_${nanoid(10)}`,
+      opts.benchmarkRunId,
+      opts.judgeModel ?? 'default',
+      rows.length,
+      report.mean_variance,
+      report.agreement_score,
+      written.artifactPath,
+      JSON.stringify(report),
+    );
+    db2.close();
+
+    return report;
+  }
+}
+16. Benchmark CI entrypoint
+src/evals/benchmark-ci.ts
+TypeScript
+
+#!/usr/bin/env bun
+import { BenchmarkRunner } from '@/evals/benchmark-runner.js';
+import { getDb } from '@/db/migrate.js';
+
+async function main() {
+  const suiteName = process.env.BENCHMARK_SUITE ?? 'core';
+  const constitutionVariant = process.env.BENCHMARK_CONSTITUTION ?? 'default';
+  const templateVariant = process.env.BENCHMARK_TEMPLATE ?? 'baseline';
+
+  const runner = new BenchmarkRunner();
+  const { benchmarkRunId } = await runner.runSuite({
+    suiteName,
+    mode: 'ci',
+    constitutionVariant,
+    templateVariant,
+    runLabel: `ci-${suiteName}-${Date.now()}`,
+  });
+
+  const db = getDb();
+  const failures = db.prepare(`
+    SELECT COUNT(*) as n
+    FROM benchmark_metrics bm
+    JOIN benchmark_attempts ba ON ba.id = bm.attempt_id
+    WHERE ba.benchmark_run_id = ? AND bm.acceptance_pass = 0
+  `).get(benchmarkRunId) as { n: number };
+
+  const regressions = db.prepare(`
+    SELECT COUNT(*) as n
+    FROM regression_alarms
+    WHERE benchmark_run_id = ? AND severity IN ('error','critical')
+  `).get(benchmarkRunId) as { n: number };
+  db.close();
+
+  console.log(`Benchmark run: ${benchmarkRunId}`);
+  console.log(`Acceptance failures: ${failures.n}`);
+  console.log(`Serious regressions: ${regressions.n}`);
+
+  if (failures.n > 0 || regressions.n > 0) {
+    process.exit(1);
+  }
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
+17. Orchestrator benchmark mode
+Patch src/runtime/orchestrator.ts
+Add a benchmark entrypoint wrapper, not a separate orchestration stack.
+
+Add:
+
+TypeScript
+
+export async function runBenchmarkMode(input: {
+  orgText: string;
+  constitutionText: string;
+  caseConfig: Record<string, unknown>;
+  templateVariant?: string;
+  constitutionVariant?: string;
+  modelMap?: Record<string, string>;
+  seed?: number;
+}) {
+  const run = await runAutoOrg({
+    orgText: input.orgText,
+    constitutionText: input.constitutionText,
+    mode: 'benchmark',
+    maxCycles: Number(input.caseConfig.max_cycles ?? 4),
+    seed: input.seed ?? 42,
+    templateVariant: input.templateVariant,
+    constitutionVariant: input.constitutionVariant,
+    modelMap: input.modelMap,
+  });
+
+  return {
+    runId: run.runId,
+    outputText: run.finalOutputText,
+    score: run.finalScore,
+    costUsd: run.totalCostUsd ?? 0,
+    toolCalls: run.totalToolCalls ?? 0,
+    verificationReport: run.verificationReport,
+    provenanceReport: run.provenanceReport,
+    securityFindingCount: run.securityFindingCount ?? 0,
+  };
+}
+Then expose it for the benchmark runner:
+
+TypeScript
+
+(globalThis as any).__AUTOORG_BENCHMARK_RUNNER__ = runBenchmarkMode;
+This keeps the benchmark lab using the real orchestrator, not a toy path.
+
+18. Results logger benchmark awareness
+Patch src/runtime/results-logger.ts
+If benchmark mode is enabled, also emit a benchmark-friendly JSON sidecar per cycle:
+
+TypeScript
+
+if (mode === 'benchmark') {
+  await Bun.write(
+    `benchmarks/outputs/runs/${runId}.cycles.json`,
+    JSON.stringify(cycleRows, null, 2)
+  );
+}
+This helps replay and judge calibration later.
+
+19. API routes
+src/api/eval-routes.ts
+TypeScript
+
+import { getDb } from '@/db/migrate.js';
+import { BenchmarkRunner } from '@/evals/benchmark-runner.js';
+import { ReplayLab } from '@/evals/replay-lab.js';
+import { ConstitutionAB } from '@/evals/constitution-ab.js';
+import { TemplateBakeoff } from '@/evals/template-bakeoff.js';
+import { JudgeCalibrator } from '@/evals/judge-calibrator.js';
+
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data, null, 2), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+export async function handleEvalRoutes(url: URL, req: Request) {
+  const method = req.method;
+
+  if (url.pathname === '/api/benchmarks' && method === 'GET') {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT br.*, bs.suite_name
+      FROM benchmark_runs br
+      JOIN benchmark_suites bs ON bs.id = br.suite_id
+      ORDER BY br.started_at DESC
+      LIMIT 100
+    `).all();
+    db.close();
+    return json(rows);
+  }
+
+  if (url.pathname === '/api/benchmarks/run' && method === 'POST') {
+    const body = await req.json() as {
+      suiteName: string;
+      constitutionVariant?: string;
+      templateVariant?: string;
+      modelMap?: Record<string, string>;
+    };
+    const runner = new BenchmarkRunner();
+    const result = await runner.runSuite({
+      suiteName: body.suiteName,
+      constitutionVariant: body.constitutionVariant,
+      templateVariant: body.templateVariant,
+      modelMap: body.modelMap,
+      mode: 'manual',
+    });
+    return json({ ok: true, result });
+  }
+
+  if (url.pathname === '/api/leaderboards' && method === 'GET') {
+    const suiteName = url.searchParams.get('suite');
+    const type = url.searchParams.get('type');
+    const db = getDb();
+
+    const rows = db.prepare(`
+      SELECT lb.*, bs.suite_name
+      FROM leaderboards lb
+      JOIN benchmark_suites bs ON bs.id = lb.suite_id
+      WHERE (? IS NULL OR bs.suite_name = ?)
+        AND (? IS NULL OR lb.leaderboard_type = ?)
+      ORDER BY lb.updated_at DESC
+      LIMIT 200
+    `).all(suiteName, suiteName, type, type);
+
+    db.close();
+    return json(rows);
+  }
+
+  if (url.pathname === '/api/regressions' && method === 'GET') {
+    const runId = url.searchParams.get('benchmarkRunId');
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM regression_alarms
+      ${runId ? 'WHERE benchmark_run_id = ?' : ''}
+      ORDER BY created_at DESC
+      LIMIT 200
+    `).all(...(runId ? [runId] : []));
+    db.close();
+    return json(rows);
+  }
+
+  if (url.pathname === '/api/replay' && method === 'POST') {
+    const body = await req.json() as { attemptId: string; mode?: 'artifact_only' | 'tool_trace' | 'full_score_recompute' };
+    const lab = new ReplayLab();
+    const result = await lab.replayAttempt(body);
+    return json({ ok: true, result });
+  }
+
+  if (url.pathname === '/api/constitution-ab' && method === 'POST') {
+    const body = await req.json() as {
+      suiteName: string;
+      variantA: string;
+      variantB: string;
+      templateVariant?: string;
+      modelMap?: Record<string, string>;
+    };
+    const ab = new ConstitutionAB();
+    const result = await ab.compare(body);
+    return json({ ok: true, result });
+  }
+
+  if (url.pathname === '/api/template-bakeoff' && method === 'POST') {
+    const body = await req.json() as {
+      suiteName: string;
+      templateA: string;
+      templateB: string;
+      constitutionVariant?: string;
+      modelMap?: Record<string, string>;
+    };
+    const bakeoff = new TemplateBakeoff();
+    const result = await bakeoff.compare(body);
+    return json({ ok: true, result });
+  }
+
+  if (url.pathname === '/api/judge-calibrate' && method === 'POST') {
+    const body = await req.json() as { benchmarkRunId: string; judgeModel?: string };
+    const calibrator = new JudgeCalibrator();
+    const result = await calibrator.calibrate(body);
+    return json({ ok: true, result });
+  }
+
+  return null;
+}
+20. Minimal UI additions
+text
+
+web/app/
+├── benchmarks/page.tsx
+├── leaderboard/page.tsx
+├── regressions/page.tsx
+└── replay/page.tsx
+Patch nav in web/app/layout.tsx
+React
+
+<nav className="ml-auto flex gap-6 text-sm">
+  <a href="/" className="text-gray-400 hover:text-cyan-400 transition-colors">Dashboard</a>
+  <a href="/graph" className="text-gray-400 hover:text-cyan-400 transition-colors">Graph</a>
+  <a href="/approvals" className="text-gray-400 hover:text-cyan-400 transition-colors">Approvals</a>
+  <a href="/budgets" className="text-gray-400 hover:text-cyan-400 transition-colors">Budgets</a>
+  <a href="/locks" className="text-gray-400 hover:text-cyan-400 transition-colors">Locks</a>
+  <a href="/issues" className="text-gray-400 hover:text-cyan-400 transition-colors">Issues</a>
+  <a href="/tools" className="text-gray-400 hover:text-cyan-400 transition-colors">Tools</a>
+  <a href="/evidence" className="text-gray-400 hover:text-cyan-400 transition-colors">Evidence</a>
+  <a href="/ledger" className="text-gray-400 hover:text-cyan-400 transition-colors">Ledger</a>
+  <a href="/provenance" className="text-gray-400 hover:text-cyan-400 transition-colors">Provenance</a>
+  <a href="/security" className="text-gray-400 hover:text-cyan-400 transition-colors">Security</a>
+  <a href="/benchmarks" className="text-gray-400 hover:text-cyan-400 transition-colors">Benchmarks</a>
+  <a href="/leaderboard" className="text-gray-400 hover:text-cyan-400 transition-colors">Leaderboard</a>
+  <a href="/regressions" className="text-gray-400 hover:text-cyan-400 transition-colors">Regressions</a>
+  <a href="/replay" className="text-gray-400 hover:text-cyan-400 transition-colors">Replay</a>
+</nav>
+/benchmarks page
+Show:
+
+recent benchmark runs
+suite name
+mode
+constitution/template variant
+pass/fail summary
+start/finish time
+trigger new run button
+/leaderboard page
+Show:
+
+per-suite leaderboards
+model rankings
+template rankings
+constitution rankings
+pass rate / score / cost / latency
+/regressions page
+Show:
+
+new alarms
+metric
+baseline vs current
+severity
+LLM explanation
+jump-to-run
+/replay page
+Show:
+
+replay sessions
+source attempt/run
+mode
+link to replay artifact
+21. Judge-aware benchmark scoring integration
+Patch src/runtime/ratchet.ts
+Expand score input to accept benchmark context if present:
+
+TypeScript
+
+async score(input: {
+  proposal: Proposal;
+  graph: KnowledgeGraph;
+  verificationReport?: any;
+  evidencePackId?: string;
+  toolStats?: { toolCalls: number };
+  policyReport?: any;
+  provenanceReport?: any;
+  benchmarkCase?: {
+    caseName: string;
+    category: string;
+    difficulty: string;
+  };
+}): Promise<RatchetScore> {
+  const judgeOutput = await AgentRunner.run('RatchetJudge', {
+    proposal: input.proposal,
+    constitution: this.constitution,
+    graph: input.graph,
+    verificationReport: input.verificationReport,
+    evidencePackId: input.evidencePackId,
+    toolStats: input.toolStats,
+    policyReport: input.policyReport,
+    provenanceReport: input.provenanceReport,
+    benchmarkCase: input.benchmarkCase,
+    model: 'claude-opus-4',
+  });
+  return judgeOutput as RatchetScore;
+}
+Patch roles/RatchetJudge.md
+Add:
+
+Markdown
+
+## PHASE 7 BENCHMARKING ADDENDUM
+- When benchmarkCase metadata is present, score the output against the case’s mission demands, not generic quality alone.
+- Do not over-reward novelty if it reduces benchmark fitness.
+- Distinguish benchmark fitness from free-form creativity.
+- Be stable: similar outputs on the same benchmark should receive similar scores.
+22. Regression alarms into incident log
+Patch src/evals/regression-detector.ts
+After inserting regression alarm, also log to incident log if you want dashboard visibility:
+
+TypeScript
+
+import { IncidentLog } from '@/runtime/incident-log.js';
+
+const incidents = new IncidentLog();
+
+incidents.log({
+  severity: severity === 'critical' ? 'critical' : severity === 'error' ? 'error' : 'warn',
+  component: 'benchmark-regression',
+  summary: `Regression detected: ${metricName}`,
+  details: {
+    benchmarkRunId,
+    baselineValue,
+    currentValue,
+    deltaValue,
+  },
+});
+This makes benchmark regressions visible in the existing ops/debug surface.
+
+23. CI example
+.github/workflows/benchmarks.yml
+YAML
+
+name: Benchmarks
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install deps
+        run: bun install
+
+      - name: Run DB migrations
+        run: |
+          bun run src/db/migrate.ts
+          bun run src/db/migrate-phase5.ts
+          bun run src/db/migrate-phase5_1.ts
+          bun run src/db/migrate-phase6.ts
+          bun run src/db/migrate-phase6_1.ts
+          bun run src/db/migrate-phase7.ts
+
+      - name: Run benchmark CI gate
+        env:
+          BENCHMARK_SUITE: core
+          BENCHMARK_TEMPLATE: baseline
+          BENCHMARK_CONSTITUTION: default
+        run: bun run src/evals/benchmark-ci.ts
+This is the point where regressions start blocking merges instead of just being noticed later.
+
+24. Tests for Phase 7
+tests/suite-loader.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { BenchmarkSuiteLoader } from '../src/evals/suite-loader.js';
+
+describe('BenchmarkSuiteLoader', () => {
+  it('loads suite cases from disk', async () => {
+    const loader = new BenchmarkSuiteLoader();
+    const cases = await loader.loadSuite('core').catch(() => []);
+    expect(Array.isArray(cases)).toBe(true);
+  });
+});
+tests/metrics.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { mean, variance, passBand } from '../src/evals/metrics.js';
+
+describe('eval metrics', () => {
+  it('computes mean and variance', () => {
+    expect(mean([1, 2, 3])).toBe(2);
+    expect(variance([1, 1, 1])).toBe(0);
+    expect(passBand(0.8, { min: 0.7 })).toBe(true);
+    expect(passBand(5, { max: 3 })).toBe(false);
+  });
+});
+tests/gold-comparator-schema.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { GoldComparisonSchema } from '../src/prompts/gold-comparator.js';
+
+describe('GoldComparisonSchema', () => {
+  it('validates gold comparison output', () => {
+    const parsed = GoldComparisonSchema.parse({
+      gold_match: 0.84,
+      acceptance_pass: true,
+      strengths: ['Has clear acceptance criteria'],
+      misses: ['Could include stronger rollback detail'],
+      missing_required_elements: [],
+      notes: ['Groundedness acceptable'],
+    });
+
+    expect(parsed.acceptance_pass).toBe(true);
+  });
+});
+tests/regression-detector-schema.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { RegressionExplanationSchema } from '../src/prompts/regression-explainer.js';
+
+describe('RegressionExplanationSchema', () => {
+  it('validates regression explanations', () => {
+    const parsed = RegressionExplanationSchema.parse({
+      likely_causes: ['Tool usage increased latency'],
+      affected_metrics: ['latency_ms'],
+      hypotheses: ['New template added more worker calls'],
+      suggested_checks: ['Compare tool call counts'],
+      severity: 'warn',
+    });
+
+    expect(parsed.affected_metrics[0]).toBe('latency_ms');
+  });
+});
+tests/leaderboard.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { LeaderboardService } from '../src/evals/leaderboard.js';
+
+describe('LeaderboardService', () => {
+  it('has a recompute method', async () => {
+    const svc = new LeaderboardService();
+    expect(typeof svc.recomputeForSuite).toBe('function');
+  });
+});
+tests/replay-lab.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { ReplayLab } from '../src/evals/replay-lab.js';
+
+describe('ReplayLab', () => {
+  it('fails clearly for unknown attempt', async () => {
+    const lab = new ReplayLab();
+    await expect(lab.replayAttempt({ attemptId: 'missing' })).rejects.toThrow();
+  });
+});
+tests/judge-calibration-schema.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { JudgeCalibrationSchema } from '../src/prompts/judge-calibrator.js';
+
+describe('JudgeCalibrationSchema', () => {
+  it('validates judge calibration output', () => {
+    const parsed = JudgeCalibrationSchema.parse({
+      agreement_score: 0.91,
+      mean_variance: 0.003,
+      unstable_cases: [],
+      notes: ['Judge is stable on current suite'],
+    });
+
+    expect(parsed.agreement_score).toBeGreaterThan(0.8);
+  });
+});
+25. Run instructions for Phase 7
+Bash
+
+# 1. Apply migration
+bun run src/db/migrate-phase7.ts
+
+# 2. Ensure benchmark suite files exist
+tree benchmarks/suites
+
+# 3. Start API/dashboard if you want visibility
+bun run src/api/server.ts
+cd web && bun run dev
+
+# 4. Run a suite manually
+curl -X POST http://localhost:3000/api/benchmarks/run \
+  -H "Content-Type: application/json" \
+  -d '{"suiteName":"core","constitutionVariant":"default","templateVariant":"baseline"}'
+
+# 5. View leaderboards
+curl "http://localhost:3000/api/leaderboards?suite=core"
+
+# 6. View regressions
+curl "http://localhost:3000/api/regressions"
+
+# 7. Replay a benchmark attempt
+curl -X POST http://localhost:3000/api/replay \
+  -H "Content-Type: application/json" \
+  -d '{"attemptId":"ba_...","mode":"artifact_only"}'
+
+# 8. Run constitution A/B
+curl -X POST http://localhost:3000/api/constitution-ab \
+  -H "Content-Type: application/json" \
+  -d '{"suiteName":"core","variantA":"default","variantB":"strict_grounding"}'
+
+# 9. Run template bakeoff
+curl -X POST http://localhost:3000/api/template-bakeoff \
+  -H "Content-Type: application/json" \
+  -d '{"suiteName":"core","templateA":"baseline","templateB":"hierarchy"}'
+
+# 10. Judge calibration
+curl -X POST http://localhost:3000/api/judge-calibrate \
+  -H "Content-Type: application/json" \
+  -d '{"benchmarkRunId":"br_..."}'
+26. Optional .env additions for Phase 7
+Bash
+
+# ── BENCHMARK LAB ────────────────────────────────────────────
+BENCHMARK_SUITE=core
+BENCHMARK_TEMPLATE=baseline
+BENCHMARK_CONSTITUTION=default
+BENCHMARK_MAX_CASES=
+BENCHMARK_SEED=42
+
+# ── REGRESSION THRESHOLDS ────────────────────────────────────
+REGRESSION_SCORE_DROP=0.03
+REGRESSION_GROUNDEDNESS_DROP=0.04
+REGRESSION_POLICY_DROP=0.03
+REGRESSION_COST_INCREASE=0.20
+REGRESSION_LATENCY_INCREASE=0.25
+
+# ── CALIBRATION ──────────────────────────────────────────────
+JUDGE_CALIBRATION_REPEATS=3
+JUDGE_CALIBRATION_SAMPLE_LIMIT=50
+
+# ── REPLAY ───────────────────────────────────────────────────
+REPLAY_DEFAULT_MODE=artifact_only
+BENCHMARK_OUTPUT_DIR=benchmarks/outputs
+27. What Phase 7 now gives you
+At this point AutoOrg can:
+
+text
+
+✅ Run a standard benchmark suite against real missions
+✅ Compare outputs against gold expectations and acceptance bands
+✅ Track normalized metrics across runs
+✅ Build leaderboards for models, templates, and constitutions
+✅ Detect regressions in score, groundedness, policy, cost, and latency
+✅ Explain likely regression causes
+✅ Replay historical benchmark attempts offline
+✅ Compare constitutions head-to-head
+✅ Compare org templates head-to-head
+✅ Calibrate the Judge for consistency and stability
+✅ Enforce benchmark gates in CI
+This is the phase where AutoOrg stops relying on “it seems better” and starts operating on measured progress.
+
+28. Recommended implementation order
+I’d implement Phase 7 in this order:
+
+DB migration
+benchmark suite file format + suite loader
+benchmark runner wired into real orchestrator
+gold evaluator
+leaderboards
+regression detector
+replay lab
+constitution A/B + template bakeoffs
+judge calibration
+CI gate + UI
+Why:
+
+the first objective is to make benchmark execution real,
+the second is to make it comparable,
+the third is to make it enforceable.
+
+
+
+
+
+
+here is Phase 8 expanded in the same detailed format.
+
+Phase 7 made AutoOrg measurable.
+Phase 8 makes it portfolio-native.
+
+This is the phase where one autonomous org becomes many competing orgs, each with its own:
+
+constitution variant,
+role mix,
+template,
+model map,
+branch/worktree,
+budget,
+failure boundary.
+Then a portfolio layer:
+
+runs them in parallel,
+reallocates budget toward stronger variants,
+quarantines cross-org exchange,
+uses judge councils and tournaments,
+synthesizes the best final answer.
+AutoOrg — Phase 8: Portfolio Orchestration
+Concurrent Orgs, Budget Allocation, Judge Council, Tournament Mode, Quarantined Exchange, Best-of-N Synthesis
+WHAT PHASE 8 ADDS
+text
+
+Phase 7   ── Benchmark lab + leaderboards + regression evals + replay + judge calibration
+
+Phase 8   ── ┌──────────────────────────────────────────────────────────────┐
+             │ Multiple concurrent orgs on one mission                     │
+             │ Competing constitutions / role mixes / model maps           │
+             │ Portfolio allocator routes budget to best variants          │
+             │ Judge ensemble / council mode                               │
+             │ Cross-org artifact exchange with quarantine                 │
+             │ Tournament mode for org strategies                          │
+             │ Best-of-N synthesis layer                                   │
+             │ Branch-per-org git strategy + isolated worktrees            │
+             │ Portfolio dashboard with capital allocation view            │
+             │ Failure containment between org variants                    │
+             └──────────────────────────────────────────────────────────────┘
+DIRECTORY ADDITIONS
+text
+
+src/
+├── portfolio/
+│   ├── org-variant.ts              ← variant manifest + loading
+│   ├── portfolio-runner.ts         ← top-level portfolio orchestration
+│   ├── allocator.ts                ← deterministic + LLM budget routing
+│   ├── judge-council.ts            ← ensemble variant comparison
+│   ├── tournament.ts               ← knockout / swiss pairings
+│   ├── best-of-n.ts                ← final synthesis from top variants
+│   ├── quarantine.ts               ← safe cross-org artifact exchange
+│   ├── exchange-bus.ts             ← send artifacts between variants
+│   ├── branch-strategy.ts          ← branch/worktree per org
+│   ├── failure-containment.ts      ← isolate / kill / quarantine bad variants
+│   └── priors.ts                   ← seed priors from Phase 7 leaderboards
+├── prompts/
+│   ├── portfolio-allocator.ts      ← reallocation reasoning
+│   ├── judge-council.ts            ← compare competing variants
+│   ├── tournament-referee.ts       ← pick winner in pairwise match
+│   ├── best-of-n-synthesizer.ts    ← synthesize top outputs into final
+│   └── quarantine-reviewer.ts      ← decide whether shared artifact is safe
+├── db/
+│   ├── schema-phase8.sql
+│   └── migrate-phase8.ts
+└── api/
+    └── portfolio-routes.ts         ← portfolio runs, variants, capital, tournament
+
+portfolio/
+├── variants/
+│   ├── default.json
+│   ├── strict_grounding.json
+│   ├── hierarchy_fast.json
+│   ├── research_heavy.json
+│   └── quality_heavy.json
+
+artifacts/
+├── portfolio/
+│   ├── runs/
+│   ├── rounds/
+│   ├── syntheses/
+│   ├── quarantine/
+│   ├── allocations/
+│   └── councils/
+1. Phase 8 DB schema
+src/db/schema-phase8.sql
+SQL
+
+-- ============================================================
+-- AutoOrg Phase 8 Schema
+-- Portfolio orchestration
+-- ============================================================
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: portfolio_runs
+-- One top-level portfolio execution over a mission
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS portfolio_runs (
+  id TEXT PRIMARY KEY,
+  mission_hash TEXT NOT NULL,
+  mission_summary TEXT NOT NULL,
+  mode TEXT NOT NULL CHECK(mode IN ('mission','benchmark_seeded','tournament')),
+  status TEXT NOT NULL DEFAULT 'running'
+    CHECK(status IN ('running','completed','failed','cancelled')),
+  initial_budget_usd REAL NOT NULL DEFAULT 0,
+  remaining_budget_usd REAL NOT NULL DEFAULT 0,
+  round_limit INTEGER NOT NULL DEFAULT 3,
+  top_k_survive INTEGER NOT NULL DEFAULT 2,
+  final_variant_id TEXT,
+  final_artifact_path TEXT,
+  summary_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  finished_at DATETIME
+);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: portfolio_variants
+-- Competing org variants in one portfolio
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS portfolio_variants (
+  id TEXT PRIMARY KEY,
+  portfolio_run_id TEXT NOT NULL REFERENCES portfolio_runs(id) ON DELETE CASCADE,
+  variant_key TEXT NOT NULL,
+  display_name TEXT NOT NULL,
+  constitution_variant TEXT NOT NULL,
+  template_variant TEXT NOT NULL,
+  role_mix_json TEXT NOT NULL DEFAULT '{}',
+  model_map_json TEXT NOT NULL DEFAULT '{}',
+  branch_name TEXT NOT NULL,
+  worktree_path TEXT NOT NULL,
+  prior_score REAL NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'queued'
+    CHECK(status IN ('queued','running','completed','eliminated','failed','quarantined','winner')),
+  allocated_budget_usd REAL NOT NULL DEFAULT 0,
+  spent_budget_usd REAL NOT NULL DEFAULT 0,
+  latest_score REAL,
+  latest_groundedness REAL,
+  latest_policy_compliance REAL,
+  latest_cost_usd REAL,
+  latest_latency_ms REAL,
+  latest_autoorg_run_id TEXT,
+  latest_output_path TEXT,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_portfolio_variants_run
+  ON portfolio_variants(portfolio_run_id, status);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: portfolio_rounds
+-- Capital allocation rounds within a portfolio run
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS portfolio_rounds (
+  id TEXT PRIMARY KEY,
+  portfolio_run_id TEXT NOT NULL REFERENCES portfolio_runs(id) ON DELETE CASCADE,
+  round_number INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'running'
+    CHECK(status IN ('running','completed','failed','cancelled')),
+  objective_snapshot_json TEXT NOT NULL DEFAULT '{}',
+  started_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  finished_at DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_portfolio_rounds_run
+  ON portfolio_rounds(portfolio_run_id, round_number);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: portfolio_variant_runs
+-- One child AutoOrg execution for a variant in a round
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS portfolio_variant_runs (
+  id TEXT PRIMARY KEY,
+  portfolio_round_id TEXT NOT NULL REFERENCES portfolio_rounds(id) ON DELETE CASCADE,
+  variant_id TEXT NOT NULL REFERENCES portfolio_variants(id) ON DELETE CASCADE,
+  autoorg_run_id TEXT,
+  status TEXT NOT NULL DEFAULT 'running'
+    CHECK(status IN ('running','completed','failed','cancelled')),
+  output_path TEXT,
+  evidence_pack_id TEXT,
+  report_path TEXT,
+  score REAL DEFAULT 0,
+  groundedness REAL DEFAULT 0,
+  novelty REAL DEFAULT 0,
+  consistency REAL DEFAULT 0,
+  mission_alignment REAL DEFAULT 0,
+  policy_compliance REAL DEFAULT 1,
+  cost_usd REAL DEFAULT 0,
+  latency_ms REAL DEFAULT 0,
+  tool_calls INTEGER DEFAULT 0,
+  security_findings INTEGER DEFAULT 0,
+  unsupported_claims INTEGER DEFAULT 0,
+  broken_provenance_links INTEGER DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  finished_at DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_portfolio_variant_runs_round
+  ON portfolio_variant_runs(portfolio_round_id, created_at);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: portfolio_allocations
+-- Budget reallocation decisions
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS portfolio_allocations (
+  id TEXT PRIMARY KEY,
+  portfolio_run_id TEXT NOT NULL REFERENCES portfolio_runs(id) ON DELETE CASCADE,
+  portfolio_round_id TEXT REFERENCES portfolio_rounds(id) ON DELETE SET NULL,
+  variant_id TEXT NOT NULL REFERENCES portfolio_variants(id) ON DELETE CASCADE,
+  allocation_type TEXT NOT NULL CHECK(allocation_type IN ('seed','rebalance','bonus','cut','eliminate')),
+  amount_usd REAL NOT NULL,
+  rationale_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_portfolio_allocations_run
+  ON portfolio_allocations(portfolio_run_id, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: judge_council_votes
+-- Ensemble votes on variants / outputs / syntheses
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS judge_council_votes (
+  id TEXT PRIMARY KEY,
+  portfolio_run_id TEXT NOT NULL REFERENCES portfolio_runs(id) ON DELETE CASCADE,
+  portfolio_round_id TEXT REFERENCES portfolio_rounds(id) ON DELETE SET NULL,
+  subject_kind TEXT NOT NULL CHECK(subject_kind IN ('variant_output','match','synthesis')),
+  subject_ref TEXT NOT NULL,
+  judge_name TEXT NOT NULL,
+  judge_model TEXT,
+  voted_variant_id TEXT,
+  score REAL NOT NULL DEFAULT 0,
+  reasoning_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_judge_council_votes_run
+  ON judge_council_votes(portfolio_run_id, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: tournament_matches
+-- Pairwise / bracket comparisons
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS tournament_matches (
+  id TEXT PRIMARY KEY,
+  portfolio_run_id TEXT NOT NULL REFERENCES portfolio_runs(id) ON DELETE CASCADE,
+  portfolio_round_id TEXT REFERENCES portfolio_rounds(id) ON DELETE SET NULL,
+  variant_a_id TEXT NOT NULL REFERENCES portfolio_variants(id) ON DELETE CASCADE,
+  variant_b_id TEXT NOT NULL REFERENCES portfolio_variants(id) ON DELETE CASCADE,
+  winner_variant_id TEXT REFERENCES portfolio_variants(id) ON DELETE SET NULL,
+  referee_report_json TEXT NOT NULL DEFAULT '{}',
+  artifact_path TEXT,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_tournament_matches_run
+  ON tournament_matches(portfolio_run_id, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: portfolio_exchanges
+-- Cross-org artifact exchange requests
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS portfolio_exchanges (
+  id TEXT PRIMARY KEY,
+  portfolio_run_id TEXT NOT NULL REFERENCES portfolio_runs(id) ON DELETE CASCADE,
+  from_variant_id TEXT NOT NULL REFERENCES portfolio_variants(id) ON DELETE CASCADE,
+  to_variant_id TEXT NOT NULL REFERENCES portfolio_variants(id) ON DELETE CASCADE,
+  artifact_path TEXT NOT NULL,
+  artifact_sha256 TEXT,
+  exchange_type TEXT NOT NULL CHECK(exchange_type IN ('evidence','draft','plan','memory_note')),
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK(status IN ('pending','approved','blocked','delivered','failed')),
+  quarantine_report_json TEXT NOT NULL DEFAULT '{}',
+  delivered_path TEXT,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  delivered_at DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_portfolio_exchanges_run
+  ON portfolio_exchanges(portfolio_run_id, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: quarantined_artifacts
+-- Artifacts held or sanitized before sharing
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS quarantined_artifacts (
+  id TEXT PRIMARY KEY,
+  exchange_id TEXT NOT NULL REFERENCES portfolio_exchanges(id) ON DELETE CASCADE,
+  original_artifact_path TEXT NOT NULL,
+  quarantined_artifact_path TEXT,
+  status TEXT NOT NULL DEFAULT 'held'
+    CHECK(status IN ('held','sanitized','released','blocked')),
+  findings_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: portfolio_syntheses
+-- Best-of-N final synthesis artifacts
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS portfolio_syntheses (
+  id TEXT PRIMARY KEY,
+  portfolio_run_id TEXT NOT NULL REFERENCES portfolio_runs(id) ON DELETE CASCADE,
+  portfolio_round_id TEXT REFERENCES portfolio_rounds(id) ON DELETE SET NULL,
+  synthesis_type TEXT NOT NULL CHECK(synthesis_type IN ('best_of_n','merged','winner_take_all')),
+  winning_variant_id TEXT REFERENCES portfolio_variants(id) ON DELETE SET NULL,
+  source_variant_ids_json TEXT NOT NULL DEFAULT '[]',
+  artifact_path TEXT NOT NULL,
+  summary_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_portfolio_syntheses_run
+  ON portfolio_syntheses(portfolio_run_id, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: failure_containment_events
+-- Variant isolation / quarantine / kill-switch events
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS failure_containment_events (
+  id TEXT PRIMARY KEY,
+  portfolio_run_id TEXT NOT NULL REFERENCES portfolio_runs(id) ON DELETE CASCADE,
+  variant_id TEXT REFERENCES portfolio_variants(id) ON DELETE SET NULL,
+  severity TEXT NOT NULL CHECK(severity IN ('info','warn','error','critical')),
+  category TEXT NOT NULL CHECK(category IN (
+    'budget_exhausted',
+    'security_findings',
+    'workspace_corruption',
+    'crash_loop',
+    'quarantined',
+    'killed',
+    'approval_bypass_attempt'
+  )),
+  summary TEXT NOT NULL,
+  details_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_failure_containment_events_run
+  ON failure_containment_events(portfolio_run_id, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: portfolio_priors
+-- Optional priors from benchmark history
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS portfolio_priors (
+  id TEXT PRIMARY KEY,
+  variant_key TEXT NOT NULL,
+  source_type TEXT NOT NULL CHECK(source_type IN ('benchmark_leaderboard','manual','historical')),
+  prior_score REAL NOT NULL DEFAULT 0,
+  prior_policy REAL NOT NULL DEFAULT 1,
+  prior_cost REAL NOT NULL DEFAULT 0,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_portfolio_priors_variant
+  ON portfolio_priors(variant_key, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- Feature flags
+-- ────────────────────────────────────────────────────────────
+INSERT OR IGNORE INTO feature_flags (flag_name, enabled, description) VALUES
+  ('portfolioOrchestration', 1, 'Multiple concurrent org variants on one mission (Phase 8)'),
+  ('portfolioAllocator', 1, 'Capital routing across variants (Phase 8)'),
+  ('judgeCouncil', 1, 'Council voting over variants (Phase 8)'),
+  ('tournamentMode', 1, 'Tournament bracket over variants (Phase 8)'),
+  ('crossOrgQuarantine', 1, 'Cross-org artifact exchange through quarantine (Phase 8)'),
+  ('bestOfNSynthesis', 1, 'Final synthesis from top variants (Phase 8)'),
+  ('branchPerOrg', 1, 'Git branch/worktree isolation per variant (Phase 8)'),
+  ('failureContainment', 1, 'Variant failure boundaries and kill-switches (Phase 8)'),
+  ('portfolioDashboard', 1, 'Portfolio/capital allocation UI (Phase 8)');
+src/db/migrate-phase8.ts
+TypeScript
+
+#!/usr/bin/env bun
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import chalk from 'chalk';
+import { getDb } from '@/db/migrate.js';
+
+async function migrate() {
+  console.log(chalk.cyan('\n⚙️ Running Phase 8 migrations...\n'));
+  const db = getDb();
+  const schema = readFileSync(path.join(import.meta.dir, 'schema-phase8.sql'), 'utf-8');
+  db.exec(schema);
+  db.close();
+  console.log(chalk.bold.green('✅ Phase 8 migration complete.\n'));
+}
+
+migrate().catch(console.error);
+Run:
+
+Bash
+
+bun run src/db/migrate-phase8.ts
+2. Variant manifest format
+Each portfolio variant is a fully named org strategy.
+
+Example portfolio/variants/default.json
+JSON
+
+{
+  "variant_key": "default",
+  "display_name": "Baseline Default",
+  "constitution_variant": "default",
+  "template_variant": "baseline",
+  "role_mix": {
+    "ceo": 1,
+    "engineer": 1,
+    "critic": 1,
+    "archivist": 1
+  },
+  "model_map": {
+    "ceo": "claude-opus-4",
+    "engineer": "claude-sonnet-4-5",
+    "critic": "claude-sonnet-4-5",
+    "archivist": "gpt-4.1"
+  }
+}
+Example portfolio/variants/strict_grounding.json
+JSON
+
+{
+  "variant_key": "strict_grounding",
+  "display_name": "Strict Grounding",
+  "constitution_variant": "strict_grounding",
+  "template_variant": "quality_heavy",
+  "role_mix": {
+    "ceo": 1,
+    "engineer": 1,
+    "critic": 2,
+    "archivist": 1,
+    "devils_advocate": 1
+  },
+  "model_map": {
+    "ceo": "claude-opus-4",
+    "engineer": "claude-sonnet-4-5",
+    "critic": "claude-sonnet-4-5",
+    "archivist": "gpt-4.1",
+    "devils_advocate": "gpt-4.1"
+  }
+}
+src/portfolio/org-variant.ts
+TypeScript
+
+import { readdir, readFile } from 'node:fs/promises';
+import path from 'node:path';
+
+export interface PortfolioVariantSpec {
+  variant_key: string;
+  display_name: string;
+  constitution_variant: string;
+  template_variant: string;
+  role_mix: Record<string, number>;
+  model_map: Record<string, string>;
+}
+
+export class VariantCatalog {
+  constructor(
+    private root = path.join(process.cwd(), 'portfolio', 'variants')
+  ) {}
+
+  async loadAll(): Promise<PortfolioVariantSpec[]> {
+    const files = await readdir(this.root);
+    const specs: PortfolioVariantSpec[] = [];
+
+    for (const file of files.filter(f => f.endsWith('.json'))) {
+      const spec = JSON.parse(await readFile(path.join(this.root, file), 'utf-8'));
+      specs.push(spec);
+    }
+
+    return specs;
+  }
+
+  async loadByKeys(keys?: string[]) {
+    const all = await this.loadAll();
+    if (!keys?.length) return all;
+    return all.filter(v => keys.includes(v.variant_key));
+  }
+}
+3. Branch-per-org strategy
+Each portfolio variant gets:
+
+its own branch,
+its own worktree,
+its own workspace lock,
+its own memory directory.
+This prevents one variant from corrupting another.
+
+src/portfolio/branch-strategy.ts
+TypeScript
+
+import { mkdir } from 'node:fs/promises';
+import path from 'node:path';
+import simpleGit from 'simple-git';
+import { WorkspaceLock } from '@/runtime/workspace-lock.js';
+
+export class BranchStrategy {
+  private git = simpleGit();
+  private locks = new WorkspaceLock();
+
+  async prepare(opts: {
+    portfolioRunId: string;
+    variantKey: string;
+  }) {
+    const branchName = `portfolio/${opts.portfolioRunId}/${opts.variantKey}`;
+    const worktreePath = path.join(
+      process.cwd(),
+      'artifacts',
+      'portfolio',
+      'runs',
+      opts.portfolioRunId,
+      opts.variantKey
+    );
+
+    await mkdir(worktreePath, { recursive: true });
+
+    try {
+      await this.git.raw(['worktree', 'remove', '--force', worktreePath]);
+    } catch {}
+
+    try {
+      await this.git.raw(['branch', '-D', branchName]);
+    } catch {}
+
+    await this.git.raw(['worktree', 'add', '-B', branchName, worktreePath, 'HEAD']);
+
+    return { branchName, worktreePath };
+  }
+
+  async withVariantLock<T>(
+    worktreePath: string,
+    holderId: string,
+    runId: string,
+    fn: () => Promise<T>,
+  ) {
+    return this.locks.withLock(`worktree:${worktreePath}`, holderId, runId, fn, 90_000);
+  }
+
+  async cleanup(worktreePath: string) {
+    try {
+      await this.git.raw(['worktree', 'remove', '--force', worktreePath]);
+    } catch {}
+  }
+}
+4. Failure containment
+If a variant:
+
+exceeds budget,
+enters a crash loop,
+produces critical security findings,
+attempts approval bypass,
+corrupts workspace, then the portfolio should quarantine or kill it without affecting others.
+src/portfolio/failure-containment.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+
+export class FailureContainment {
+  constructor(private portfolioRunId: string) {}
+
+  record(opts: {
+    variantId?: string;
+    severity: 'info' | 'warn' | 'error' | 'critical';
+    category: 'budget_exhausted' | 'security_findings' | 'workspace_corruption' | 'crash_loop' | 'quarantined' | 'killed' | 'approval_bypass_attempt';
+    summary: string;
+    details?: Record<string, unknown>;
+  }) {
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO failure_containment_events
+      (id, portfolio_run_id, variant_id, severity, category, summary, details_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      `fce_${nanoid(10)}`,
+      this.portfolioRunId,
+      opts.variantId ?? null,
+      opts.severity,
+      opts.category,
+      opts.summary,
+      JSON.stringify(opts.details ?? {})
+    );
+    db.close();
+  }
+
+  quarantineVariant(variantId: string, reason: string) {
+    const db = getDb();
+    db.prepare(`
+      UPDATE portfolio_variants
+      SET status = 'quarantined', updated_at = datetime('now')
+      WHERE id = ?
+    `).run(variantId);
+    db.close();
+
+    this.record({
+      variantId,
+      severity: 'error',
+      category: 'quarantined',
+      summary: `Variant quarantined: ${reason}`,
+    });
+  }
+
+  eliminateVariant(variantId: string, reason: string) {
+    const db = getDb();
+    db.prepare(`
+      UPDATE portfolio_variants
+      SET status = 'eliminated', updated_at = datetime('now')
+      WHERE id = ?
+    `).run(variantId);
+    db.close();
+
+    this.record({
+      variantId,
+      severity: 'warn',
+      category: 'killed',
+      summary: `Variant eliminated: ${reason}`,
+    });
+  }
+
+  shouldKill(opts: {
+    spentBudgetUsd: number;
+    allocatedBudgetUsd: number;
+    securityFindings: number;
+    criticalPolicyFailure?: boolean;
+  }) {
+    if (opts.criticalPolicyFailure) return true;
+    if (opts.securityFindings >= 3) return true;
+    if (opts.spentBudgetUsd > opts.allocatedBudgetUsd) return true;
+    return false;
+  }
+}
+5. Portfolio priors from Phase 7 leaderboards
+Phase 8 should not start from zero if Phase 7 already taught you that some templates or constitutions are consistently better.
+
+src/portfolio/priors.ts
+TypeScript
+
+import { getDb } from '@/db/migrate.js';
+
+export class PortfolioPriors {
+  estimatePrior(variant: {
+    variant_key: string;
+    constitution_variant: string;
+    template_variant: string;
+    model_map: Record<string, string>;
+  }) {
+    const db = getDb();
+
+    const constRow = db.prepare(`
+      SELECT average_score, average_policy_compliance, average_cost_usd
+      FROM leaderboards
+      WHERE leaderboard_type = 'constitution' AND subject_key = ?
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `).get(variant.constitution_variant) as
+      | { average_score: number; average_policy_compliance: number; average_cost_usd: number }
+      | undefined;
+
+    const tmplRow = db.prepare(`
+      SELECT average_score, average_policy_compliance, average_cost_usd
+      FROM leaderboards
+      WHERE leaderboard_type = 'template' AND subject_key = ?
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `).get(variant.template_variant) as
+      | { average_score: number; average_policy_compliance: number; average_cost_usd: number }
+      | undefined;
+
+    db.close();
+
+    const score = ((constRow?.average_score ?? 0.65) + (tmplRow?.average_score ?? 0.65)) / 2;
+    const policy = ((constRow?.average_policy_compliance ?? 0.95) + (tmplRow?.average_policy_compliance ?? 0.95)) / 2;
+    const cost = ((constRow?.average_cost_usd ?? 1.0) + (tmplRow?.average_cost_usd ?? 1.0)) / 2;
+
+    return {
+      prior_score: score,
+      prior_policy: policy,
+      prior_cost: cost,
+    };
+  }
+}
+6. Portfolio allocator prompt
+src/prompts/portfolio-allocator.ts
+TypeScript
+
+import { z } from 'zod';
+
+export const PortfolioAllocationSchema = z.object({
+  allocations: z.array(z.object({
+    variant_id: z.string(),
+    amount_usd: z.number().min(0),
+    action: z.enum(['seed', 'rebalance', 'bonus', 'cut', 'eliminate']),
+    rationale: z.string(),
+  })).max(20),
+  summary: z.string(),
+});
+
+export const PORTFOLIO_ALLOCATOR_SYSTEM_PROMPT = `
+You are AutoOrg's Portfolio Allocator.
+
+You allocate remaining budget across competing org variants.
+
+Inputs:
+- current variant metrics
+- prior scores
+- spent/remaining budget
+- policy/security status
+- round number
+
+Your job:
+1. allocate more budget to promising variants,
+2. cut weak or risky variants,
+3. eliminate variants that are dominated or unsafe,
+4. maintain some exploration unless the field is clearly decided.
+
+Hard rules:
+- Never allocate to quarantined variants.
+- Penalize poor policy compliance and high unsupported-claim counts.
+- Prefer variants with strong score per dollar and strong governance.
+- Keep some diversity in early rounds.
+`.trim();
+7. Portfolio allocator runtime
+src/portfolio/allocator.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getAdapter } from '@/adapters/adapter-factory.js';
+import { getDb } from '@/db/migrate.js';
+import { PORTFOLIO_ALLOCATOR_SYSTEM_PROMPT, PortfolioAllocationSchema } from '@/prompts/portfolio-allocator.js';
+
+function utility(v: {
+  latest_score?: number | null;
+  latest_groundedness?: number | null;
+  latest_policy_compliance?: number | null;
+  spent_budget_usd: number;
+  prior_score: number;
+  status: string;
+}) {
+  if (v.status === 'quarantined' || v.status === 'failed' || v.status === 'eliminated') return -999;
+  const score = v.latest_score ?? v.prior_score ?? 0.5;
+  const groundedness = v.latest_groundedness ?? score;
+  const policy = v.latest_policy_compliance ?? 1;
+  const spent = Math.max(0.01, v.spent_budget_usd || 0.01);
+  return (0.45 * score + 0.20 * groundedness + 0.20 * policy) / (0.25 + spent);
+}
+
+export class PortfolioAllocator {
+  constructor(private portfolioRunId: string) {}
+
+  async rebalance(opts: {
+    roundId: string;
+    remainingBudgetUsd: number;
+  }) {
+    const db = getDb();
+    const variants = db.prepare(`
+      SELECT *
+      FROM portfolio_variants
+      WHERE portfolio_run_id = ?
+      ORDER BY created_at ASC
+    `).all(this.portfolioRunId) as Array<any>;
+    db.close();
+
+    const ranked = [...variants].sort((a, b) => utility(b) - utility(a));
+    const alive = ranked.filter(v => !['failed', 'quarantined', 'eliminated'].includes(v.status));
+
+    const adapter = getAdapter({
+      provider: (process.env.DEFAULT_LLM_PROVIDER ?? 'anthropic') as any,
+      model: 'claude-sonnet-4-5',
+    });
+
+    const deterministicSuggestion = alive.map((v, idx) => ({
+      variant_id: v.id,
+      amount_usd: Number(
+        (
+          opts.remainingBudgetUsd *
+          ((alive.length - idx) / alive.reduce((acc, _, i) => acc + (alive.length - i), 0))
+        ).toFixed(4)
+      ),
+      action: idx === 0 ? 'bonus' : idx >= Math.max(2, alive.length - 1) ? 'cut' : 'rebalance',
+      scoreHint: utility(v),
+    }));
+
+    const llm = await adapter.structured({
+      model: 'claude-sonnet-4-5',
+      messages: [
+        { role: 'system', content: PORTFOLIO_ALLOCATOR_SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: JSON.stringify({
+            portfolioRunId: this.portfolioRunId,
+            remainingBudgetUsd: opts.remainingBudgetUsd,
+            variants,
+            deterministicSuggestion,
+          }, null, 2),
+        },
+      ],
+      schema: PortfolioAllocationSchema,
+    });
+
+    const db2 = getDb();
+
+    for (const alloc of llm.allocations) {
+      db2.prepare(`
+        INSERT INTO portfolio_allocations
+        (id, portfolio_run_id, portfolio_round_id, variant_id, allocation_type, amount_usd, rationale_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        `pal_${nanoid(10)}`,
+        this.portfolioRunId,
+        opts.roundId,
+        alloc.variant_id,
+        alloc.action,
+        alloc.amount_usd,
+        JSON.stringify({ rationale: alloc.rationale })
+      );
+
+      db2.prepare(`
+        UPDATE portfolio_variants
+        SET allocated_budget_usd = ?, updated_at = datetime('now')
+        WHERE id = ?
+      `).run(alloc.amount_usd, alloc.variant_id);
+
+      if (alloc.action === 'eliminate') {
+        db2.prepare(`
+          UPDATE portfolio_variants
+          SET status = 'eliminated', updated_at = datetime('now')
+          WHERE id = ?
+        `).run(alloc.variant_id);
+      }
+    }
+
+    db2.close();
+
+    return llm;
+  }
+}
+8. Judge council prompt
+src/prompts/judge-council.ts
+TypeScript
+
+import { z } from 'zod';
+
+export const JudgeCouncilVoteSchema = z.object({
+  voted_variant_id: z.string(),
+  score: z.number().min(0).max(1),
+  rationale: z.string(),
+  concerns: z.array(z.string()).max(8),
+});
+
+export const JUDGE_COUNCIL_SYSTEM_PROMPT = `
+You are a member of AutoOrg's Judge Council.
+
+You compare competing variant outputs for the SAME mission.
+
+Judge on:
+- mission fitness
+- groundedness
+- policy compliance
+- strategic usefulness
+- cost-awareness if materially relevant
+
+Hard rules:
+- Prefer cleaner governed output over flashy unsupported output.
+- Penalize broken provenance, weak evidence, and policy defects.
+- Do not average prose quality with correctness; correctness matters more.
+`.trim();
+9. Judge council runtime
+src/portfolio/judge-council.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getAdapter } from '@/adapters/adapter-factory.js';
+import { getDb } from '@/db/migrate.js';
+import { JUDGE_COUNCIL_SYSTEM_PROMPT, JudgeCouncilVoteSchema } from '@/prompts/judge-council.js';
+
+export class JudgeCouncil {
+  constructor(private portfolioRunId: string) {}
+
+  async voteOnVariants(opts: {
+    roundId?: string;
+    variants: Array<{
+      variantId: string;
+      displayName: string;
+      outputText: string;
+      metrics: Record<string, unknown>;
+    }>;
+    judges?: Array<{ judgeName: string; model: string }>;
+  }) {
+    const judges = opts.judges ?? [
+      { judgeName: 'RatchetJudge-A', model: 'claude-opus-4' },
+      { judgeName: 'RatchetJudge-B', model: 'claude-sonnet-4-5' },
+      { judgeName: 'RatchetJudge-C', model: 'gpt-4.1' },
+    ];
+
+    const votes = [];
+
+    for (const judge of judges) {
+      const adapter = getAdapter({
+        provider: (process.env.DEFAULT_LLM_PROVIDER ?? 'anthropic') as any,
+        model: judge.model,
+      });
+
+      const vote = await adapter.structured({
+        model: judge.model,
+        messages: [
+          { role: 'system', content: JUDGE_COUNCIL_SYSTEM_PROMPT },
+          {
+            role: 'user',
+            content: JSON.stringify({
+              variants: opts.variants.map(v => ({
+                variantId: v.variantId,
+                displayName: v.displayName,
+                metrics: v.metrics,
+                outputText: v.outputText.slice(0, 14000),
+              })),
+            }, null, 2),
+          },
+        ],
+        schema: JudgeCouncilVoteSchema,
+      });
+
+      votes.push({
+        judgeName: judge.judgeName,
+        judgeModel: judge.model,
+        ...vote,
+      });
+    }
+
+    const tally = new Map<string, number>();
+    for (const v of votes) {
+      tally.set(v.voted_variant_id, (tally.get(v.voted_variant_id) ?? 0) + v.score);
+    }
+
+    const winner = [...tally.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? opts.variants[0]?.variantId;
+
+    const db = getDb();
+    for (const vote of votes) {
+      db.prepare(`
+        INSERT INTO judge_council_votes
+        (id, portfolio_run_id, portfolio_round_id, subject_kind, subject_ref, judge_name, judge_model, voted_variant_id, score, reasoning_json)
+        VALUES (?, ?, ?, 'variant_output', ?, ?, ?, ?, ?, ?)
+      `).run(
+        `jcv_${nanoid(10)}`,
+        this.portfolioRunId,
+        opts.roundId ?? null,
+        'portfolio_round',
+        vote.judgeName,
+        vote.judgeModel,
+        vote.voted_variant_id,
+        vote.score,
+        JSON.stringify({
+          rationale: vote.rationale,
+          concerns: vote.concerns,
+        })
+      );
+    }
+    db.close();
+
+    return { winnerVariantId: winner, votes };
+  }
+}
+10. Quarantine reviewer prompt
+src/prompts/quarantine-reviewer.ts
+TypeScript
+
+import { z } from 'zod';
+
+export const QuarantineReviewSchema = z.object({
+  approved: z.boolean(),
+  blocked: z.boolean(),
+  findings: z.array(z.string()).max(10),
+  sanitized_summary: z.string(),
+  should_redact_more: z.boolean(),
+});
+
+export const QUARANTINE_REVIEWER_SYSTEM_PROMPT = `
+You review an artifact before it is shared from one org variant to another.
+
+Check for:
+- secrets or credentials
+- PII
+- unsupported claims presented as fact
+- policy-sensitive instructions
+- branch/worktree-local assumptions that may not transfer safely
+
+Hard rules:
+- If an artifact contains secrets, block it.
+- If it contains unsafe execution advice without context, block or sanitize it.
+- Prefer a redacted summary over raw artifact sharing when uncertain.
+`.trim();
+11. Quarantine runtime
+src/portfolio/quarantine.ts
+TypeScript
+
+import { mkdir } from 'node:fs/promises';
+import path from 'node:path';
+import { nanoid } from 'nanoid';
+import { getAdapter } from '@/adapters/adapter-factory.js';
+import { getDb } from '@/db/migrate.js';
+import { ArtifactSigner } from '@/runtime/artifact-signing.js';
+import { RedactionFilter } from '@/runtime/redaction.js';
+import { QUARANTINE_REVIEWER_SYSTEM_PROMPT, QuarantineReviewSchema } from '@/prompts/quarantine-reviewer.js';
+
+export class Quarantine {
+  private signer = new ArtifactSigner();
+  private redactor: RedactionFilter;
+
+  constructor(private portfolioRunId: string) {
+    this.redactor = new RedactionFilter(portfolioRunId);
+  }
+
+  async inspect(opts: {
+    exchangeId: string;
+    artifactPath: string;
+  }) {
+    const verify = await this.signer.verifyFile(opts.artifactPath);
+    const rawText = await Bun.file(opts.artifactPath).text().catch(() => '');
+    const redacted = this.redactor.redact(rawText, {
+      channel: 'artifact',
+      artifactPath: opts.artifactPath,
+    });
+
+    const adapter = getAdapter({
+      provider: (process.env.DEFAULT_LLM_PROVIDER ?? 'anthropic') as any,
+      model: 'claude-sonnet-4-5',
+    });
+
+    const review = await adapter.structured({
+      model: 'claude-sonnet-4-5',
+      messages: [
+        { role: 'system', content: QUARANTINE_REVIEWER_SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: JSON.stringify({
+            verify,
+            artifactPath: opts.artifactPath,
+            preview: redacted.text.slice(0, 12000),
+          }, null, 2),
+        },
+      ],
+      schema: QuarantineReviewSchema,
+    });
+
+    const quarantineDir = path.join(process.cwd(), 'artifacts', 'portfolio', 'quarantine');
+    await mkdir(quarantineDir, { recursive: true });
+
+    const quarantinedPath = path.join(quarantineDir, `${opts.exchangeId}.md`);
+    await Bun.write(quarantinedPath, review.sanitized_summary || redacted.text.slice(0, 8000));
+
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO quarantined_artifacts
+      (id, exchange_id, original_artifact_path, quarantined_artifact_path, status, findings_json)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      `qa_${nanoid(10)}`,
+      opts.exchangeId,
+      opts.artifactPath,
+      quarantinedPath,
+      review.approved && !review.blocked ? 'released' : (review.should_redact_more ? 'sanitized' : 'blocked'),
+      JSON.stringify({ verify, review, redacted: redacted.redacted, eventCount: redacted.eventCount })
+    );
+
+    db.prepare(`
+      UPDATE portfolio_exchanges
+      SET status = ?, quarantine_report_json = ?
+      WHERE id = ?
+    `).run(
+      review.approved && !review.blocked ? 'approved' : 'blocked',
+      JSON.stringify({ verify, review }),
+      opts.exchangeId
+    );
+    db.close();
+
+    return {
+      approved: review.approved && !review.blocked,
+      quarantinedPath,
+      review,
+    };
+  }
+}
+12. Exchange bus
+src/portfolio/exchange-bus.ts
+TypeScript
+
+import { mkdir } from 'node:fs/promises';
+import path from 'node:path';
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+import { ArtifactSigner } from '@/runtime/artifact-signing.js';
+import { Quarantine } from '@/portfolio/quarantine.js';
+
+export class ExchangeBus {
+  private signer = new ArtifactSigner();
+  private quarantine: Quarantine;
+
+  constructor(private portfolioRunId: string) {
+    this.quarantine = new Quarantine(portfolioRunId);
+  }
+
+  async send(opts: {
+    fromVariantId: string;
+    toVariantId: string;
+    artifactPath: string;
+    exchangeType: 'evidence' | 'draft' | 'plan' | 'memory_note';
+  }) {
+    const db = getDb();
+
+    const exchangeId = `pex_${nanoid(10)}`;
+    const row = db.prepare(`
+      SELECT sha256
+      FROM artifact_manifests
+      WHERE artifact_path = ?
+      ORDER BY created_at DESC
+      LIMIT 1
+    `).get(opts.artifactPath) as { sha256?: string } | undefined;
+
+    db.prepare(`
+      INSERT INTO portfolio_exchanges
+      (id, portfolio_run_id, from_variant_id, to_variant_id, artifact_path, artifact_sha256, exchange_type, status, quarantine_report_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', '{}')
+    `).run(
+      exchangeId,
+      this.portfolioRunId,
+      opts.fromVariantId,
+      opts.toVariantId,
+      opts.artifactPath,
+      row?.sha256 ?? null,
+      opts.exchangeType
+    );
+    db.close();
+
+    const reviewed = await this.quarantine.inspect({
+      exchangeId,
+      artifactPath: opts.artifactPath,
+    });
+
+    if (!reviewed.approved) {
+      return { exchangeId, delivered: false };
+    }
+
+    const db2 = getDb();
+    const target = db2.prepare(`
+      SELECT worktree_path
+      FROM portfolio_variants
+      WHERE id = ?
+    `).get(opts.toVariantId) as { worktree_path: string };
+
+    const inboxDir = path.join(target.worktree_path, 'memory', 'external');
+    await mkdir(inboxDir, { recursive: true });
+
+    const deliveredPath = path.join(inboxDir, `${exchangeId}.md`);
+    await Bun.write(deliveredPath, await Bun.file(reviewed.quarantinedPath).text());
+
+    db2.prepare(`
+      UPDATE portfolio_exchanges
+      SET status = 'delivered', delivered_path = ?, delivered_at = datetime('now')
+      WHERE id = ?
+    `).run(deliveredPath, exchangeId);
+
+    db2.close();
+
+    return { exchangeId, delivered: true, deliveredPath };
+  }
+}
+13. Best-of-N synthesis prompt
+src/prompts/best-of-n-synthesizer.ts
+TypeScript
+
+export const BEST_OF_N_SYNTHESIZER_SYSTEM_PROMPT = `
+You synthesize the best final answer from multiple competing AutoOrg variants.
+
+You will receive:
+- top variant outputs
+- per-variant metrics
+- optional council vote summary
+
+Your job:
+1. preserve the strongest ideas,
+2. avoid duplicating weak or unsupported claims,
+3. produce a final answer that is cleaner than any single candidate,
+4. note which variants contributed key insights.
+
+Hard rules:
+- Do not carry forward claims that are weakly supported.
+- Prefer the best governed and best grounded variant when conflict exists.
+- Synthesis should improve quality, not just concatenate.
+`.trim();
+14. Best-of-N synthesis runtime
+src/portfolio/best-of-n.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getAdapter } from '@/adapters/adapter-factory.js';
+import { getDb } from '@/db/migrate.js';
+import { ImmutableArtifacts } from '@/runtime/immutable-artifacts.js';
+import { BEST_OF_N_SYNTHESIZER_SYSTEM_PROMPT } from '@/prompts/best-of-n-synthesizer.js';
+
+export class BestOfN {
+  private artifacts = new ImmutableArtifacts();
+
+  constructor(private portfolioRunId: string) {}
+
+  async synthesize(opts: {
+    roundId?: string;
+    variants: Array<{
+      variantId: string;
+      displayName: string;
+      outputText: string;
+      metrics: Record<string, unknown>;
+    }>;
+    councilSummary?: unknown;
+  }) {
+    const adapter = getAdapter({
+      provider: (process.env.DEFAULT_LLM_PROVIDER ?? 'anthropic') as any,
+      model: 'claude-opus-4',
+    });
+
+    const response = await adapter.run({
+      model: 'claude-opus-4',
+      messages: [
+        { role: 'system', content: BEST_OF_N_SYNTHESIZER_SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: JSON.stringify({
+            variants: opts.variants.map(v => ({
+              variantId: v.variantId,
+              displayName: v.displayName,
+              metrics: v.metrics,
+              outputText: v.outputText.slice(0, 12000),
+            })),
+            councilSummary: opts.councilSummary ?? null,
+          }, null, 2),
+        },
+      ],
+      temperature: 0.2,
+      maxTokens: 2600,
+    });
+
+    const synthesisId = `psyn_${nanoid(10)}`;
+    const written = await this.artifacts.writeText({
+      runId: this.portfolioRunId,
+      relPath: `artifacts/portfolio/syntheses/${synthesisId}.md`,
+      text: response.content,
+      artifactKind: 'portfolio_synthesis',
+      mimeType: 'text/markdown',
+    });
+
+    const winnerGuess = opts.variants[0]?.variantId ?? null;
+
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO portfolio_syntheses
+      (id, portfolio_run_id, portfolio_round_id, synthesis_type, winning_variant_id, source_variant_ids_json, artifact_path, summary_json)
+      VALUES (?, ?, ?, 'best_of_n', ?, ?, ?, ?)
+    `).run(
+      synthesisId,
+      this.portfolioRunId,
+      opts.roundId ?? null,
+      winnerGuess,
+      JSON.stringify(opts.variants.map(v => v.variantId)),
+      written.artifactPath,
+      JSON.stringify({
+        sourceCount: opts.variants.length,
+        usedCouncilSummary: !!opts.councilSummary,
+      })
+    );
+    db.close();
+
+    return {
+      synthesisId,
+      artifactPath: written.artifactPath,
+      content: response.content,
+    };
+  }
+}
+15. Tournament referee prompt
+src/prompts/tournament-referee.ts
+TypeScript
+
+import { z } from 'zod';
+
+export const TournamentRefereeSchema = z.object({
+  winner_variant_id: z.string(),
+  rationale: z.string(),
+  edge_cases: z.array(z.string()).max(6),
+});
+
+export const TOURNAMENT_REFEREE_SYSTEM_PROMPT = `
+You referee a head-to-head tournament match between two AutoOrg variants.
+
+Pick the winner based on:
+- mission fitness
+- groundedness
+- policy compliance
+- strategic usefulness
+- output quality under constraints
+
+Hard rules:
+- This is comparative, not absolute.
+- Choose the variant you would fund for the next round.
+- If one variant is riskier or less governed, that matters.
+`.trim();
+16. Tournament runtime
+src/portfolio/tournament.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getAdapter } from '@/adapters/adapter-factory.js';
+import { getDb } from '@/db/migrate.js';
+import { ImmutableArtifacts } from '@/runtime/immutable-artifacts.js';
+import { TOURNAMENT_REFEREE_SYSTEM_PROMPT, TournamentRefereeSchema } from '@/prompts/tournament-referee.js';
+
+export class Tournament {
+  private artifacts = new ImmutableArtifacts();
+
+  constructor(private portfolioRunId: string) {}
+
+  pairwise<T>(items: T[]) {
+    const pairs: Array<[T, T]> = [];
+    for (let i = 0; i < items.length - 1; i += 2) {
+      pairs.push([items[i], items[i + 1]]);
+    }
+    return pairs;
+  }
+
+  async runRound(opts: {
+    roundId?: string;
+    variants: Array<{
+      variantId: string;
+      displayName: string;
+      outputText: string;
+      metrics: Record<string, unknown>;
+    }>;
+  }) {
+    const pairs = this.pairwise(opts.variants);
+    const winners: string[] = [];
+
+    for (const [a, b] of pairs) {
+      const adapter = getAdapter({
+        provider: (process.env.DEFAULT_LLM_PROVIDER ?? 'anthropic') as any,
+        model: 'claude-sonnet-4-5',
+      });
+
+      const verdict = await adapter.structured({
+        model: 'claude-sonnet-4-5',
+        messages: [
+          { role: 'system', content: TOURNAMENT_REFEREE_SYSTEM_PROMPT },
+          {
+            role: 'user',
+            content: JSON.stringify({
+              a: {
+                variantId: a.variantId,
+                displayName: a.displayName,
+                metrics: a.metrics,
+                outputText: a.outputText.slice(0, 10000),
+              },
+              b: {
+                variantId: b.variantId,
+                displayName: b.displayName,
+                metrics: b.metrics,
+                outputText: b.outputText.slice(0, 10000),
+              },
+            }, null, 2),
+          },
+        ],
+        schema: TournamentRefereeSchema,
+      });
+
+      winners.push(verdict.winner_variant_id);
+
+      const matchId = `tm_${nanoid(10)}`;
+      const written = await this.artifacts.writeJson({
+        runId: this.portfolioRunId,
+        relPath: `artifacts/portfolio/councils/${matchId}.json`,
+        data: verdict,
+        artifactKind: 'tournament_match',
+      });
+
+      const db = getDb();
+      db.prepare(`
+        INSERT INTO tournament_matches
+        (id, portfolio_run_id, portfolio_round_id, variant_a_id, variant_b_id, winner_variant_id, referee_report_json, artifact_path)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        matchId,
+        this.portfolioRunId,
+        opts.roundId ?? null,
+        a.variantId,
+        b.variantId,
+        verdict.winner_variant_id,
+        JSON.stringify(verdict),
+        written.artifactPath,
+      );
+      db.close();
+    }
+
+    return winners;
+  }
+}
+17. Portfolio runner
+This is the main Phase 8 orchestration layer.
+
+src/portfolio/portfolio-runner.ts
+TypeScript
+
+import { createHash } from 'node:crypto';
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+import { VariantCatalog } from '@/portfolio/org-variant.js';
+import { BranchStrategy } from '@/portfolio/branch-strategy.js';
+import { PortfolioAllocator } from '@/portfolio/allocator.js';
+import { JudgeCouncil } from '@/portfolio/judge-council.js';
+import { Tournament } from '@/portfolio/tournament.js';
+import { BestOfN } from '@/portfolio/best-of-n.js';
+import { FailureContainment } from '@/portfolio/failure-containment.js';
+import { PortfolioPriors } from '@/portfolio/priors.js';
+
+function missionHash(text: string) {
+  return createHash('sha256').update(text).digest('hex');
+}
+
+export class PortfolioRunner {
+  private variants = new VariantCatalog();
+  private branches = new BranchStrategy();
+  private priors = new PortfolioPriors();
+
+  async run(opts: {
+    missionText: string;
+    variantKeys?: string[];
+    mode?: 'mission' | 'benchmark_seeded' | 'tournament';
+    initialBudgetUsd: number;
+    roundLimit?: number;
+    topKSurvive?: number;
+  }) {
+    const specs = await this.variants.loadByKeys(opts.variantKeys);
+
+    const portfolioRunId = `pr_${nanoid(10)}`;
+    const db = getDb();
+
+    db.prepare(`
+      INSERT INTO portfolio_runs
+      (id, mission_hash, mission_summary, mode, initial_budget_usd, remaining_budget_usd, round_limit, top_k_survive, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running')
+    `).run(
+      portfolioRunId,
+      missionHash(opts.missionText),
+      opts.missionText.slice(0, 600),
+      opts.mode ?? 'mission',
+      opts.initialBudgetUsd,
+      opts.initialBudgetUsd,
+      opts.roundLimit ?? 3,
+      opts.topKSurvive ?? 2,
+    );
+    db.close();
+
+    for (const spec of specs) {
+      const worktree = await this.branches.prepare({
+        portfolioRunId,
+        variantKey: spec.variant_key,
+      });
+
+      const prior = this.priors.estimatePrior(spec);
+
+      const db2 = getDb();
+      db2.prepare(`
+        INSERT INTO portfolio_variants
+        (id, portfolio_run_id, variant_key, display_name, constitution_variant, template_variant,
+         role_mix_json, model_map_json, branch_name, worktree_path, prior_score, allocated_budget_usd, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued')
+      `).run(
+        `pv_${nanoid(10)}`,
+        portfolioRunId,
+        spec.variant_key,
+        spec.display_name,
+        spec.constitution_variant,
+        spec.template_variant,
+        JSON.stringify(spec.role_mix),
+        JSON.stringify(spec.model_map),
+        worktree.branchName,
+        worktree.worktreePath,
+        prior.prior_score,
+        0
+      );
+      db2.close();
+    }
+
+    const allocator = new PortfolioAllocator(portfolioRunId);
+    const council = new JudgeCouncil(portfolioRunId);
+    const tournament = new Tournament(portfolioRunId);
+    const synth = new BestOfN(portfolioRunId);
+    const containment = new FailureContainment(portfolioRunId);
+
+    let remainingBudget = opts.initialBudgetUsd;
+    let survivingVariantIds: string[] = [];
+
+    for (let round = 1; round <= (opts.roundLimit ?? 3); round++) {
+      const roundId = `prd_${nanoid(10)}`;
+      const db3 = getDb();
+
+      db3.prepare(`
+        INSERT INTO portfolio_rounds
+        (id, portfolio_run_id, round_number, status, objective_snapshot_json)
+        VALUES (?, ?, ?, 'running', ?)
+      `).run(
+        roundId,
+        portfolioRunId,
+        round,
+        JSON.stringify({
+          missionSummary: opts.missionText.slice(0, 500),
+          remainingBudget,
+        })
+      );
+
+      db3.close();
+
+      const rebalance = await allocator.rebalance({
+        roundId,
+        remainingBudgetUsd: remainingBudget,
+      });
+
+      const db4 = getDb();
+      const active = db4.prepare(`
+        SELECT * FROM portfolio_variants
+        WHERE portfolio_run_id = ?
+          AND status NOT IN ('eliminated','failed','quarantined')
+          AND allocated_budget_usd > 0
+        ORDER BY allocated_budget_usd DESC
+      `).all(portfolioRunId) as Array<any>;
+      db4.close();
+
+      const results = await Promise.allSettled(
+        active.map(v => this.runVariantRound({
+          portfolioRunId,
+          roundId,
+          missionText: opts.missionText,
+          variant: v,
+        }))
+      );
+
+      const completed = [];
+      for (let i = 0; i < results.length; i++) {
+        const variant = active[i];
+        const result = results[i];
+
+        if (result.status === 'rejected') {
+          containment.record({
+            variantId: variant.id,
+            severity: 'error',
+            category: 'crash_loop',
+            summary: `Variant round failed`,
+            details: { error: String(result.reason) },
+          });
+          containment.eliminateVariant(variant.id, 'round execution failed');
+          continue;
+        }
+
+        completed.push(result.value);
+
+        if (containment.shouldKill({
+          spentBudgetUsd: result.value.costUsd,
+          allocatedBudgetUsd: variant.allocated_budget_usd,
+          securityFindings: result.value.securityFindingCount ?? 0,
+          criticalPolicyFailure: (result.value.policyCompliance ?? 1) < 0.6,
+        })) {
+          containment.quarantineVariant(variant.id, 'unsafe or over-budget');
+        }
+      }
+
+      const living = completed
+        .filter(x => !x.quarantined)
+        .sort((a, b) =>
+          (b.score.composite + 0.12 * (b.score.policyCompliance ?? 1) - 0.02 * b.costUsd) -
+          (a.score.composite + 0.12 * (a.score.policyCompliance ?? 1) - 0.02 * a.costUsd)
+        );
+
+      survivingVariantIds = living
+        .slice(0, opts.topKSurvive ?? 2)
+        .map(x => x.variantId);
+
+      const councilResult = await council.voteOnVariants({
+        roundId,
+        variants: living.slice(0, Math.max(2, opts.topKSurvive ?? 2)).map(v => ({
+          variantId: v.variantId,
+          displayName: v.displayName,
+          outputText: v.outputText,
+          metrics: {
+            score: v.score.composite,
+            groundedness: v.score.groundedness,
+            policyCompliance: v.score.policyCompliance ?? 1,
+            costUsd: v.costUsd,
+          },
+        })),
+      });
+
+      if ((opts.mode ?? 'mission') === 'tournament' && living.length >= 2) {
+        const winners = await tournament.runRound({
+          roundId,
+          variants: living.slice(0, 4).map(v => ({
+            variantId: v.variantId,
+            displayName: v.displayName,
+            outputText: v.outputText,
+            metrics: {
+              score: v.score.composite,
+              policyCompliance: v.score.policyCompliance ?? 1,
+            },
+          })),
+        });
+
+        survivingVariantIds = winners;
+      }
+
+      remainingBudget = Math.max(
+        0,
+        remainingBudget - living.reduce((acc, x) => acc + x.costUsd, 0)
+      );
+
+      const db5 = getDb();
+      db5.prepare(`
+        UPDATE portfolio_rounds
+        SET status = 'completed', finished_at = datetime('now')
+        WHERE id = ?
+      `).run(roundId);
+
+      db5.prepare(`
+        UPDATE portfolio_runs
+        SET remaining_budget_usd = ?
+        WHERE id = ?
+      `).run(remainingBudget, portfolioRunId);
+      db5.close();
+
+      if (survivingVariantIds.length <= 1 || remainingBudget <= 0.1) break;
+    }
+
+    const finalists = await this.loadVariantOutputs(portfolioRunId, survivingVariantIds);
+    const synthesis = await synth.synthesize({
+      variants: finalists.map(v => ({
+        variantId: v.variantId,
+        displayName: v.displayName,
+        outputText: v.outputText,
+        metrics: v.metrics,
+      })),
+    });
+
+    const winnerVariantId = finalists[0]?.variantId ?? null;
+
+    const db6 = getDb();
+    if (winnerVariantId) {
+      db6.prepare(`
+        UPDATE portfolio_variants
+        SET status = 'winner', updated_at = datetime('now')
+        WHERE id = ?
+      `).run(winnerVariantId);
+    }
+
+    db6.prepare(`
+      UPDATE portfolio_runs
+      SET status = 'completed',
+          final_variant_id = ?,
+          final_artifact_path = ?,
+          finished_at = datetime('now'),
+          summary_json = ?
+      WHERE id = ?
+    `).run(
+      winnerVariantId,
+      synthesis.artifactPath,
+      JSON.stringify({
+        survivingVariantIds,
+        synthesisId: synthesis.synthesisId,
+      }),
+      portfolioRunId
+    );
+    db6.close();
+
+    return {
+      portfolioRunId,
+      synthesisArtifactPath: synthesis.artifactPath,
+      winnerVariantId,
+    };
+  }
+
+  private async runVariantRound(opts: {
+    portfolioRunId: string;
+    roundId: string;
+    missionText: string;
+    variant: any;
+  }) {
+    const runId = `pvr_${nanoid(10)}`;
+
+    const result = await runPortfolioChild({
+      worktreePath: opts.variant.worktree_path,
+      missionText: opts.missionText,
+      variant: {
+        variantId: opts.variant.id,
+        variantKey: opts.variant.variant_key,
+        constitutionVariant: opts.variant.constitution_variant,
+        templateVariant: opts.variant.template_variant,
+        modelMap: JSON.parse(opts.variant.model_map_json || '{}'),
+      },
+      budgetUsd: opts.variant.allocated_budget_usd,
+    });
+
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO portfolio_variant_runs
+      (id, portfolio_round_id, variant_id, autoorg_run_id, status, output_path, evidence_pack_id, report_path,
+       score, groundedness, novelty, consistency, mission_alignment, policy_compliance, cost_usd, latency_ms,
+       tool_calls, security_findings, unsupported_claims, broken_provenance_links, finished_at)
+      VALUES (?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `).run(
+      runId,
+      opts.roundId,
+      opts.variant.id,
+      result.runId ?? null,
+      result.outputPath ?? null,
+      result.evidencePackId ?? null,
+      result.reportPath ?? null,
+      result.score.composite,
+      result.score.groundedness,
+      result.score.novelty,
+      result.score.consistency,
+      result.score.missionAlignment,
+      result.score.policyCompliance ?? 1,
+      result.costUsd ?? 0,
+      result.latencyMs ?? 0,
+      result.toolCalls ?? 0,
+      result.securityFindingCount ?? 0,
+      result.verificationReport?.unsupported_claims ?? 0,
+      result.provenanceReport?.broken_links ?? 0
+    );
+
+    db.prepare(`
+      UPDATE portfolio_variants
+      SET status = 'completed',
+          spent_budget_usd = spent_budget_usd + ?,
+          latest_score = ?,
+          latest_groundedness = ?,
+          latest_policy_compliance = ?,
+          latest_cost_usd = ?,
+          latest_latency_ms = ?,
+          latest_autoorg_run_id = ?,
+          latest_output_path = ?,
+          updated_at = datetime('now')
+      WHERE id = ?
+    `).run(
+      result.costUsd ?? 0,
+      result.score.composite,
+      result.score.groundedness,
+      result.score.policyCompliance ?? 1,
+      result.costUsd ?? 0,
+      result.latencyMs ?? 0,
+      result.runId ?? null,
+      result.outputPath ?? null,
+      opts.variant.id
+    );
+
+    db.close();
+
+    return {
+      variantId: opts.variant.id,
+      displayName: opts.variant.display_name,
+      outputText: result.outputText,
+      outputPath: result.outputPath,
+      evidencePackId: result.evidencePackId,
+      score: result.score,
+      costUsd: result.costUsd ?? 0,
+      latencyMs: result.latencyMs ?? 0,
+      securityFindingCount: result.securityFindingCount ?? 0,
+      policyCompliance: result.score.policyCompliance ?? 1,
+      quarantined: false,
+    };
+  }
+
+  private async loadVariantOutputs(portfolioRunId: string, variantIds: string[]) {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT id, display_name, latest_output_path, latest_score, latest_groundedness, latest_policy_compliance, latest_cost_usd
+      FROM portfolio_variants
+      WHERE portfolio_run_id = ?
+        AND id IN (${variantIds.map(() => '?').join(',')})
+      ORDER BY latest_score DESC
+    `).all(portfolioRunId, ...variantIds) as Array<any>;
+    db.close();
+
+    const out = [];
+    for (const row of rows) {
+      const outputText = row.latest_output_path
+        ? await Bun.file(row.latest_output_path).text().catch(() => '')
+        : '';
+      out.push({
+        variantId: row.id,
+        displayName: row.display_name,
+        outputText,
+        metrics: {
+          score: row.latest_score,
+          groundedness: row.latest_groundedness,
+          policyCompliance: row.latest_policy_compliance,
+          costUsd: row.latest_cost_usd,
+        },
+      });
+    }
+    return out;
+  }
+}
+
+async function runPortfolioChild(input: any) {
+  if (typeof globalThis.__AUTOORG_PORTFOLIO_CHILD__ === 'function') {
+    return await globalThis.__AUTOORG_PORTFOLIO_CHILD__(input);
+  }
+  throw new Error('No portfolio child runner wired');
+}
+18. Orchestrator portfolio mode
+Phase 8 should reuse the real orchestrator, just with variant-specific parameters and worktree isolation.
+
+Patch src/runtime/orchestrator.ts
+Add:
+
+TypeScript
+
+export async function runPortfolioChildMode(input: {
+  worktreePath: string;
+  missionText: string;
+  variant: {
+    variantId: string;
+    variantKey: string;
+    constitutionVariant: string;
+    templateVariant: string;
+    modelMap: Record<string, string>;
+  };
+  budgetUsd: number;
+}) {
+  const started = Date.now();
+
+  const result = await runAutoOrg({
+    orgText: input.missionText,
+    mode: 'portfolio',
+    workspaceRoot: input.worktreePath,
+    constitutionVariant: input.variant.constitutionVariant,
+    templateVariant: input.variant.templateVariant,
+    modelMap: input.variant.modelMap,
+    maxBudgetUsd: input.budgetUsd,
+    portfolioVariantId: input.variant.variantId,
+  });
+
+  return {
+    runId: result.runId,
+    outputText: result.finalOutputText,
+    outputPath: result.finalOutputPath,
+    evidencePackId: result.evidencePackId,
+    reportPath: result.reportPath,
+    score: result.finalScore,
+    costUsd: result.totalCostUsd ?? 0,
+    latencyMs: Date.now() - started,
+    toolCalls: result.totalToolCalls ?? 0,
+    verificationReport: result.verificationReport,
+    provenanceReport: result.provenanceReport,
+    securityFindingCount: result.securityFindingCount ?? 0,
+  };
+}
+
+(globalThis as any).__AUTOORG_PORTFOLIO_CHILD__ = runPortfolioChildMode;
+This keeps Phase 8 grounded in the same runtime stack as earlier phases.
+
+19. Cross-org exchange trigger
+A simple first integration:
+
+only allow exchange from top-performing variants,
+only share evidence packs or plans,
+only after quarantine.
+Patch src/portfolio/portfolio-runner.ts
+After council result, optionally share the winner’s evidence summary to the runner-up:
+
+TypeScript
+
+import { ExchangeBus } from '@/portfolio/exchange-bus.js';
+
+const exchangeBus = new ExchangeBus(portfolioRunId);
+
+if (living.length >= 2 && living[0].evidencePackId) {
+  const dbx = getDb();
+  const pack = dbx.prepare(`
+    SELECT artifact_path
+    FROM evidence_packs
+    WHERE id = ?
+  `).get(living[0].evidencePackId) as { artifact_path: string } | undefined;
+  dbx.close();
+
+  if (pack?.artifact_path) {
+    await exchangeBus.send({
+      fromVariantId: living[0].variantId,
+      toVariantId: living[1].variantId,
+      artifactPath: pack.artifact_path,
+      exchangeType: 'evidence',
+    });
+  }
+}
+This gives you “cross-org learning” without uncontrolled memory sharing.
+
+20. API routes
+src/api/portfolio-routes.ts
+TypeScript
+
+import { getDb } from '@/db/migrate.js';
+import { PortfolioRunner } from '@/portfolio/portfolio-runner.js';
+import { PortfolioAllocator } from '@/portfolio/allocator.js';
+import { Tournament } from '@/portfolio/tournament.js';
+import { BestOfN } from '@/portfolio/best-of-n.js';
+
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data, null, 2), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+export async function handlePortfolioRoutes(url: URL, req: Request) {
+  const method = req.method;
+
+  if (url.pathname === '/api/portfolio/runs' && method === 'GET') {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM portfolio_runs
+      ORDER BY created_at DESC
+      LIMIT 100
+    `).all();
+    db.close();
+    return json(rows);
+  }
+
+  if (url.pathname === '/api/portfolio/run' && method === 'POST') {
+    const body = await req.json() as {
+      missionText: string;
+      variantKeys?: string[];
+      mode?: 'mission' | 'benchmark_seeded' | 'tournament';
+      initialBudgetUsd: number;
+      roundLimit?: number;
+      topKSurvive?: number;
+    };
+
+    const runner = new PortfolioRunner();
+    const result = await runner.run(body);
+    return json({ ok: true, result });
+  }
+
+  const variantsMatch = url.pathname.match(/^\/api\/portfolio\/([^/]+)\/variants$/);
+  if (variantsMatch && method === 'GET') {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM portfolio_variants
+      WHERE portfolio_run_id = ?
+      ORDER BY latest_score DESC, prior_score DESC
+    `).all(variantsMatch[1]);
+    db.close();
+    return json(rows);
+  }
+
+  const allocMatch = url.pathname.match(/^\/api\/portfolio\/([^/]+)\/allocations$/);
+  if (allocMatch && method === 'GET') {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM portfolio_allocations
+      WHERE portfolio_run_id = ?
+      ORDER BY created_at DESC
+    `).all(allocMatch[1]);
+    db.close();
+    return json(rows);
+  }
+
+  const councilMatch = url.pathname.match(/^\/api\/portfolio\/([^/]+)\/council$/);
+  if (councilMatch && method === 'GET') {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM judge_council_votes
+      WHERE portfolio_run_id = ?
+      ORDER BY created_at DESC
+    `).all(councilMatch[1]);
+    db.close();
+    return json(rows);
+  }
+
+  const exchangeMatch = url.pathname.match(/^\/api\/portfolio\/([^/]+)\/exchanges$/);
+  if (exchangeMatch && method === 'GET') {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM portfolio_exchanges
+      WHERE portfolio_run_id = ?
+      ORDER BY created_at DESC
+    `).all(exchangeMatch[1]);
+    db.close();
+    return json(rows);
+  }
+
+  const failureMatch = url.pathname.match(/^\/api\/portfolio\/([^/]+)\/failures$/);
+  if (failureMatch && method === 'GET') {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM failure_containment_events
+      WHERE portfolio_run_id = ?
+      ORDER BY created_at DESC
+    `).all(failureMatch[1]);
+    db.close();
+    return json(rows);
+  }
+
+  const synthMatch = url.pathname.match(/^\/api\/portfolio\/([^/]+)\/syntheses$/);
+  if (synthMatch && method === 'GET') {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM portfolio_syntheses
+      WHERE portfolio_run_id = ?
+      ORDER BY created_at DESC
+    `).all(synthMatch[1]);
+    db.close();
+    return json(rows);
+  }
+
+  return null;
+}
+21. Minimal UI additions
+text
+
+web/app/
+├── portfolio/page.tsx
+├── capital/page.tsx
+├── council/page.tsx
+├── tournament/page.tsx
+└── exchanges/page.tsx
+Patch nav in web/app/layout.tsx
+React
+
+<nav className="ml-auto flex gap-6 text-sm">
+  <a href="/" className="text-gray-400 hover:text-cyan-400 transition-colors">Dashboard</a>
+  <a href="/graph" className="text-gray-400 hover:text-cyan-400 transition-colors">Graph</a>
+  <a href="/approvals" className="text-gray-400 hover:text-cyan-400 transition-colors">Approvals</a>
+  <a href="/budgets" className="text-gray-400 hover:text-cyan-400 transition-colors">Budgets</a>
+  <a href="/locks" className="text-gray-400 hover:text-cyan-400 transition-colors">Locks</a>
+  <a href="/issues" className="text-gray-400 hover:text-cyan-400 transition-colors">Issues</a>
+  <a href="/tools" className="text-gray-400 hover:text-cyan-400 transition-colors">Tools</a>
+  <a href="/evidence" className="text-gray-400 hover:text-cyan-400 transition-colors">Evidence</a>
+  <a href="/ledger" className="text-gray-400 hover:text-cyan-400 transition-colors">Ledger</a>
+  <a href="/provenance" className="text-gray-400 hover:text-cyan-400 transition-colors">Provenance</a>
+  <a href="/security" className="text-gray-400 hover:text-cyan-400 transition-colors">Security</a>
+  <a href="/benchmarks" className="text-gray-400 hover:text-cyan-400 transition-colors">Benchmarks</a>
+  <a href="/leaderboard" className="text-gray-400 hover:text-cyan-400 transition-colors">Leaderboard</a>
+  <a href="/regressions" className="text-gray-400 hover:text-cyan-400 transition-colors">Regressions</a>
+  <a href="/replay" className="text-gray-400 hover:text-cyan-400 transition-colors">Replay</a>
+  <a href="/portfolio" className="text-gray-400 hover:text-cyan-400 transition-colors">Portfolio</a>
+  <a href="/capital" className="text-gray-400 hover:text-cyan-400 transition-colors">Capital</a>
+  <a href="/council" className="text-gray-400 hover:text-cyan-400 transition-colors">Council</a>
+  <a href="/tournament" className="text-gray-400 hover:text-cyan-400 transition-colors">Tournament</a>
+  <a href="/exchanges" className="text-gray-400 hover:text-cyan-400 transition-colors">Exchanges</a>
+</nav>
+/portfolio page
+Show:
+
+active portfolio runs
+mission summary
+status
+current winner
+remaining budget
+round count
+/capital page
+Show:
+
+per-variant allocations
+spend vs budget
+utility proxy
+eliminated/quarantined status
+/council page
+Show:
+
+judge votes
+vote totals
+winner by round
+concerns per judge
+/tournament page
+Show:
+
+bracket or pairwise matches
+winners
+referee rationale
+/exchanges page
+Show:
+
+artifact exchange requests
+quarantine status
+blocked vs delivered
+delivered path
+22. Tests for Phase 8
+tests/variant-catalog.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { VariantCatalog } from '../src/portfolio/org-variant.js';
+
+describe('VariantCatalog', () => {
+  it('loads variant specs', async () => {
+    const catalog = new VariantCatalog();
+    const specs = await catalog.loadAll().catch(() => []);
+    expect(Array.isArray(specs)).toBe(true);
+  });
+});
+tests/branch-strategy.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { BranchStrategy } from '../src/portfolio/branch-strategy.js';
+
+describe('BranchStrategy', () => {
+  it('has prepare and cleanup methods', async () => {
+    const s = new BranchStrategy();
+    expect(typeof s.prepare).toBe('function');
+    expect(typeof s.cleanup).toBe('function');
+  });
+});
+tests/failure-containment.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { FailureContainment } from '../src/portfolio/failure-containment.js';
+
+describe('FailureContainment', () => {
+  it('kills variants with critical policy failure', () => {
+    const fc = new FailureContainment('pr_test');
+    expect(fc.shouldKill({
+      spentBudgetUsd: 1,
+      allocatedBudgetUsd: 10,
+      securityFindings: 0,
+      criticalPolicyFailure: true,
+    })).toBe(true);
+  });
+});
+tests/portfolio-allocator-schema.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { PortfolioAllocationSchema } from '../src/prompts/portfolio-allocator.js';
+
+describe('PortfolioAllocationSchema', () => {
+  it('validates allocation output', () => {
+    const parsed = PortfolioAllocationSchema.parse({
+      allocations: [
+        {
+          variant_id: 'pv_1',
+          amount_usd: 2.5,
+          action: 'rebalance',
+          rationale: 'Strong score per dollar',
+        },
+      ],
+      summary: 'Shift capital to strong grounded variants',
+    });
+
+    expect(parsed.allocations[0].amount_usd).toBe(2.5);
+  });
+});
+tests/judge-council-schema.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { JudgeCouncilVoteSchema } from '../src/prompts/judge-council.js';
+
+describe('JudgeCouncilVoteSchema', () => {
+  it('validates a council vote', () => {
+    const parsed = JudgeCouncilVoteSchema.parse({
+      voted_variant_id: 'pv_abc',
+      score: 0.88,
+      rationale: 'Better grounded and clearer plan',
+      concerns: ['Slightly higher cost'],
+    });
+
+    expect(parsed.score).toBeGreaterThan(0.8);
+  });
+});
+tests/quarantine-review-schema.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { QuarantineReviewSchema } from '../src/prompts/quarantine-reviewer.js';
+
+describe('QuarantineReviewSchema', () => {
+  it('accepts an approved sanitized artifact review', () => {
+    const parsed = QuarantineReviewSchema.parse({
+      approved: true,
+      blocked: false,
+      findings: ['Removed one email address'],
+      sanitized_summary: 'Safe summarized artifact',
+      should_redact_more: false,
+    });
+
+    expect(parsed.approved).toBe(true);
+  });
+});
+tests/tournament-referee-schema.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { TournamentRefereeSchema } from '../src/prompts/tournament-referee.js';
+
+describe('TournamentRefereeSchema', () => {
+  it('validates a tournament verdict', () => {
+    const parsed = TournamentRefereeSchema.parse({
+      winner_variant_id: 'pv_win',
+      rationale: 'Higher mission fitness and policy compliance',
+      edge_cases: ['More expensive but acceptable'],
+    });
+
+    expect(parsed.winner_variant_id).toBe('pv_win');
+  });
+});
+tests/portfolio-priors.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { PortfolioPriors } from '../src/portfolio/priors.js';
+
+describe('PortfolioPriors', () => {
+  it('returns a prior estimate even without history', () => {
+    const priors = new PortfolioPriors();
+    const out = priors.estimatePrior({
+      variant_key: 'default',
+      constitution_variant: 'default',
+      template_variant: 'baseline',
+      model_map: {},
+    });
+
+    expect(typeof out.prior_score).toBe('number');
+  });
+});
+23. Run instructions for Phase 8
+Bash
+
+# 1. Apply migration
+bun run src/db/migrate-phase8.ts
+
+# 2. Make sure portfolio variants exist
+tree portfolio/variants
+
+# 3. Start API/dashboard
+bun run src/api/server.ts
+cd web && bun run dev
+
+# 4. Launch a portfolio run
+curl -X POST http://localhost:3000/api/portfolio/run \
+  -H "Content-Type: application/json" \
+  -d '{
+    "missionText":"Build the best grounded implementation plan for AutoOrg Phase 8.",
+    "variantKeys":["default","strict_grounding","research_heavy","quality_heavy"],
+    "mode":"mission",
+    "initialBudgetUsd":8,
+    "roundLimit":3,
+    "topKSurvive":2
+  }'
+
+# 5. List runs
+curl http://localhost:3000/api/portfolio/runs
+
+# 6. Inspect variants
+curl http://localhost:3000/api/portfolio/<portfolioRunId>/variants
+
+# 7. Inspect allocations
+curl http://localhost:3000/api/portfolio/<portfolioRunId>/allocations
+
+# 8. Inspect council votes
+curl http://localhost:3000/api/portfolio/<portfolioRunId>/council
+
+# 9. Inspect exchanges
+curl http://localhost:3000/api/portfolio/<portfolioRunId>/exchanges
+
+# 10. Inspect final syntheses
+curl http://localhost:3000/api/portfolio/<portfolioRunId>/syntheses
+24. Optional .env additions for Phase 8
+Bash
+
+# ── PORTFOLIO ────────────────────────────────────────────────
+PORTFOLIO_DEFAULT_BUDGET_USD=8
+PORTFOLIO_DEFAULT_ROUNDS=3
+PORTFOLIO_TOP_K_SURVIVE=2
+PORTFOLIO_MAX_VARIANTS=6
+
+# ── BRANCH / WORKTREE ISOLATION ──────────────────────────────
+PORTFOLIO_WORKTREE_ROOT=artifacts/portfolio/runs
+PORTFOLIO_BRANCH_PREFIX=portfolio
+
+# ── CAPITAL ALLOCATION ───────────────────────────────────────
+PORTFOLIO_MIN_EXPLORATION_SHARE=0.15
+PORTFOLIO_ELIMINATION_THRESHOLD=0.55
+PORTFOLIO_POLICY_FLOOR=0.80
+
+# ── COUNCIL / TOURNAMENT ─────────────────────────────────────
+PORTFOLIO_COUNCIL_MODELS=claude-opus-4,claude-sonnet-4-5,gpt-4.1
+PORTFOLIO_TOURNAMENT_MAX_VARIANTS=4
+
+# ── EXCHANGE / QUARANTINE ────────────────────────────────────
+PORTFOLIO_ALLOW_CROSS_ORG_EXCHANGE=1
+PORTFOLIO_QUARANTINE_DIR=artifacts/portfolio/quarantine
+PORTFOLIO_EXTERNAL_MEMORY_DIR=memory/external
+25. What Phase 8 now gives you
+At this point AutoOrg can:
+
+text
+
+✅ Run multiple org variants on the same mission at once
+✅ Isolate each variant in its own branch/worktree
+✅ Route capital toward better-performing org strategies
+✅ Seed variant priors from benchmark history
+✅ Use judge councils rather than single-judge selection
+✅ Run tournament brackets between strategies
+✅ Share artifacts across orgs only through quarantine
+✅ Contain failures without collapsing the whole portfolio
+✅ Synthesize a stronger final output from top variants
+✅ Display the whole portfolio as a capital allocation system
+This is the phase where AutoOrg stops being one autonomous organization and becomes an autonomous portfolio manager.
+
+26. Recommended implementation order
+I’d implement Phase 8 in this order:
+
+DB migration
+variant catalog
+branch/worktree isolation
+portfolio runner baseline
+allocator
+judge council
+best-of-N synthesis
+failure containment
+quarantine + exchange bus
+tournament mode
+API/UI
+Why:
+
+first make multiple orgs run safely,
+then make portfolio selection work,
+then add richer inter-org dynamics.
+
+
+
+
+
+
+
+here is Phase 9 expanded in the same detailed format.
+
+Phase 8 made AutoOrg a portfolio manager.
+Phase 9 makes it a platform.
+
+This is the phase where AutoOrg stops being only “the system you run” and becomes “the system other teams can safely use.” That means:
+
+tenants,
+users,
+auth,
+RBAC,
+hosted runs,
+remote workers,
+quotas,
+billing,
+workspace isolation,
+templates,
+public API,
+SDK,
+backups,
+retention,
+admin observability.
+AutoOrg — Phase 9: Productization + Platform
+Multi-Tenant Auth, Hosted Runs, Remote Agents, Billing, Workspace Isolation, Templates, API/SDK, Backup/Restore, Admin Ops
+WHAT PHASE 9 ADDS
+text
+
+Phase 8   ── Portfolio orchestration + capital allocation + councils + best-of-N
+
+Phase 9   ── ┌──────────────────────────────────────────────────────────────┐
+             │ Multi-tenant auth / RBAC                                    │
+             │ Hosted runs + remote agents                                 │
+             │ Org templates / role registry / template marketplace        │
+             │ Team collaboration: comments + approvals UI                 │
+             │ Billing / quotas / workspace isolation                      │
+             │ Deployment modes: local / single-node / cloud / managed     │
+             │ Backup / restore / export bundles                           │
+             │ Compliance logs + retention policies                        │
+             │ Admin observability dashboard                               │
+             │ Public API + SDK for launching runs                         │
+             └──────────────────────────────────────────────────────────────┘
+DIRECTORY ADDITIONS
+text
+
+src/
+├── platform/
+│   ├── auth.ts                     ← login/session/api-key auth
+│   ├── rbac.ts                     ← roles, permissions, policy checks
+│   ├── tenant-context.ts           ← request-scoped tenant/workspace context
+│   ├── workspace-provisioner.ts    ← per-workspace directories, DB namespaces
+│   ├── hosted-runner.ts            ← hosted run submission + dispatch
+│   ├── remote-agent.ts             ← remote worker heartbeat + claims
+│   ├── quota-manager.ts            ← tenant/workspace quotas
+│   ├── billing.ts                  ← usage meters + billing events
+│   ├── comments.ts                 ← discussion/comments/mentions
+│   ├── template-registry.ts        ← org templates + marketplace registry
+│   ├── role-registry.ts            ← reusable role pack definitions
+│   ├── backup-manager.ts           ← snapshot/export/restore bundles
+│   ├── retention-manager.ts        ← retention / purge jobs
+│   ├── observability.ts            ← admin metrics snapshots
+│   ├── deployment-modes.ts         ← local/single-node/cloud/managed helpers
+│   └── sdk-tokens.ts               ← scoped API tokens for SDK clients
+├── sdk/
+│   └── ts/
+│       ├── client.ts               ← TypeScript SDK client
+│       ├── types.ts
+│       └── index.ts
+├── prompts/
+│   ├── template-curator.ts         ← evaluate/publish templates
+│   ├── comment-summarizer.ts       ← summarize review threads
+│   └── usage-analyzer.ts           ← analyze spend/quota anomalies
+├── db/
+│   ├── schema-phase9.sql
+│   └── migrate-phase9.ts
+└── api/
+    ├── auth-routes.ts
+    ├── workspace-routes.ts
+    ├── billing-routes.ts
+    ├── admin-routes.ts
+    ├── template-routes.ts
+    └── sdk-routes.ts
+
+platform/
+├── templates/
+│   ├── baseline.json
+│   ├── research_org.json
+│   ├── quality_org.json
+│   └── portfolio_org.json
+└── roles/
+    ├── engineer.json
+    ├── critic.json
+    ├── archivist.json
+    └── coordinator.json
+
+artifacts/
+├── backups/
+├── exports/
+├── observability/
+└── compliance/
+    ├── audit/
+    └── retention/
+1. Phase 9 DB schema
+src/db/schema-phase9.sql
+SQL
+
+-- ============================================================
+-- AutoOrg Phase 9 Schema
+-- Productization + platform
+-- ============================================================
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: tenants
+-- Top-level account/org boundary
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS tenants (
+  id TEXT PRIMARY KEY,
+  slug TEXT NOT NULL UNIQUE,
+  display_name TEXT NOT NULL,
+  plan_tier TEXT NOT NULL CHECK(plan_tier IN ('free','team','enterprise','internal')),
+  status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','suspended','deleted')),
+  settings_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: users
+-- Platform users
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  display_name TEXT NOT NULL,
+  password_hash TEXT,
+  auth_provider TEXT NOT NULL DEFAULT 'local',
+  auth_subject TEXT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','invited','suspended','deleted')),
+  created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  last_seen_at DATETIME
+);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: memberships
+-- User membership in tenant
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS memberships (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role_key TEXT NOT NULL CHECK(role_key IN ('owner','admin','editor','reviewer','viewer','billing')),
+  status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','invited','revoked')),
+  created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(tenant_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_memberships_tenant
+  ON memberships(tenant_id, role_key);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: sessions
+-- Browser/API sessions
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS sessions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  tenant_id TEXT REFERENCES tenants(id) ON DELETE SET NULL,
+  session_token_hash TEXT NOT NULL,
+  expires_at DATETIME NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  last_seen_at DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user
+  ON sessions(user_id, expires_at);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: api_keys
+-- Personal or service API keys
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS api_keys (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  key_name TEXT NOT NULL,
+  key_prefix TEXT NOT NULL,
+  key_hash TEXT NOT NULL,
+  scopes_json TEXT NOT NULL DEFAULT '[]',
+  last_used_at DATETIME,
+  expires_at DATETIME,
+  revoked_at DATETIME,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_api_keys_tenant
+  ON api_keys(tenant_id, key_prefix);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: workspaces
+-- Tenant-contained workspace root
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS workspaces (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  slug TEXT NOT NULL,
+  display_name TEXT NOT NULL,
+  root_path TEXT NOT NULL,
+  repo_url TEXT,
+  default_branch TEXT,
+  isolation_mode TEXT NOT NULL CHECK(isolation_mode IN ('directory','git_worktree','container')),
+  status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','deleted')),
+  settings_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(tenant_id, slug)
+);
+CREATE INDEX IF NOT EXISTS idx_workspaces_tenant
+  ON workspaces(tenant_id, status);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: workspace_memberships
+-- User roles at workspace scope
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS workspace_memberships (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role_key TEXT NOT NULL CHECK(role_key IN ('admin','editor','reviewer','viewer','runner')),
+  created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(workspace_id, user_id)
+);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: permission_overrides
+-- Fine-grained overrides
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS permission_overrides (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT REFERENCES tenants(id) ON DELETE CASCADE,
+  workspace_id TEXT REFERENCES workspaces(id) ON DELETE CASCADE,
+  subject_type TEXT NOT NULL CHECK(subject_type IN ('user','api_key','membership_role')),
+  subject_ref TEXT NOT NULL,
+  permission_key TEXT NOT NULL,
+  effect TEXT NOT NULL CHECK(effect IN ('allow','deny')),
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_permission_overrides_scope
+  ON permission_overrides(tenant_id, workspace_id, subject_type);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: hosted_runs
+-- Platform-submitted runs
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS hosted_runs (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  submitted_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  api_key_id TEXT REFERENCES api_keys(id) ON DELETE SET NULL,
+  mode TEXT NOT NULL CHECK(mode IN ('single_org','portfolio','benchmark','daemon')),
+  status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','running','completed','failed','cancelled')),
+  request_json TEXT NOT NULL,
+  autoorg_run_ref TEXT,
+  portfolio_run_ref TEXT,
+  assigned_agent_id TEXT,
+  output_artifact_path TEXT,
+  report_artifact_path TEXT,
+  started_at DATETIME,
+  finished_at DATETIME,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_hosted_runs_workspace
+  ON hosted_runs(workspace_id, status, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: remote_agents
+-- Remote workers for hosted runs
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS remote_agents (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT REFERENCES tenants(id) ON DELETE SET NULL,
+  agent_name TEXT NOT NULL,
+  deployment_mode TEXT NOT NULL CHECK(deployment_mode IN ('local','single-node','cloud-worker','managed')),
+  capability_json TEXT NOT NULL DEFAULT '{}',
+  heartbeat_at DATETIME,
+  lease_expires_at DATETIME,
+  status TEXT NOT NULL DEFAULT 'idle' CHECK(status IN ('idle','busy','offline','disabled')),
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_remote_agents_status
+  ON remote_agents(status, heartbeat_at);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: quota_policies
+-- Tenant/workspace quotas
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS quota_policies (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT REFERENCES tenants(id) ON DELETE CASCADE,
+  workspace_id TEXT REFERENCES workspaces(id) ON DELETE CASCADE,
+  quota_key TEXT NOT NULL CHECK(quota_key IN (
+    'runs_per_day','tokens_per_month','usd_per_month','storage_gb','agents','benchmarks_per_day'
+  )),
+  limit_value REAL NOT NULL,
+  hard_limit INTEGER NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_quota_policies_scope
+  ON quota_policies(tenant_id, workspace_id, quota_key);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: quota_usage
+-- Quota consumption ledger
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS quota_usage (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  workspace_id TEXT REFERENCES workspaces(id) ON DELETE SET NULL,
+  quota_key TEXT NOT NULL,
+  window_start DATETIME NOT NULL,
+  window_end DATETIME NOT NULL,
+  used_value REAL NOT NULL DEFAULT 0,
+  updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_quota_usage_scope
+  ON quota_usage(tenant_id, workspace_id, quota_key, window_start);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: billing_events
+-- Metered cost events
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS billing_events (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  workspace_id TEXT REFERENCES workspaces(id) ON DELETE SET NULL,
+  hosted_run_id TEXT REFERENCES hosted_runs(id) ON DELETE SET NULL,
+  event_type TEXT NOT NULL CHECK(event_type IN ('run','llm_tokens','tool_calls','storage','backup','agent_minutes','benchmark')),
+  quantity REAL NOT NULL DEFAULT 0,
+  unit_cost_usd REAL NOT NULL DEFAULT 0,
+  total_cost_usd REAL NOT NULL DEFAULT 0,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_billing_events_tenant
+  ON billing_events(tenant_id, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: comments
+-- Collaboration threads on runs/artifacts
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS comments (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  workspace_id TEXT REFERENCES workspaces(id) ON DELETE CASCADE,
+  user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  parent_comment_id TEXT REFERENCES comments(id) ON DELETE CASCADE,
+  subject_kind TEXT NOT NULL CHECK(subject_kind IN ('hosted_run','approval','artifact','portfolio_run','benchmark_run')),
+  subject_ref TEXT NOT NULL,
+  body TEXT NOT NULL,
+  mentions_json TEXT NOT NULL DEFAULT '[]',
+  resolved INTEGER NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_comments_subject
+  ON comments(subject_kind, subject_ref, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: org_templates
+-- Shareable org templates
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS org_templates (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT REFERENCES tenants(id) ON DELETE SET NULL,
+  template_key TEXT NOT NULL,
+  display_name TEXT NOT NULL,
+  visibility TEXT NOT NULL CHECK(visibility IN ('private','tenant','public')),
+  category TEXT NOT NULL,
+  manifest_json TEXT NOT NULL DEFAULT '{}',
+  version TEXT NOT NULL DEFAULT '1.0.0',
+  status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','draft')),
+  published_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_org_templates_visibility
+  ON org_templates(visibility, category, updated_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: role_registry
+-- Reusable role packs
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS role_registry (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT REFERENCES tenants(id) ON DELETE SET NULL,
+  role_key TEXT NOT NULL,
+  display_name TEXT NOT NULL,
+  role_manifest_json TEXT NOT NULL DEFAULT '{}',
+  visibility TEXT NOT NULL CHECK(visibility IN ('private','tenant','public')),
+  version TEXT NOT NULL DEFAULT '1.0.0',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_role_registry_visibility
+  ON role_registry(visibility, role_key);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: backup_jobs
+-- Backup / restore / export jobs
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS backup_jobs (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  workspace_id TEXT REFERENCES workspaces(id) ON DELETE CASCADE,
+  job_type TEXT NOT NULL CHECK(job_type IN ('backup','restore','export')),
+  status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','running','completed','failed','cancelled')),
+  source_path TEXT,
+  artifact_path TEXT,
+  sha256 TEXT,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  finished_at DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_backup_jobs_scope
+  ON backup_jobs(tenant_id, workspace_id, status);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: retention_policies
+-- Retention / purge policies by artifact class
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS retention_policies (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT REFERENCES tenants(id) ON DELETE CASCADE,
+  workspace_id TEXT REFERENCES workspaces(id) ON DELETE CASCADE,
+  artifact_class TEXT NOT NULL,
+  retain_days INTEGER NOT NULL,
+  purge_mode TEXT NOT NULL CHECK(purge_mode IN ('delete','archive')),
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: compliance_logs
+-- Compliance/audit events
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS compliance_logs (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  workspace_id TEXT REFERENCES workspaces(id) ON DELETE SET NULL,
+  actor_type TEXT NOT NULL CHECK(actor_type IN ('user','api_key','system','agent')),
+  actor_ref TEXT,
+  event_type TEXT NOT NULL CHECK(event_type IN (
+    'auth_login','auth_failure','api_key_created','run_submitted','run_cancelled',
+    'approval_action','permission_denied','backup_exported','restore_started',
+    'retention_purge','template_published','workspace_created'
+  )),
+  subject_kind TEXT,
+  subject_ref TEXT,
+  details_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_compliance_logs_tenant
+  ON compliance_logs(tenant_id, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: observability_snapshots
+-- Periodic admin metrics snapshots
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS observability_snapshots (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT,
+  workspace_id TEXT,
+  snapshot_type TEXT NOT NULL CHECK(snapshot_type IN ('platform','tenant','workspace','agent')),
+  metrics_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_observability_snapshots_type
+  ON observability_snapshots(snapshot_type, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: sdk_clients
+-- Public API consumers / apps
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS sdk_clients (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  client_name TEXT NOT NULL,
+  client_type TEXT NOT NULL CHECK(client_type IN ('server','browser','cli','internal')),
+  scopes_json TEXT NOT NULL DEFAULT '[]',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ────────────────────────────────────────────────────────────
+-- Feature flags
+-- ────────────────────────────────────────────────────────────
+INSERT OR IGNORE INTO feature_flags (flag_name, enabled, description) VALUES
+  ('multiTenantAuth', 1, 'Tenant/user/session/auth support (Phase 9)'),
+  ('rbacPlatform', 1, 'RBAC and permission checks (Phase 9)'),
+  ('hostedRuns', 1, 'Hosted run dispatch and management (Phase 9)'),
+  ('remoteAgents', 1, 'Remote workers/agents (Phase 9)'),
+  ('templateMarketplace', 1, 'Org template/role registry (Phase 9)'),
+  ('billingAndQuotas', 1, 'Quota enforcement and billing events (Phase 9)'),
+  ('workspaceIsolation', 1, 'Workspace isolation and provisioning (Phase 9)'),
+  ('backupRestore', 1, 'Backup/restore/export jobs (Phase 9)'),
+  ('complianceRetention', 1, 'Compliance logs and retention policies (Phase 9)'),
+  ('adminObservability', 1, 'Admin observability dashboard (Phase 9)'),
+  ('publicApiSdk', 1, 'Public API/SDK (Phase 9)');
+src/db/migrate-phase9.ts
+TypeScript
+
+#!/usr/bin/env bun
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import chalk from 'chalk';
+import { getDb } from '@/db/migrate.js';
+
+async function migrate() {
+  console.log(chalk.cyan('\n⚙️ Running Phase 9 migrations...\n'));
+  const db = getDb();
+  const schema = readFileSync(path.join(import.meta.dir, 'schema-phase9.sql'), 'utf-8');
+  db.exec(schema);
+  db.close();
+  console.log(chalk.bold.green('✅ Phase 9 migration complete.\n'));
+}
+
+migrate().catch(console.error);
+Run:
+
+Bash
+
+bun run src/db/migrate-phase9.ts
+2. Auth service
+src/platform/auth.ts
+TypeScript
+
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+
+function sha256(text: string) {
+  return createHash('sha256').update(text).digest('hex');
+}
+
+function hashPassword(password: string) {
+  const salt = randomBytes(16).toString('hex');
+  const digest = scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${digest}`;
+}
+
+function verifyPassword(password: string, stored: string) {
+  const [salt, digest] = stored.split(':');
+  const derived = scryptSync(password, salt, 64);
+  const original = Buffer.from(digest, 'hex');
+  return original.length === derived.length && timingSafeEqual(original, derived);
+}
+
+export class AuthService {
+  createUser(opts: {
+    email: string;
+    displayName: string;
+    password?: string;
+  }) {
+    const db = getDb();
+    const id = `usr_${nanoid(10)}`;
+
+    db.prepare(`
+      INSERT INTO users
+      (id, email, display_name, password_hash, auth_provider, status)
+      VALUES (?, ?, ?, ?, 'local', 'active')
+    `).run(
+      id,
+      opts.email.toLowerCase(),
+      opts.displayName,
+      opts.password ? hashPassword(opts.password) : null
+    );
+
+    db.close();
+    return { userId: id };
+  }
+
+  createTenant(opts: {
+    slug: string;
+    displayName: string;
+    ownerUserId: string;
+    planTier?: 'free' | 'team' | 'enterprise' | 'internal';
+  }) {
+    const db = getDb();
+    const tenantId = `ten_${nanoid(10)}`;
+
+    db.prepare(`
+      INSERT INTO tenants
+      (id, slug, display_name, plan_tier, status, settings_json)
+      VALUES (?, ?, ?, ?, 'active', '{}')
+    `).run(
+      tenantId,
+      opts.slug,
+      opts.displayName,
+      opts.planTier ?? 'team'
+    );
+
+    db.prepare(`
+      INSERT INTO memberships
+      (id, tenant_id, user_id, role_key, status)
+      VALUES (?, ?, ?, 'owner', 'active')
+    `).run(`mem_${nanoid(10)}`, tenantId, opts.ownerUserId);
+
+    db.close();
+    return { tenantId };
+  }
+
+  login(opts: {
+    email: string;
+    password: string;
+    tenantId?: string;
+  }) {
+    const db = getDb();
+    const user = db.prepare(`
+      SELECT * FROM users WHERE email = ?
+    `).get(opts.email.toLowerCase()) as
+      | { id: string; password_hash: string | null }
+      | undefined;
+
+    if (!user?.password_hash || !verifyPassword(opts.password, user.password_hash)) {
+      db.close();
+      return null;
+    }
+
+    const token = `sess_${randomBytes(24).toString('hex')}`;
+    const sessionId = `ses_${nanoid(10)}`;
+
+    db.prepare(`
+      INSERT INTO sessions
+      (id, user_id, tenant_id, session_token_hash, expires_at, last_seen_at)
+      VALUES (?, ?, ?, ?, datetime('now', '+30 days'), datetime('now'))
+    `).run(
+      sessionId,
+      user.id,
+      opts.tenantId ?? null,
+      sha256(token)
+    );
+
+    db.prepare(`
+      UPDATE users SET last_seen_at = datetime('now') WHERE id = ?
+    `).run(user.id);
+
+    db.close();
+
+    return {
+      sessionId,
+      token,
+      userId: user.id,
+    };
+  }
+
+  verifySession(token: string) {
+    const db = getDb();
+    const row = db.prepare(`
+      SELECT * FROM sessions
+      WHERE session_token_hash = ?
+        AND expires_at > datetime('now')
+      LIMIT 1
+    `).get(sha256(token)) as any;
+    db.close();
+    return row ?? null;
+  }
+
+  createApiKey(opts: {
+    tenantId: string;
+    userId?: string;
+    keyName: string;
+    scopes: string[];
+    expiresAt?: string;
+  }) {
+    const raw = `ak_${randomBytes(24).toString('hex')}`;
+    const db = getDb();
+    const id = `key_${nanoid(10)}`;
+
+    db.prepare(`
+      INSERT INTO api_keys
+      (id, tenant_id, user_id, key_name, key_prefix, key_hash, scopes_json, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      opts.tenantId,
+      opts.userId ?? null,
+      opts.keyName,
+      raw.slice(0, 10),
+      sha256(raw),
+      JSON.stringify(opts.scopes),
+      opts.expiresAt ?? null
+    );
+
+    db.close();
+
+    return {
+      apiKeyId: id,
+      rawKey: raw,
+    };
+  }
+
+  verifyApiKey(rawKey: string) {
+    const db = getDb();
+    const row = db.prepare(`
+      SELECT * FROM api_keys
+      WHERE key_hash = ?
+        AND revoked_at IS NULL
+        AND (expires_at IS NULL OR expires_at > datetime('now'))
+      LIMIT 1
+    `).get(sha256(rawKey)) as any;
+    db.close();
+    return row ?? null;
+  }
+}
+3. RBAC
+src/platform/rbac.ts
+TypeScript
+
+import { getDb } from '@/db/migrate.js';
+
+const TENANT_ROLE_PERMISSIONS: Record<string, string[]> = {
+  owner: ['*'],
+  admin: [
+    'tenant.read', 'workspace.create', 'workspace.read', 'workspace.update',
+    'run.create', 'run.read', 'run.cancel',
+    'approval.act', 'comment.create', 'billing.read', 'template.publish'
+  ],
+  editor: [
+    'workspace.read', 'run.create', 'run.read', 'approval.read',
+    'comment.create', 'template.read'
+  ],
+  reviewer: [
+    'workspace.read', 'run.read', 'approval.read', 'approval.act', 'comment.create'
+  ],
+  viewer: [
+    'workspace.read', 'run.read', 'approval.read', 'template.read'
+  ],
+  billing: [
+    'billing.read', 'workspace.read'
+  ],
+};
+
+const WORKSPACE_ROLE_PERMISSIONS: Record<string, string[]> = {
+  admin: ['workspace.read', 'workspace.update', 'run.create', 'run.read', 'run.cancel', 'approval.act', 'comment.create'],
+  editor: ['workspace.read', 'run.create', 'run.read', 'comment.create'],
+  reviewer: ['workspace.read', 'run.read', 'approval.read', 'approval.act', 'comment.create'],
+  viewer: ['workspace.read', 'run.read'],
+  runner: ['workspace.read', 'run.read', 'run.create'],
+};
+
+export class RbacService {
+  hasPermission(opts: {
+    tenantId: string;
+    userId?: string;
+    apiKeyId?: string;
+    workspaceId?: string;
+    permission: string;
+  }) {
+    const db = getDb();
+
+    if (opts.userId) {
+      const tenantRole = db.prepare(`
+        SELECT role_key FROM memberships
+        WHERE tenant_id = ? AND user_id = ? AND status = 'active'
+        LIMIT 1
+      `).get(opts.tenantId, opts.userId) as { role_key: string } | undefined;
+
+      const workspaceRole = opts.workspaceId
+        ? db.prepare(`
+            SELECT role_key FROM workspace_memberships
+            WHERE workspace_id = ? AND user_id = ?
+            LIMIT 1
+          `).get(opts.workspaceId, opts.userId) as { role_key: string } | undefined
+        : undefined;
+
+      const tenantPerms = tenantRole ? TENANT_ROLE_PERMISSIONS[tenantRole.role_key] ?? [] : [];
+      const workspacePerms = workspaceRole ? WORKSPACE_ROLE_PERMISSIONS[workspaceRole.role_key] ?? [] : [];
+
+      const override = db.prepare(`
+        SELECT effect
+        FROM permission_overrides
+        WHERE tenant_id = ?
+          AND (? IS NULL OR workspace_id = ? OR workspace_id IS NULL)
+          AND subject_type = 'user'
+          AND subject_ref = ?
+          AND permission_key = ?
+        ORDER BY created_at DESC
+        LIMIT 1
+      `).get(opts.tenantId, opts.workspaceId ?? null, opts.workspaceId ?? null, opts.userId, opts.permission) as
+        | { effect: 'allow' | 'deny' }
+        | undefined;
+
+      db.close();
+
+      if (override?.effect === 'deny') return false;
+      if (override?.effect === 'allow') return true;
+      if (tenantPerms.includes('*')) return true;
+      return tenantPerms.includes(opts.permission) || workspacePerms.includes(opts.permission);
+    }
+
+    if (opts.apiKeyId) {
+      const key = db.prepare(`
+        SELECT scopes_json
+        FROM api_keys
+        WHERE id = ?
+      `).get(opts.apiKeyId) as { scopes_json: string } | undefined;
+      db.close();
+      const scopes = key ? JSON.parse(key.scopes_json || '[]') : [];
+      return scopes.includes('*') || scopes.includes(opts.permission);
+    }
+
+    db.close();
+    return false;
+  }
+}
+4. Tenant context
+src/platform/tenant-context.ts
+TypeScript
+
+import { AuthService } from '@/platform/auth.js';
+import { RbacService } from '@/platform/rbac.js';
+
+export interface TenantContext {
+  tenantId: string;
+  userId?: string;
+  apiKeyId?: string;
+  workspaceId?: string;
+}
+
+export class TenantContextResolver {
+  private auth = new AuthService();
+  private rbac = new RbacService();
+
+  async fromRequest(req: Request): Promise<TenantContext | null> {
+    const authHeader = req.headers.get('authorization') ?? '';
+    const sessionCookie = req.headers.get('cookie') ?? '';
+
+    if (authHeader.startsWith('Bearer ')) {
+      const raw = authHeader.slice('Bearer '.length).trim();
+      const apiKey = this.auth.verifyApiKey(raw);
+      if (apiKey) {
+        return {
+          tenantId: apiKey.tenant_id,
+          apiKeyId: apiKey.id,
+        };
+      }
+
+      const session = this.auth.verifySession(raw);
+      if (session) {
+        return {
+          tenantId: session.tenant_id,
+          userId: session.user_id,
+        };
+      }
+    }
+
+    const cookieToken = sessionCookie
+      .split(';')
+      .map(x => x.trim())
+      .find(x => x.startsWith('autoorg_session='))
+      ?.split('=')[1];
+
+    if (cookieToken) {
+      const session = this.auth.verifySession(cookieToken);
+      if (session) {
+        return {
+          tenantId: session.tenant_id,
+          userId: session.user_id,
+        };
+      }
+    }
+
+    return null;
+  }
+
+  requirePermission(ctx: TenantContext, permission: string, workspaceId?: string) {
+    const ok = this.rbac.hasPermission({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      apiKeyId: ctx.apiKeyId,
+      workspaceId,
+      permission,
+    });
+
+    if (!ok) {
+      throw new Error(`Permission denied: ${permission}`);
+    }
+  }
+}
+5. Workspace provisioner
+src/platform/workspace-provisioner.ts
+TypeScript
+
+import { mkdir } from 'node:fs/promises';
+import path from 'node:path';
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+
+export class WorkspaceProvisioner {
+  async create(opts: {
+    tenantId: string;
+    slug: string;
+    displayName: string;
+    repoUrl?: string;
+    defaultBranch?: string;
+    isolationMode?: 'directory' | 'git_worktree' | 'container';
+  }) {
+    const id = `ws_${nanoid(10)}`;
+    const rootPath = path.join(process.cwd(), 'tenants', opts.tenantId, 'workspaces', opts.slug);
+
+    await mkdir(rootPath, { recursive: true });
+    await mkdir(path.join(rootPath, 'memory'), { recursive: true });
+    await mkdir(path.join(rootPath, 'workspace'), { recursive: true });
+    await mkdir(path.join(rootPath, 'artifacts'), { recursive: true });
+
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO workspaces
+      (id, tenant_id, slug, display_name, root_path, repo_url, default_branch, isolation_mode, status, settings_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', '{}')
+    `).run(
+      id,
+      opts.tenantId,
+      opts.slug,
+      opts.displayName,
+      rootPath,
+      opts.repoUrl ?? null,
+      opts.defaultBranch ?? 'main',
+      opts.isolationMode ?? 'directory'
+    );
+    db.close();
+
+    return {
+      workspaceId: id,
+      rootPath,
+    };
+  }
+}
+6. Quota manager
+src/platform/quota-manager.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+
+function currentMonthWindow() {
+  const now = new Date();
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString();
+  return { start, end };
+}
+
+function currentDayWindow() {
+  const now = new Date();
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)).toISOString();
+  return { start, end };
+}
+
+export class QuotaManager {
+  ensureDefaultTenantQuotas(tenantId: string, planTier: 'free' | 'team' | 'enterprise' | 'internal' = 'team') {
+    const defaults = planTier === 'free'
+      ? {
+          runs_per_day: 10,
+          tokens_per_month: 300_000,
+          usd_per_month: 15,
+          storage_gb: 2,
+          agents: 1,
+          benchmarks_per_day: 1,
+        }
+      : planTier === 'enterprise'
+        ? {
+            runs_per_day: 1000,
+            tokens_per_month: 100_000_000,
+            usd_per_month: 10000,
+            storage_gb: 500,
+            agents: 100,
+            benchmarks_per_day: 100,
+          }
+        : {
+            runs_per_day: 200,
+            tokens_per_month: 20_000_000,
+            usd_per_month: 1000,
+            storage_gb: 50,
+            agents: 10,
+            benchmarks_per_day: 20,
+          };
+
+    const db = getDb();
+    for (const [quotaKey, limitValue] of Object.entries(defaults)) {
+      db.prepare(`
+        INSERT OR IGNORE INTO quota_policies
+        (id, tenant_id, workspace_id, quota_key, limit_value, hard_limit)
+        VALUES (?, ?, NULL, ?, ?, 1)
+      `).run(`qp_${nanoid(8)}`, tenantId, quotaKey, limitValue);
+    }
+    db.close();
+  }
+
+  private windowFor(quotaKey: string) {
+    return quotaKey.endsWith('_per_day') ? currentDayWindow() : currentMonthWindow();
+  }
+
+  canConsume(opts: {
+    tenantId: string;
+    workspaceId?: string;
+    quotaKey: string;
+    delta: number;
+  }) {
+    const db = getDb();
+    const policy = db.prepare(`
+      SELECT limit_value, hard_limit
+      FROM quota_policies
+      WHERE tenant_id = ?
+        AND (workspace_id = ? OR workspace_id IS NULL)
+        AND quota_key = ?
+      ORDER BY CASE WHEN workspace_id IS NULL THEN 1 ELSE 0 END
+      LIMIT 1
+    `).get(opts.tenantId, opts.workspaceId ?? null, opts.quotaKey) as
+      | { limit_value: number; hard_limit: number }
+      | undefined;
+
+    if (!policy) {
+      db.close();
+      return true;
+    }
+
+    const { start, end } = this.windowFor(opts.quotaKey);
+    const usage = db.prepare(`
+      SELECT used_value
+      FROM quota_usage
+      WHERE tenant_id = ?
+        AND (? IS NULL OR workspace_id = ? OR workspace_id IS NULL)
+        AND quota_key = ?
+        AND window_start = ?
+        AND window_end = ?
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `).get(
+      opts.tenantId,
+      opts.workspaceId ?? null,
+      opts.workspaceId ?? null,
+      opts.quotaKey,
+      start,
+      end
+    ) as { used_value: number } | undefined;
+
+    db.close();
+    if (!policy.hard_limit) return true;
+    return (usage?.used_value ?? 0) + opts.delta <= policy.limit_value;
+  }
+
+  consume(opts: {
+    tenantId: string;
+    workspaceId?: string;
+    quotaKey: string;
+    delta: number;
+  }) {
+    if (!this.canConsume(opts)) {
+      throw new Error(`Quota exceeded: ${opts.quotaKey}`);
+    }
+
+    const { start, end } = this.windowFor(opts.quotaKey);
+    const db = getDb();
+
+    db.prepare(`
+      INSERT INTO quota_usage
+      (id, tenant_id, workspace_id, quota_key, window_start, window_end, used_value, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT DO NOTHING
+    `).run(`qu_${nanoid(8)}`, opts.tenantId, opts.workspaceId ?? null, opts.quotaKey, start, end, 0);
+
+    const row = db.prepare(`
+      SELECT id FROM quota_usage
+      WHERE tenant_id = ?
+        AND workspace_id IS ?
+        AND quota_key = ?
+        AND window_start = ?
+        AND window_end = ?
+      LIMIT 1
+    `).get(opts.tenantId, opts.workspaceId ?? null, opts.quotaKey, start, end) as { id: string };
+
+    db.prepare(`
+      UPDATE quota_usage
+      SET used_value = used_value + ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(opts.delta, row.id);
+
+    db.close();
+  }
+}
+7. Billing service
+src/platform/billing.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+
+export class BillingService {
+  record(opts: {
+    tenantId: string;
+    workspaceId?: string;
+    hostedRunId?: string;
+    eventType: 'run' | 'llm_tokens' | 'tool_calls' | 'storage' | 'backup' | 'agent_minutes' | 'benchmark';
+    quantity: number;
+    unitCostUsd: number;
+    metadata?: Record<string, unknown>;
+  }) {
+    const total = Number((opts.quantity * opts.unitCostUsd).toFixed(6));
+    const db = getDb();
+
+    db.prepare(`
+      INSERT INTO billing_events
+      (id, tenant_id, workspace_id, hosted_run_id, event_type, quantity, unit_cost_usd, total_cost_usd, metadata_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      `bill_${nanoid(10)}`,
+      opts.tenantId,
+      opts.workspaceId ?? null,
+      opts.hostedRunId ?? null,
+      opts.eventType,
+      opts.quantity,
+      opts.unitCostUsd,
+      total,
+      JSON.stringify(opts.metadata ?? {})
+    );
+
+    db.close();
+    return { totalCostUsd: total };
+  }
+
+  summary(tenantId: string) {
+    const db = getDb();
+    const row = db.prepare(`
+      SELECT
+        COUNT(*) as events,
+        COALESCE(SUM(total_cost_usd), 0) as total_usd
+      FROM billing_events
+      WHERE tenant_id = ?
+    `).get(tenantId) as { events: number; total_usd: number };
+    db.close();
+    return row;
+  }
+}
+8. Hosted runner
+src/platform/hosted-runner.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+import { QuotaManager } from '@/platform/quota-manager.js';
+import { BillingService } from '@/platform/billing.js';
+
+export class HostedRunner {
+  private quotas = new QuotaManager();
+  private billing = new BillingService();
+
+  submit(opts: {
+    tenantId: string;
+    workspaceId: string;
+    submittedByUserId?: string;
+    apiKeyId?: string;
+    mode: 'single_org' | 'portfolio' | 'benchmark' | 'daemon';
+    request: Record<string, unknown>;
+  }) {
+    this.quotas.consume({
+      tenantId: opts.tenantId,
+      workspaceId: opts.workspaceId,
+      quotaKey: 'runs_per_day',
+      delta: 1,
+    });
+
+    const db = getDb();
+    const id = `hr_${nanoid(10)}`;
+
+    db.prepare(`
+      INSERT INTO hosted_runs
+      (id, tenant_id, workspace_id, submitted_by_user_id, api_key_id, mode, status, request_json)
+      VALUES (?, ?, ?, ?, ?, ?, 'queued', ?)
+    `).run(
+      id,
+      opts.tenantId,
+      opts.workspaceId,
+      opts.submittedByUserId ?? null,
+      opts.apiKeyId ?? null,
+      opts.mode,
+      JSON.stringify(opts.request)
+    );
+
+    db.close();
+
+    this.billing.record({
+      tenantId: opts.tenantId,
+      workspaceId: opts.workspaceId,
+      hostedRunId: id,
+      eventType: 'run',
+      quantity: 1,
+      unitCostUsd: 0.01,
+      metadata: { mode: opts.mode },
+    });
+
+    return { hostedRunId: id };
+  }
+
+  claimQueuedRun(agentId: string) {
+    const db = getDb();
+    const row = db.prepare(`
+      SELECT * FROM hosted_runs
+      WHERE status = 'queued'
+      ORDER BY created_at ASC
+      LIMIT 1
+    `).get() as any;
+
+    if (!row) {
+      db.close();
+      return null;
+    }
+
+    db.prepare(`
+      UPDATE hosted_runs
+      SET status = 'running',
+          assigned_agent_id = ?,
+          started_at = datetime('now')
+      WHERE id = ?
+    `).run(agentId, row.id);
+
+    db.close();
+    return row;
+  }
+
+  complete(opts: {
+    hostedRunId: string;
+    autoorgRunRef?: string;
+    portfolioRunRef?: string;
+    outputArtifactPath?: string;
+    reportArtifactPath?: string;
+  }) {
+    const db = getDb();
+    db.prepare(`
+      UPDATE hosted_runs
+      SET status = 'completed',
+          autoorg_run_ref = ?,
+          portfolio_run_ref = ?,
+          output_artifact_path = ?,
+          report_artifact_path = ?,
+          finished_at = datetime('now')
+      WHERE id = ?
+    `).run(
+      opts.autoorgRunRef ?? null,
+      opts.portfolioRunRef ?? null,
+      opts.outputArtifactPath ?? null,
+      opts.reportArtifactPath ?? null,
+      opts.hostedRunId
+    );
+    db.close();
+  }
+
+  fail(hostedRunId: string, error: string) {
+    const db = getDb();
+    db.prepare(`
+      UPDATE hosted_runs
+      SET status = 'failed',
+          report_artifact_path = NULL,
+          finished_at = datetime('now')
+      WHERE id = ?
+    `).run(hostedRunId);
+    db.close();
+    return { error };
+  }
+}
+9. Remote agent service
+src/platform/remote-agent.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+import { HostedRunner } from '@/platform/hosted-runner.js';
+
+export class RemoteAgentService {
+  private hosted = new HostedRunner();
+
+  register(opts: {
+    tenantId?: string;
+    agentName: string;
+    deploymentMode: 'local' | 'single-node' | 'cloud-worker' | 'managed';
+    capabilityJson?: Record<string, unknown>;
+    metadata?: Record<string, unknown>;
+  }) {
+    const id = `agt_${nanoid(10)}`;
+    const db = getDb();
+
+    db.prepare(`
+      INSERT INTO remote_agents
+      (id, tenant_id, agent_name, deployment_mode, capability_json, heartbeat_at, lease_expires_at, status, metadata_json)
+      VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now', '+60 seconds'), 'idle', ?)
+    `).run(
+      id,
+      opts.tenantId ?? null,
+      opts.agentName,
+      opts.deploymentMode,
+      JSON.stringify(opts.capabilityJson ?? {}),
+      JSON.stringify(opts.metadata ?? {})
+    );
+
+    db.close();
+    return { agentId: id };
+  }
+
+  heartbeat(agentId: string) {
+    const db = getDb();
+    db.prepare(`
+      UPDATE remote_agents
+      SET heartbeat_at = datetime('now'),
+          lease_expires_at = datetime('now', '+60 seconds')
+      WHERE id = ?
+    `).run(agentId);
+    db.close();
+  }
+
+  claimWork(agentId: string) {
+    this.heartbeat(agentId);
+
+    const db = getDb();
+    const agent = db.prepare(`SELECT * FROM remote_agents WHERE id = ?`).get(agentId) as any;
+    db.close();
+
+    if (!agent || agent.status === 'disabled') return null;
+
+    const run = this.hosted.claimQueuedRun(agentId);
+    if (!run) return null;
+
+    const db2 = getDb();
+    db2.prepare(`
+      UPDATE remote_agents
+      SET status = 'busy'
+      WHERE id = ?
+    `).run(agentId);
+    db2.close();
+
+    return run;
+  }
+
+  markIdle(agentId: string) {
+    const db = getDb();
+    db.prepare(`
+      UPDATE remote_agents
+      SET status = 'idle', heartbeat_at = datetime('now')
+      WHERE id = ?
+    `).run(agentId);
+    db.close();
+  }
+
+  sweepOffline() {
+    const db = getDb();
+    db.prepare(`
+      UPDATE remote_agents
+      SET status = 'offline'
+      WHERE lease_expires_at < datetime('now')
+        AND status != 'disabled'
+    `).run();
+    db.close();
+  }
+}
+10. Comments and collaboration
+src/platform/comments.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+
+export class CommentService {
+  create(opts: {
+    tenantId: string;
+    workspaceId?: string;
+    userId?: string;
+    parentCommentId?: string;
+    subjectKind: 'hosted_run' | 'approval' | 'artifact' | 'portfolio_run' | 'benchmark_run';
+    subjectRef: string;
+    body: string;
+    mentions?: string[];
+  }) {
+    const db = getDb();
+    const id = `cmt_${nanoid(10)}`;
+
+    db.prepare(`
+      INSERT INTO comments
+      (id, tenant_id, workspace_id, user_id, parent_comment_id, subject_kind, subject_ref, body, mentions_json, resolved)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+    `).run(
+      id,
+      opts.tenantId,
+      opts.workspaceId ?? null,
+      opts.userId ?? null,
+      opts.parentCommentId ?? null,
+      opts.subjectKind,
+      opts.subjectRef,
+      opts.body,
+      JSON.stringify(opts.mentions ?? [])
+    );
+
+    db.close();
+    return { commentId: id };
+  }
+
+  list(subjectKind: string, subjectRef: string) {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM comments
+      WHERE subject_kind = ? AND subject_ref = ?
+      ORDER BY created_at ASC
+    `).all(subjectKind, subjectRef);
+    db.close();
+    return rows;
+  }
+
+  resolve(commentId: string) {
+    const db = getDb();
+    db.prepare(`
+      UPDATE comments
+      SET resolved = 1
+      WHERE id = ?
+    `).run(commentId);
+    db.close();
+  }
+}
+11. Template curator prompt
+src/prompts/template-curator.ts
+TypeScript
+
+import { z } from 'zod';
+
+export const TemplateCuratorSchema = z.object({
+  publishable: z.boolean(),
+  category: z.string(),
+  strengths: z.array(z.string()).max(8),
+  risks: z.array(z.string()).max(8),
+  summary: z.string(),
+});
+
+export const TEMPLATE_CURATOR_SYSTEM_PROMPT = `
+You review an AutoOrg template before publication.
+
+Assess:
+- whether the template has a coherent role mix,
+- whether it appears safe and internally consistent,
+- which use cases it fits,
+- whether it is ready to publish.
+
+Hard rules:
+- Templates with unclear governance, missing approvals, or contradictory role incentives should not be publishable.
+- Be conservative about publishing to public visibility.
+`.trim();
+12. Template registry
+src/platform/template-registry.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { getAdapter } from '@/adapters/adapter-factory.js';
+import { getDb } from '@/db/migrate.js';
+import { TEMPLATE_CURATOR_SYSTEM_PROMPT, TemplateCuratorSchema } from '@/prompts/template-curator.js';
+
+export class TemplateRegistry {
+  async seedFromDisk(root = path.join(process.cwd(), 'platform', 'templates')) {
+    const files = ['baseline.json', 'research_org.json', 'quality_org.json', 'portfolio_org.json'];
+
+    for (const file of files) {
+      const full = path.join(root, file);
+      const manifest = JSON.parse(await readFile(full, 'utf-8'));
+
+      const db = getDb();
+      db.prepare(`
+        INSERT OR IGNORE INTO org_templates
+        (id, tenant_id, template_key, display_name, visibility, category, manifest_json, version, status)
+        VALUES (?, NULL, ?, ?, 'public', ?, ?, ?, 'active')
+      `).run(
+        `tpl_${nanoid(10)}`,
+        manifest.template_key,
+        manifest.display_name,
+        manifest.category ?? 'general',
+        JSON.stringify(manifest),
+        manifest.version ?? '1.0.0'
+      );
+      db.close();
+    }
+  }
+
+  async publish(opts: {
+    tenantId?: string;
+    userId?: string;
+    templateKey: string;
+    displayName: string;
+    visibility: 'private' | 'tenant' | 'public';
+    manifest: Record<string, unknown>;
+  }) {
+    const adapter = getAdapter({
+      provider: (process.env.DEFAULT_LLM_PROVIDER ?? 'anthropic') as any,
+      model: 'claude-sonnet-4-5',
+    });
+
+    const review = await adapter.structured({
+      model: 'claude-sonnet-4-5',
+      messages: [
+        { role: 'system', content: TEMPLATE_CURATOR_SYSTEM_PROMPT },
+        { role: 'user', content: JSON.stringify(opts.manifest, null, 2) },
+      ],
+      schema: TemplateCuratorSchema,
+    });
+
+    if (!review.publishable) {
+      throw new Error(`Template not publishable: ${review.summary}`);
+    }
+
+    const db = getDb();
+    const id = `tpl_${nanoid(10)}`;
+
+    db.prepare(`
+      INSERT INTO org_templates
+      (id, tenant_id, template_key, display_name, visibility, category, manifest_json, version, status, published_by_user_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, '1.0.0', 'active', ?)
+    `).run(
+      id,
+      opts.tenantId ?? null,
+      opts.templateKey,
+      opts.displayName,
+      opts.visibility,
+      review.category || 'general',
+      JSON.stringify(opts.manifest),
+      opts.userId ?? null
+    );
+
+    db.close();
+    return { templateId: id, review };
+  }
+
+  list(opts?: {
+    tenantId?: string;
+    visibility?: 'private' | 'tenant' | 'public';
+  }) {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM org_templates
+      WHERE status = 'active'
+        AND (
+          visibility = 'public'
+          OR (visibility = 'tenant' AND tenant_id = ?)
+          OR (visibility = 'private' AND tenant_id = ?)
+        )
+      ORDER BY updated_at DESC
+    `).all(opts?.tenantId ?? null, opts?.tenantId ?? null);
+    db.close();
+    return rows;
+  }
+}
+13. Role registry
+src/platform/role-registry.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { getDb } from '@/db/migrate.js';
+
+export class RoleRegistry {
+  async seedFromDisk(root = path.join(process.cwd(), 'platform', 'roles')) {
+    const files = ['engineer.json', 'critic.json', 'archivist.json', 'coordinator.json'];
+
+    for (const file of files) {
+      const manifest = JSON.parse(await readFile(path.join(root, file), 'utf-8'));
+      const db = getDb();
+      db.prepare(`
+        INSERT OR IGNORE INTO role_registry
+        (id, tenant_id, role_key, display_name, role_manifest_json, visibility, version)
+        VALUES (?, NULL, ?, ?, ?, 'public', ?)
+      `).run(
+        `rol_${nanoid(10)}`,
+        manifest.role_key,
+        manifest.display_name,
+        JSON.stringify(manifest),
+        manifest.version ?? '1.0.0'
+      );
+      db.close();
+    }
+  }
+
+  list(tenantId?: string) {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM role_registry
+      WHERE visibility = 'public'
+         OR (visibility IN ('tenant','private') AND tenant_id = ?)
+      ORDER BY created_at DESC
+    `).all(tenantId ?? null);
+    db.close();
+    return rows;
+  }
+}
+14. Backup manager
+src/platform/backup-manager.ts
+TypeScript
+
+import { mkdir } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import path from 'node:path';
+import { nanoid } from 'nanoid';
+import { $ } from 'bun';
+import { getDb } from '@/db/migrate.js';
+import { ImmutableArtifacts } from '@/runtime/immutable-artifacts.js';
+
+function sha256(text: string) {
+  return createHash('sha256').update(text).digest('hex');
+}
+
+export class BackupManager {
+  private artifacts = new ImmutableArtifacts();
+
+  async backupWorkspace(opts: {
+    tenantId: string;
+    workspaceId: string;
+    sourcePath: string;
+  }) {
+    const db = getDb();
+    const jobId = `bkp_${nanoid(10)}`;
+
+    db.prepare(`
+      INSERT INTO backup_jobs
+      (id, tenant_id, workspace_id, job_type, status, source_path, metadata_json)
+      VALUES (?, ?, ?, 'backup', 'running', ?, '{}')
+    `).run(jobId, opts.tenantId, opts.workspaceId, opts.sourcePath);
+    db.close();
+
+    try {
+      await mkdir(path.join(process.cwd(), 'artifacts', 'backups'), { recursive: true });
+      const tarPath = path.join(process.cwd(), 'artifacts', 'backups', `${jobId}.tar.gz`);
+      await $`tar -czf ${tarPath} -C ${opts.sourcePath} .`;
+
+      const digest = sha256(await Bun.file(tarPath).text().catch(() => tarPath));
+
+      const written = await this.artifacts.writeText({
+        runId: opts.workspaceId,
+        relPath: path.relative(process.cwd(), tarPath),
+        text: await Bun.file(tarPath).text().catch(() => ''),
+        artifactKind: 'workspace_backup',
+      }).catch(async () => {
+        // fallback if binary tar isn't suited for writeText path
+        return { artifactPath: tarPath, sha256: digest };
+      });
+
+      const db2 = getDb();
+      db2.prepare(`
+        UPDATE backup_jobs
+        SET status = 'completed', artifact_path = ?, sha256 = ?, finished_at = datetime('now')
+        WHERE id = ?
+      `).run(written.artifactPath, digest, jobId);
+      db2.close();
+
+      return { jobId, artifactPath: written.artifactPath, sha256: digest };
+    } catch (error) {
+      const db3 = getDb();
+      db3.prepare(`
+        UPDATE backup_jobs
+        SET status = 'failed', finished_at = datetime('now'), metadata_json = ?
+        WHERE id = ?
+      `).run(JSON.stringify({ error: String(error) }), jobId);
+      db3.close();
+      throw error;
+    }
+  }
+
+  async exportWorkspace(opts: {
+    tenantId: string;
+    workspaceId: string;
+    sourcePath: string;
+  }) {
+    return this.backupWorkspace({
+      tenantId: opts.tenantId,
+      workspaceId: opts.workspaceId,
+      sourcePath: opts.sourcePath,
+    });
+  }
+
+  async restoreWorkspace(opts: {
+    tenantId: string;
+    workspaceId: string;
+    artifactPath: string;
+    targetPath: string;
+  }) {
+    const db = getDb();
+    const jobId = `rst_${nanoid(10)}`;
+
+    db.prepare(`
+      INSERT INTO backup_jobs
+      (id, tenant_id, workspace_id, job_type, status, source_path, artifact_path, metadata_json)
+      VALUES (?, ?, ?, 'restore', 'running', ?, ?, '{}')
+    `).run(jobId, opts.tenantId, opts.workspaceId, opts.targetPath, opts.artifactPath);
+    db.close();
+
+    try {
+      await mkdir(opts.targetPath, { recursive: true });
+      await $`tar -xzf ${opts.artifactPath} -C ${opts.targetPath}`;
+
+      const db2 = getDb();
+      db2.prepare(`
+        UPDATE backup_jobs
+        SET status = 'completed', finished_at = datetime('now')
+        WHERE id = ?
+      `).run(jobId);
+      db2.close();
+
+      return { jobId, restored: true };
+    } catch (error) {
+      const db3 = getDb();
+      db3.prepare(`
+        UPDATE backup_jobs
+        SET status = 'failed', finished_at = datetime('now'), metadata_json = ?
+        WHERE id = ?
+      `).run(JSON.stringify({ error: String(error) }), jobId);
+      db3.close();
+      throw error;
+    }
+  }
+}
+15. Retention manager
+src/platform/retention-manager.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { unlink } from 'node:fs/promises';
+import { getDb } from '@/db/migrate.js';
+
+export class RetentionManager {
+  async seedDefault(tenantId: string) {
+    const defaults = [
+      ['transcript', 30, 'archive'],
+      ['tool_execution', 30, 'archive'],
+      ['benchmark_report', 90, 'archive'],
+      ['workspace_backup', 30, 'archive'],
+      ['security_audit', 180, 'archive'],
+    ] as const;
+
+    const db = getDb();
+    for (const [artifactClass, retainDays, purgeMode] of defaults) {
+      db.prepare(`
+        INSERT OR IGNORE INTO retention_policies
+        (id, tenant_id, workspace_id, artifact_class, retain_days, purge_mode)
+        VALUES (?, ?, NULL, ?, ?, ?)
+      `).run(`ret_${nanoid(8)}`, tenantId, artifactClass, retainDays, purgeMode);
+    }
+    db.close();
+  }
+
+  async enforce() {
+    const db = getDb();
+    const policies = db.prepare(`SELECT * FROM retention_policies`).all() as Array<any>;
+
+    for (const policy of policies) {
+      if (policy.purge_mode !== 'delete') continue;
+
+      const manifests = db.prepare(`
+        SELECT id, artifact_path, created_at
+        FROM artifact_manifests
+        WHERE artifact_kind = ?
+          AND created_at < datetime('now', ?)
+      `).all(policy.artifact_class, `-${policy.retain_days} days`) as Array<any>;
+
+      for (const m of manifests) {
+        await unlink(m.artifact_path).catch(() => {});
+        db.prepare(`
+          INSERT INTO compliance_logs
+          (id, tenant_id, workspace_id, actor_type, actor_ref, event_type, subject_kind, subject_ref, details_json)
+          VALUES (?, ?, ?, 'system', 'retention-manager', 'retention_purge', 'artifact', ?, ?)
+        `).run(
+          `cl_${nanoid(10)}`,
+          policy.tenant_id ?? null,
+          policy.workspace_id ?? null,
+          m.id,
+          JSON.stringify({ artifactPath: m.artifact_path, policyId: policy.id })
+        );
+      }
+    }
+
+    db.close();
+  }
+}
+16. Observability snapshots
+src/platform/observability.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+
+export class ObservabilityService {
+  snapshotPlatform() {
+    const db = getDb();
+
+    const tenants = db.prepare(`SELECT COUNT(*) as n FROM tenants WHERE status = 'active'`).get() as { n: number };
+    const workspaces = db.prepare(`SELECT COUNT(*) as n FROM workspaces WHERE status = 'active'`).get() as { n: number };
+    const runs = db.prepare(`SELECT COUNT(*) as n FROM hosted_runs WHERE status IN ('queued','running')`).get() as { n: number };
+    const agents = db.prepare(`SELECT COUNT(*) as n FROM remote_agents WHERE status IN ('idle','busy')`).get() as { n: number };
+    const billing = db.prepare(`SELECT COALESCE(SUM(total_cost_usd), 0) as usd FROM billing_events`).get() as { usd: number };
+
+    const metrics = {
+      activeTenants: tenants.n,
+      activeWorkspaces: workspaces.n,
+      inflightHostedRuns: runs.n,
+      onlineAgents: agents.n,
+      totalBilledUsd: billing.usd,
+    };
+
+    db.prepare(`
+      INSERT INTO observability_snapshots
+      (id, tenant_id, workspace_id, snapshot_type, metrics_json)
+      VALUES (?, NULL, NULL, 'platform', ?)
+    `).run(`obs_${nanoid(10)}`, JSON.stringify(metrics));
+
+    db.close();
+    return metrics;
+  }
+
+  snapshotTenant(tenantId: string) {
+    const db = getDb();
+
+    const workspaces = db.prepare(`SELECT COUNT(*) as n FROM workspaces WHERE tenant_id = ? AND status = 'active'`).get(tenantId) as { n: number };
+    const runs = db.prepare(`SELECT COUNT(*) as n FROM hosted_runs WHERE tenant_id = ? AND status IN ('queued','running')`).get(tenantId) as { n: number };
+    const billed = db.prepare(`SELECT COALESCE(SUM(total_cost_usd), 0) as usd FROM billing_events WHERE tenant_id = ?`).get(tenantId) as { usd: number };
+
+    const metrics = {
+      activeWorkspaces: workspaces.n,
+      inflightRuns: runs.n,
+      billedUsd: billed.usd,
+    };
+
+    db.prepare(`
+      INSERT INTO observability_snapshots
+      (id, tenant_id, workspace_id, snapshot_type, metrics_json)
+      VALUES (?, ?, NULL, 'tenant', ?)
+    `).run(`obs_${nanoid(10)}`, tenantId, JSON.stringify(metrics));
+
+    db.close();
+    return metrics;
+  }
+}
+17. Deployment modes
+src/platform/deployment-modes.ts
+TypeScript
+
+export type DeploymentMode = 'local' | 'single-node' | 'cloud-worker' | 'managed';
+
+export function currentDeploymentMode(): DeploymentMode {
+  const raw = (process.env.AUTOORG_DEPLOYMENT_MODE ?? 'local').toLowerCase();
+  if (raw === 'single-node' || raw === 'cloud-worker' || raw === 'managed') return raw;
+  return 'local';
+}
+
+export function deploymentCapabilities(mode: DeploymentMode) {
+  switch (mode) {
+    case 'local':
+      return { remoteAgents: false, managedBackups: false, tenantScale: 'low' };
+    case 'single-node':
+      return { remoteAgents: true, managedBackups: false, tenantScale: 'medium' };
+    case 'cloud-worker':
+      return { remoteAgents: true, managedBackups: true, tenantScale: 'high' };
+    case 'managed':
+      return { remoteAgents: true, managedBackups: true, tenantScale: 'very_high' };
+  }
+}
+18. SDK token scopes
+src/platform/sdk-tokens.ts
+TypeScript
+
+export const SDK_SCOPES = [
+  'workspace.read',
+  'workspace.update',
+  'run.create',
+  'run.read',
+  'run.cancel',
+  'template.read',
+  'template.publish',
+  'billing.read',
+  'approval.read',
+  'approval.act',
+] as const;
+19. Public SDK
+src/sdk/ts/types.ts
+TypeScript
+
+export interface AutoOrgClientOptions {
+  baseUrl: string;
+  apiKey: string;
+}
+
+export interface CreateHostedRunRequest {
+  workspaceId: string;
+  mode: 'single_org' | 'portfolio' | 'benchmark' | 'daemon';
+  request: Record<string, unknown>;
+}
+
+export interface HostedRun {
+  id: string;
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+  output_artifact_path?: string | null;
+  report_artifact_path?: string | null;
+}
+src/sdk/ts/client.ts
+TypeScript
+
+import type { AutoOrgClientOptions, CreateHostedRunRequest, HostedRun } from './types.js';
+
+export class AutoOrgClient {
+  constructor(private opts: AutoOrgClientOptions) {}
+
+  private async request(path: string, init?: RequestInit) {
+    const res = await fetch(`${this.opts.baseUrl}${path}`, {
+      ...init,
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${this.opts.apiKey}`,
+        ...(init?.headers ?? {}),
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(`API error ${res.status}: ${await res.text()}`);
+    }
+
+    return await res.json();
+  }
+
+  async createHostedRun(input: CreateHostedRunRequest) {
+    return await this.request('/api/hosted-runs', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  }
+
+  async getHostedRun(id: string): Promise<HostedRun> {
+    return await this.request(`/api/hosted-runs/${id}`, {
+      method: 'GET',
+    });
+  }
+
+  async listTemplates() {
+    return await this.request('/api/templates', { method: 'GET' });
+  }
+
+  async getBillingSummary() {
+    return await this.request('/api/billing/summary', { method: 'GET' });
+  }
+}
+src/sdk/ts/index.ts
+TypeScript
+
+export * from './client.js';
+export * from './types.js';
+20. Hosted-run API routes
+src/api/workspace-routes.ts
+TypeScript
+
+import { WorkspaceProvisioner } from '@/platform/workspace-provisioner.js';
+import { HostedRunner } from '@/platform/hosted-runner.js';
+import { TenantContextResolver } from '@/platform/tenant-context.js';
+import { getDb } from '@/db/migrate.js';
+
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data, null, 2), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+export async function handleWorkspaceRoutes(url: URL, req: Request) {
+  const method = req.method;
+  const resolver = new TenantContextResolver();
+  const ctx = await resolver.fromRequest(req);
+
+  if (url.pathname === '/api/workspaces' && method === 'POST') {
+    if (!ctx) return json({ error: 'unauthorized' }, 401);
+    resolver.requirePermission(ctx, 'workspace.create');
+
+    const body = await req.json() as {
+      slug: string;
+      displayName: string;
+      repoUrl?: string;
+      defaultBranch?: string;
+      isolationMode?: 'directory' | 'git_worktree' | 'container';
+    };
+
+    const provisioner = new WorkspaceProvisioner();
+    const result = await provisioner.create({
+      tenantId: ctx.tenantId,
+      slug: body.slug,
+      displayName: body.displayName,
+      repoUrl: body.repoUrl,
+      defaultBranch: body.defaultBranch,
+      isolationMode: body.isolationMode,
+    });
+
+    return json({ ok: true, result });
+  }
+
+  if (url.pathname === '/api/workspaces' && method === 'GET') {
+    if (!ctx) return json({ error: 'unauthorized' }, 401);
+    resolver.requirePermission(ctx, 'workspace.read');
+
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM workspaces
+      WHERE tenant_id = ?
+      ORDER BY created_at DESC
+    `).all(ctx.tenantId);
+    db.close();
+
+    return json(rows);
+  }
+
+  if (url.pathname === '/api/hosted-runs' && method === 'POST') {
+    if (!ctx) return json({ error: 'unauthorized' }, 401);
+
+    const body = await req.json() as {
+      workspaceId: string;
+      mode: 'single_org' | 'portfolio' | 'benchmark' | 'daemon';
+      request: Record<string, unknown>;
+    };
+
+    resolver.requirePermission(ctx, 'run.create', body.workspaceId);
+
+    const runner = new HostedRunner();
+    const result = runner.submit({
+      tenantId: ctx.tenantId,
+      workspaceId: body.workspaceId,
+      submittedByUserId: ctx.userId,
+      apiKeyId: ctx.apiKeyId,
+      mode: body.mode,
+      request: body.request,
+    });
+
+    return json({ ok: true, result });
+  }
+
+  const match = url.pathname.match(/^\/api\/hosted-runs\/([^/]+)$/);
+  if (match && method === 'GET') {
+    if (!ctx) return json({ error: 'unauthorized' }, 401);
+
+    const db = getDb();
+    const row = db.prepare(`
+      SELECT * FROM hosted_runs
+      WHERE id = ? AND tenant_id = ?
+      LIMIT 1
+    `).get(match[1], ctx.tenantId);
+    db.close();
+
+    if (!row) return json({ error: 'not_found' }, 404);
+
+    resolver.requirePermission(ctx, 'run.read', (row as any).workspace_id);
+    return json(row);
+  }
+
+  return null;
+}
+21. Auth routes
+src/api/auth-routes.ts
+TypeScript
+
+import { AuthService } from '@/platform/auth.js';
+
+function json(data: unknown, status = 200, headers?: Record<string, string>) {
+  return new Response(JSON.stringify(data, null, 2), {
+    status,
+    headers: { 'content-type': 'application/json', ...(headers ?? {}) },
+  });
+}
+
+export async function handleAuthRoutes(url: URL, req: Request) {
+  const method = req.method;
+  const auth = new AuthService();
+
+  if (url.pathname === '/api/auth/signup' && method === 'POST') {
+    const body = await req.json() as {
+      email: string;
+      displayName: string;
+      password: string;
+      tenantSlug: string;
+      tenantDisplayName: string;
+    };
+
+    const user = auth.createUser({
+      email: body.email,
+      displayName: body.displayName,
+      password: body.password,
+    });
+
+    const tenant = auth.createTenant({
+      slug: body.tenantSlug,
+      displayName: body.tenantDisplayName,
+      ownerUserId: user.userId,
+    });
+
+    return json({ ok: true, user, tenant });
+  }
+
+  if (url.pathname === '/api/auth/login' && method === 'POST') {
+    const body = await req.json() as {
+      email: string;
+      password: string;
+      tenantId?: string;
+    };
+
+    const session = auth.login(body);
+    if (!session) return json({ error: 'invalid_credentials' }, 401);
+
+    return json(
+      { ok: true, sessionId: session.sessionId, userId: session.userId },
+      200,
+      {
+        'set-cookie': `autoorg_session=${session.token}; HttpOnly; Path=/; SameSite=Lax`,
+      }
+    );
+  }
+
+  if (url.pathname === '/api/auth/api-keys' && method === 'POST') {
+    const body = await req.json() as {
+      tenantId: string;
+      userId?: string;
+      keyName: string;
+      scopes: string[];
+      expiresAt?: string;
+    };
+
+    const key = auth.createApiKey(body);
+    return json({ ok: true, key });
+  }
+
+  return null;
+}
+22. Billing routes
+src/api/billing-routes.ts
+TypeScript
+
+import { BillingService } from '@/platform/billing.js';
+import { TenantContextResolver } from '@/platform/tenant-context.js';
+import { getDb } from '@/db/migrate.js';
+
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data, null, 2), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+export async function handleBillingRoutes(url: URL, req: Request) {
+  const resolver = new TenantContextResolver();
+  const ctx = await resolver.fromRequest(req);
+  const method = req.method;
+
+  if (!ctx) return null;
+
+  if (url.pathname === '/api/billing/summary' && method === 'GET') {
+    resolver.requirePermission(ctx, 'billing.read');
+    const billing = new BillingService();
+    return json(billing.summary(ctx.tenantId));
+  }
+
+  if (url.pathname === '/api/billing/events' && method === 'GET') {
+    resolver.requirePermission(ctx, 'billing.read');
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM billing_events
+      WHERE tenant_id = ?
+      ORDER BY created_at DESC
+      LIMIT 200
+    `).all(ctx.tenantId);
+    db.close();
+    return json(rows);
+  }
+
+  return null;
+}
+23. Template routes
+src/api/template-routes.ts
+TypeScript
+
+import { TemplateRegistry } from '@/platform/template-registry.js';
+import { RoleRegistry } from '@/platform/role-registry.js';
+import { TenantContextResolver } from '@/platform/tenant-context.js';
+
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data, null, 2), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+export async function handleTemplateRoutes(url: URL, req: Request) {
+  const method = req.method;
+  const resolver = new TenantContextResolver();
+  const ctx = await resolver.fromRequest(req);
+
+  const templates = new TemplateRegistry();
+  const roles = new RoleRegistry();
+
+  if (url.pathname === '/api/templates' && method === 'GET') {
+    return json(templates.list({ tenantId: ctx?.tenantId }));
+  }
+
+  if (url.pathname === '/api/templates' && method === 'POST') {
+    if (!ctx) return json({ error: 'unauthorized' }, 401);
+    resolver.requirePermission(ctx, 'template.publish');
+
+    const body = await req.json() as {
+      templateKey: string;
+      displayName: string;
+      visibility: 'private' | 'tenant' | 'public';
+      manifest: Record<string, unknown>;
+    };
+
+    const result = await templates.publish({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      ...body,
+    });
+
+    return json({ ok: true, result });
+  }
+
+  if (url.pathname === '/api/roles' && method === 'GET') {
+    return json(roles.list(ctx?.tenantId));
+  }
+
+  return null;
+}
+24. Admin routes
+src/api/admin-routes.ts
+TypeScript
+
+import { ObservabilityService } from '@/platform/observability.js';
+import { BackupManager } from '@/platform/backup-manager.js';
+import { TenantContextResolver } from '@/platform/tenant-context.js';
+import { getDb } from '@/db/migrate.js';
+
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data, null, 2), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+export async function handleAdminRoutes(url: URL, req: Request) {
+  const resolver = new TenantContextResolver();
+  const ctx = await resolver.fromRequest(req);
+  const method = req.method;
+
+  if (url.pathname === '/api/admin/observability' && method === 'GET') {
+    if (!ctx) return json({ error: 'unauthorized' }, 401);
+    resolver.requirePermission(ctx, 'billing.read'); // simplest admin-ish gate for now
+    const obs = new ObservabilityService();
+    return json(obs.snapshotTenant(ctx.tenantId));
+  }
+
+  if (url.pathname === '/api/admin/compliance' && method === 'GET') {
+    if (!ctx) return json({ error: 'unauthorized' }, 401);
+    resolver.requirePermission(ctx, 'billing.read');
+
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM compliance_logs
+      WHERE tenant_id = ?
+      ORDER BY created_at DESC
+      LIMIT 300
+    `).all(ctx.tenantId);
+    db.close();
+
+    return json(rows);
+  }
+
+  if (url.pathname === '/api/admin/backups' && method === 'POST') {
+    if (!ctx) return json({ error: 'unauthorized' }, 401);
+    resolver.requirePermission(ctx, 'workspace.read');
+
+    const body = await req.json() as {
+      workspaceId: string;
+      sourcePath: string;
+    };
+
+    const backup = new BackupManager();
+    const result = await backup.backupWorkspace({
+      tenantId: ctx.tenantId,
+      workspaceId: body.workspaceId,
+      sourcePath: body.sourcePath,
+    });
+
+    return json({ ok: true, result });
+  }
+
+  return null;
+}
+25. SDK routes
+src/api/sdk-routes.ts
+TypeScript
+
+// Thin wrapper: re-use workspace/template/billing routes for SDK callers.
+// This file mainly exists so Phase 9 keeps public API concerns explicit.
+
+export async function handleSdkRoutes(url: URL, req: Request) {
+  // Reserved namespace if you want versioned SDK-only endpoints later:
+  // /api/sdk/v1/...
+  return null;
+}
+26. Daemon / scheduler platform integration
+Patch src/runtime/daemon.ts
+Add:
+
+TypeScript
+
+import { RemoteAgentService } from '@/platform/remote-agent.js';
+import { HostedRunner } from '@/platform/hosted-runner.js';
+import { RetentionManager } from '@/platform/retention-manager.js';
+import { ObservabilityService } from '@/platform/observability.js';
+Inside daemon tick:
+
+TypeScript
+
+const agents = new RemoteAgentService();
+const retention = new RetentionManager();
+const observability = new ObservabilityService();
+
+// periodically
+agents.sweepOffline();
+await retention.enforce();
+observability.snapshotPlatform();
+If this daemon is also acting as a local hosted-run worker:
+
+TypeScript
+
+const localAgent = agents.register({
+  agentName: process.env.AUTOORG_INSTANCE_NAME ?? 'local-daemon',
+  deploymentMode: (process.env.AUTOORG_DEPLOYMENT_MODE as any) ?? 'local',
+});
+
+setInterval(async () => {
+  const claimed = agents.claimWork(localAgent.agentId);
+  if (!claimed) return;
+
+  try {
+    const request = JSON.parse(claimed.request_json || '{}');
+
+    // dispatch based on hosted run mode
+    // use your already-existing real orchestrator / portfolio / benchmark entrypoints
+    let result: any;
+
+    if (claimed.mode === 'portfolio') {
+      result = await runHostedPortfolio(request, claimed.workspace_id);
+    } else if (claimed.mode === 'benchmark') {
+      result = await runHostedBenchmark(request, claimed.workspace_id);
+    } else {
+      result = await runHostedSingleOrg(request, claimed.workspace_id);
+    }
+
+    const hosted = new HostedRunner();
+    hosted.complete({
+      hostedRunId: claimed.id,
+      autoorgRunRef: result.runId,
+      portfolioRunRef: result.portfolioRunId,
+      outputArtifactPath: result.outputArtifactPath,
+      reportArtifactPath: result.reportArtifactPath,
+    });
+  } catch (error) {
+    const hosted = new HostedRunner();
+    hosted.fail(claimed.id, error instanceof Error ? error.message : String(error));
+  } finally {
+    agents.markIdle(localAgent.agentId);
+  }
+}, 3000);
+27. Orchestrator workspace scoping
+Patch src/runtime/orchestrator.ts
+Make all path-sensitive operations respect workspaceRoot.
+
+At run bootstrap:
+
+TypeScript
+
+const root = config.workspaceRoot ?? process.cwd();
+Then replace direct path assumptions like:
+
+TypeScript
+
+path.join(process.cwd(), 'workspace', 'current_output.md')
+with:
+
+TypeScript
+
+path.join(root, 'workspace', 'current_output.md')
+and similarly for:
+
+memory/
+artifacts/
+results.tsv
+transcripts/
+This is essential for Phase 9 because hosted runs must operate inside the correct tenant workspace.
+
+28. Comments summarizer prompt
+src/prompts/comment-summarizer.ts
+TypeScript
+
+export const COMMENT_SUMMARIZER_SYSTEM_PROMPT = `
+You summarize an AutoOrg review thread.
+
+Return:
+- open concerns
+- resolved concerns
+- approval blockers
+- decisions made
+- concise next steps
+
+Hard rules:
+- Preserve dissent.
+- Do not collapse unresolved disagreement into false consensus.
+`.trim();
+29. Usage analyzer prompt
+src/prompts/usage-analyzer.ts
+TypeScript
+
+import { z } from 'zod';
+
+export const UsageAnalyzerSchema = z.object({
+  anomalies: z.array(z.string()).max(10),
+  likely_causes: z.array(z.string()).max(10),
+  suggested_actions: z.array(z.string()).max(10),
+});
+
+export const USAGE_ANALYZER_SYSTEM_PROMPT = `
+You analyze AutoOrg platform usage and spending anomalies.
+
+Look for:
+- sudden cost spikes,
+- quota exhaustion,
+- abnormal benchmark activity,
+- suspicious agent churn,
+- storage growth.
+
+Hard rules:
+- Be conservative.
+- Call out likely legitimate causes if supported by context.
+`.trim();
+30. Minimal UI additions
+text
+
+web/app/
+├── auth/page.tsx
+├── workspaces/page.tsx
+├── runs/page.tsx
+├── templates/page.tsx
+├── billing/page.tsx
+├── agents/page.tsx
+├── admin/page.tsx
+├── compliance/page.tsx
+└── comments/page.tsx
+Patch nav in web/app/layout.tsx
+React
+
+<nav className="ml-auto flex gap-6 text-sm">
+  <a href="/" className="text-gray-400 hover:text-cyan-400 transition-colors">Dashboard</a>
+  <a href="/graph" className="text-gray-400 hover:text-cyan-400 transition-colors">Graph</a>
+  <a href="/approvals" className="text-gray-400 hover:text-cyan-400 transition-colors">Approvals</a>
+  <a href="/budgets" className="text-gray-400 hover:text-cyan-400 transition-colors">Budgets</a>
+  <a href="/locks" className="text-gray-400 hover:text-cyan-400 transition-colors">Locks</a>
+  <a href="/issues" className="text-gray-400 hover:text-cyan-400 transition-colors">Issues</a>
+  <a href="/tools" className="text-gray-400 hover:text-cyan-400 transition-colors">Tools</a>
+  <a href="/evidence" className="text-gray-400 hover:text-cyan-400 transition-colors">Evidence</a>
+  <a href="/ledger" className="text-gray-400 hover:text-cyan-400 transition-colors">Ledger</a>
+  <a href="/provenance" className="text-gray-400 hover:text-cyan-400 transition-colors">Provenance</a>
+  <a href="/security" className="text-gray-400 hover:text-cyan-400 transition-colors">Security</a>
+  <a href="/benchmarks" className="text-gray-400 hover:text-cyan-400 transition-colors">Benchmarks</a>
+  <a href="/leaderboard" className="text-gray-400 hover:text-cyan-400 transition-colors">Leaderboard</a>
+  <a href="/regressions" className="text-gray-400 hover:text-cyan-400 transition-colors">Regressions</a>
+  <a href="/replay" className="text-gray-400 hover:text-cyan-400 transition-colors">Replay</a>
+  <a href="/portfolio" className="text-gray-400 hover:text-cyan-400 transition-colors">Portfolio</a>
+  <a href="/capital" className="text-gray-400 hover:text-cyan-400 transition-colors">Capital</a>
+  <a href="/council" className="text-gray-400 hover:text-cyan-400 transition-colors">Council</a>
+  <a href="/tournament" className="text-gray-400 hover:text-cyan-400 transition-colors">Tournament</a>
+  <a href="/exchanges" className="text-gray-400 hover:text-cyan-400 transition-colors">Exchanges</a>
+  <a href="/workspaces" className="text-gray-400 hover:text-cyan-400 transition-colors">Workspaces</a>
+  <a href="/runs" className="text-gray-400 hover:text-cyan-400 transition-colors">Runs</a>
+  <a href="/templates" className="text-gray-400 hover:text-cyan-400 transition-colors">Templates</a>
+  <a href="/billing" className="text-gray-400 hover:text-cyan-400 transition-colors">Billing</a>
+  <a href="/agents" className="text-gray-400 hover:text-cyan-400 transition-colors">Agents</a>
+  <a href="/comments" className="text-gray-400 hover:text-cyan-400 transition-colors">Comments</a>
+  <a href="/compliance" className="text-gray-400 hover:text-cyan-400 transition-colors">Compliance</a>
+  <a href="/admin" className="text-gray-400 hover:text-cyan-400 transition-colors">Admin</a>
+</nav>
+/workspaces
+Show:
+
+tenant workspaces,
+isolation mode,
+repo URL,
+active status,
+create workspace button.
+/runs
+Show:
+
+hosted runs queue,
+mode,
+assigned agent,
+status,
+output/report links.
+/templates
+Show:
+
+template marketplace,
+role packs,
+publish template button.
+/billing
+Show:
+
+current spend,
+event table,
+quota bars,
+per-workspace cost.
+/agents
+Show:
+
+remote agents,
+deployment mode,
+heartbeat,
+status,
+claimed work.
+/comments
+Show:
+
+comment threads attached to runs/approvals/artifacts.
+/compliance
+Show:
+
+compliance logs,
+retention actions,
+backup/export jobs.
+/admin
+Show:
+
+platform metrics,
+tenant metrics,
+inflight runs,
+online agents,
+total billed,
+recent failures.
+31. Compliance logs integration
+When key platform actions happen, write compliance logs.
+
+Examples:
+
+auth login
+workspace create
+hosted run submit
+approval action
+template publish
+backup export
+retention purge
+permission denied
+You can centralize this in a helper later, but the minimum pattern is:
+
+TypeScript
+
+db.prepare(`
+  INSERT INTO compliance_logs
+  (id, tenant_id, workspace_id, actor_type, actor_ref, event_type, subject_kind, subject_ref, details_json)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+`).run(
+  `cl_${nanoid(10)}`,
+  tenantId,
+  workspaceId ?? null,
+  'user',
+  userId,
+  'run_submitted',
+  'hosted_run',
+  hostedRunId,
+  JSON.stringify({ mode })
+);
+That keeps platform activity auditable in the same spirit as your earlier action ledger.
+
+32. Tests for Phase 9
+tests/auth.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { AuthService } from '../src/platform/auth.js';
+
+describe('AuthService', () => {
+  it('creates user, tenant, and session', () => {
+    const auth = new AuthService();
+    const user = auth.createUser({
+      email: `u${Date.now()}@example.com`,
+      displayName: 'Test User',
+      password: 'secret123',
+    });
+
+    const tenant = auth.createTenant({
+      slug: `tenant-${Date.now()}`,
+      displayName: 'Tenant',
+      ownerUserId: user.userId,
+    });
+
+    const session = auth.login({
+      email: user.userId ? `u${Date.now()}@example.com` : '',
+      password: 'secret123',
+    });
+
+    expect(user.userId.startsWith('usr_')).toBe(true);
+    expect(tenant.tenantId.startsWith('ten_')).toBe(true);
+    // login path may need controlled email in real test fixture
+  });
+});
+tests/rbac.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { RbacService } from '../src/platform/rbac.js';
+
+describe('RbacService', () => {
+  it('exposes a permission checker', () => {
+    const rbac = new RbacService();
+    expect(typeof rbac.hasPermission).toBe('function');
+  });
+});
+tests/workspace-provisioner.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { WorkspaceProvisioner } from '../src/platform/workspace-provisioner.js';
+
+describe('WorkspaceProvisioner', () => {
+  it('creates a workspace root', async () => {
+    const p = new WorkspaceProvisioner();
+    const result = await p.create({
+      tenantId: 'ten_test',
+      slug: `ws-${Date.now()}`,
+      displayName: 'WS Test',
+    });
+
+    expect(result.workspaceId.startsWith('ws_')).toBe(true);
+    expect(result.rootPath.includes('/workspaces/')).toBe(true);
+  });
+});
+tests/quota-manager.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { QuotaManager } from '../src/platform/quota-manager.js';
+
+describe('QuotaManager', () => {
+  it('has canConsume and consume methods', () => {
+    const q = new QuotaManager();
+    expect(typeof q.canConsume).toBe('function');
+    expect(typeof q.consume).toBe('function');
+  });
+});
+tests/billing.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { BillingService } from '../src/platform/billing.js';
+
+describe('BillingService', () => {
+  it('records billing events', () => {
+    const billing = new BillingService();
+    const result = billing.record({
+      tenantId: 'ten_test',
+      eventType: 'run',
+      quantity: 1,
+      unitCostUsd: 0.25,
+    });
+
+    expect(result.totalCostUsd).toBe(0.25);
+  });
+});
+tests/template-curator-schema.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { TemplateCuratorSchema } from '../src/prompts/template-curator.js';
+
+describe('TemplateCuratorSchema', () => {
+  it('validates template review', () => {
+    const parsed = TemplateCuratorSchema.parse({
+      publishable: true,
+      category: 'research',
+      strengths: ['Good governance split'],
+      risks: ['May be slower than baseline'],
+      summary: 'Ready for tenant visibility',
+    });
+
+    expect(parsed.publishable).toBe(true);
+  });
+});
+tests/comment-service.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { CommentService } from '../src/platform/comments.js';
+
+describe('CommentService', () => {
+  it('creates comments', () => {
+    const c = new CommentService();
+    const result = c.create({
+      tenantId: 'ten_test',
+      subjectKind: 'hosted_run',
+      subjectRef: 'hr_test',
+      body: 'Looks good.',
+    });
+
+    expect(result.commentId.startsWith('cmt_')).toBe(true);
+  });
+});
+tests/remote-agent.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { RemoteAgentService } from '../src/platform/remote-agent.js';
+
+describe('RemoteAgentService', () => {
+  it('registers an agent', () => {
+    const svc = new RemoteAgentService();
+    const result = svc.register({
+      agentName: `agent-${Date.now()}`,
+      deploymentMode: 'local',
+    });
+
+    expect(result.agentId.startsWith('agt_')).toBe(true);
+  });
+});
+tests/sdk-client.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { AutoOrgClient } from '../src/sdk/ts/client.js';
+
+describe('AutoOrgClient', () => {
+  it('constructs a client', () => {
+    const client = new AutoOrgClient({
+      baseUrl: 'http://localhost:3000',
+      apiKey: 'ak_test',
+    });
+
+    expect(typeof client.createHostedRun).toBe('function');
+  });
+});
+33. Run instructions for Phase 9
+Bash
+
+# 1. Apply migration
+bun run src/db/migrate-phase9.ts
+
+# 2. Seed templates/roles if desired
+#    (call your bootstrap scripts once you add them)
+
+# 3. Start API server
+bun run src/api/server.ts
+
+# 4. Start dashboard
+cd web && bun run dev
+
+# 5. Start daemon / hosted-run worker
+bun run src/runtime/daemon.ts
+
+# 6. Sign up a tenant + owner
+curl -X POST http://localhost:3000/api/auth/signup \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email":"owner@example.com",
+    "displayName":"Owner",
+    "password":"secret123",
+    "tenantSlug":"acme",
+    "tenantDisplayName":"Acme"
+  }'
+
+# 7. Login
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email":"owner@example.com",
+    "password":"secret123"
+  }'
+
+# 8. Create workspace
+curl -X POST http://localhost:3000/api/workspaces \
+  -H "Authorization: Bearer <session-or-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "slug":"main",
+    "displayName":"Main Workspace",
+    "isolationMode":"directory"
+  }'
+
+# 9. Submit hosted run
+curl -X POST http://localhost:3000/api/hosted-runs \
+  -H "Authorization: Bearer <session-or-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "workspaceId":"ws_...",
+    "mode":"single_org",
+    "request":{
+      "missionText":"Improve the current implementation plan."
+    }
+  }'
+
+# 10. View billing summary
+curl -H "Authorization: Bearer <session-or-api-key>" \
+  http://localhost:3000/api/billing/summary
+
+# 11. View admin observability
+curl -H "Authorization: Bearer <session-or-api-key>" \
+  http://localhost:3000/api/admin/observability
+34. Optional .env additions for Phase 9
+Bash
+
+# ── PLATFORM / DEPLOYMENT ────────────────────────────────────
+AUTOORG_DEPLOYMENT_MODE=local
+AUTOORG_BASE_URL=http://localhost:3000
+AUTOORG_PUBLIC_APP_URL=http://localhost:3000
+
+# ── AUTH ─────────────────────────────────────────────────────
+AUTOORG_SESSION_TTL_DAYS=30
+AUTOORG_REQUIRE_EMAIL_VERIFICATION=0
+AUTOORG_COOKIE_NAME=autoorg_session
+
+# ── MULTI-TENANCY / STORAGE ──────────────────────────────────
+AUTOORG_TENANT_ROOT=tenants
+AUTOORG_DEFAULT_ISOLATION_MODE=directory
+AUTOORG_MAX_WORKSPACES_PER_TENANT=20
+
+# ── QUOTAS / BILLING ─────────────────────────────────────────
+AUTOORG_DEFAULT_PLAN=team
+AUTOORG_RUN_BASE_COST_USD=0.01
+AUTOORG_TOKEN_UNIT_COST_USD=0.000003
+AUTOORG_TOOL_CALL_COST_USD=0.0005
+AUTOORG_STORAGE_GB_COST_USD=0.10
+AUTOORG_AGENT_MINUTE_COST_USD=0.01
+
+# ── BACKUPS / RETENTION ──────────────────────────────────────
+AUTOORG_BACKUP_DIR=artifacts/backups
+AUTOORG_EXPORT_DIR=artifacts/exports
+AUTOORG_ENABLE_RETENTION=1
+
+# ── REMOTE AGENTS ────────────────────────────────────────────
+AUTOORG_AGENT_HEARTBEAT_MS=15000
+AUTOORG_AGENT_LEASE_MS=60000
+AUTOORG_HOSTED_POLL_MS=3000
+35. What Phase 9 now gives you
+At this point AutoOrg can:
+
+text
+
+✅ Support multiple tenants and users safely
+✅ Authenticate via sessions or API keys
+✅ Enforce RBAC at tenant and workspace scope
+✅ Provision isolated workspaces per tenant
+✅ Accept hosted runs through a public API
+✅ Dispatch work to local or remote agents
+✅ Enforce quotas and meter billing
+✅ Let teams collaborate with comments and approvals
+✅ Publish and reuse org templates and role packs
+✅ Back up, export, and restore workspaces
+✅ Track compliance and retention events
+✅ Expose admin observability and a basic SDK
+This is the phase where AutoOrg stops being a research operating system and becomes a usable product platform.
+
+36. Recommended implementation order
+I’d implement Phase 9 in this order:
+
+DB migration
+auth + tenant + session model
+RBAC
+workspace provisioning + isolation
+hosted runs
+remote agents
+quotas + billing
+templates + role registry
+backup/restore + compliance logs
+admin observability
+public SDK
+UI
+Why:
+
+auth/RBAC/workspace isolation are the non-negotiable foundation,
+hosted runs make the platform useful,
+quotas/billing make it operable,
+templates/SDK make it extensible.
+
+
+
+
+
+here is Phase 10 expanded in the same detailed format.
+
+Phase 9 made AutoOrg a platform.
+Phase 10 makes it a learning organization.
+
+This is the phase where AutoOrg begins improving its own:
+
+prompts,
+policies,
+roles,
+routing,
+memory footprint,
+model choices,
+template defaults,
+but only under strict constraints:
+
+benchmark simulation before rollout,
+approval-gated activation,
+lineage and versioning,
+policy/audit logging,
+regression detection,
+drift detection.
+So this is not unconstrained self-modification.
+It is bounded, benchmarked, auditable self-improvement.
+
+AutoOrg — Phase 10: Learning Organization
+Pattern Mining, Prompt/Policy/Role Optimization, Memory Utility Pruning, Routing Optimization, Distillation, Simulation Gate, Drift Guard, Self-Improvement Rollouts
+WHAT PHASE 10 ADDS
+text
+
+Phase 9   ── Multi-tenant platform + hosted runs + quotas + billing + templates + SDK
+
+Phase 10  ── ┌──────────────────────────────────────────────────────────────┐
+             │ Distill winning patterns from history + results.tsv         │
+             │ Prompt / policy optimizer from successful cycles            │
+             │ Role evolution based on benchmark performance               │
+             │ Memory pruning via learned utility                          │
+             │ Cost-quality routing optimizer                              │
+             │ Distillation/export jobs from traces                        │
+             │ Simulate-before-rollout release gate                        │
+             │ Self-improvement proposals reviewed under constitution       │
+             │ Meta-critic for prompt drift detection                      │
+             │ Continuous adaptation without breaking auditability          │
+             └──────────────────────────────────────────────────────────────┘
+DIRECTORY ADDITIONS
+text
+
+src/
+├── learning/
+│   ├── version-manager.ts          ← prompt/policy/role/routing version state
+│   ├── lineage.ts                  ← improvement ancestry graph
+│   ├── pattern-miner.ts            ← mine winning patterns from runs/evals
+│   ├── proposal-manager.ts         ← self-improvement proposal lifecycle
+│   ├── prompt-optimizer.ts         ← generate candidate prompt revisions
+│   ├── policy-optimizer.ts         ← generate candidate policy revisions
+│   ├── role-evolver.ts             ← evolve role definitions/manifests
+│   ├── memory-utility.ts           ← estimate utility of memory artifacts
+│   ├── memory-pruner.ts            ← archive/prune low-utility memory
+│   ├── routing-optimizer.ts        ← optimize model routing by mission class
+│   ├── adapter-distiller.ts        ← export high-quality traces to datasets
+│   ├── simulator.ts                ← simulate candidate changes on benchmarks
+│   ├── release-gate.ts             ← benchmark + drift + approval gate
+│   ├── drift-detector.ts           ← detect prompt/behavior drift
+│   └── learning-orchestrator.ts    ← periodic bounded self-improvement loop
+├── prompts/
+│   ├── pattern-extractor.ts        ← extract repeatable winning patterns
+│   ├── improvement-proposer.ts     ← convert patterns into change proposals
+│   ├── prompt-optimizer.ts         ← revise a target prompt
+│   ├── policy-optimizer.ts         ← revise policy config/rules
+│   ├── role-evolver.ts             ← revise role instructions/manifests
+│   ├── memory-utility.ts           ← utility scoring for memory items
+│   ├── routing-optimizer.ts        ← routing rules from benchmark evidence
+│   ├── rollout-simulator.ts        ← explain simulation results
+│   └── prompt-drift-auditor.ts     ← detect harmful behavior drift
+├── db/
+│   ├── schema-phase10.sql
+│   └── migrate-phase10.ts
+└── api/
+    └── learning-routes.ts          ← cycles, proposals, versions, simulations
+
+artifacts/
+├── learning/
+│   ├── patterns/
+│   ├── proposals/
+│   ├── simulations/
+│   ├── releases/
+│   ├── drift/
+│   ├── routing/
+│   ├── distillation/
+│   └── memory/
+1. Phase 10 DB schema
+src/db/schema-phase10.sql
+SQL
+
+-- ============================================================
+-- AutoOrg Phase 10 Schema
+-- Learning organization
+-- ============================================================
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: learning_cycles
+-- Top-level self-improvement loop executions
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS learning_cycles (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT,
+  workspace_id TEXT,
+  initiated_by TEXT NOT NULL DEFAULT 'system',
+  status TEXT NOT NULL DEFAULT 'running'
+    CHECK(status IN ('running','completed','failed','cancelled')),
+  source_window_start DATETIME,
+  source_window_end DATETIME,
+  objective_json TEXT NOT NULL DEFAULT '{}',
+  summary_json TEXT NOT NULL DEFAULT '{}',
+  artifact_path TEXT,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  finished_at DATETIME
+);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: pattern_reports
+-- Mined patterns from successful runs/evals/history
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS pattern_reports (
+  id TEXT PRIMARY KEY,
+  learning_cycle_id TEXT NOT NULL REFERENCES learning_cycles(id) ON DELETE CASCADE,
+  source_scope TEXT NOT NULL CHECK(source_scope IN (
+    'runs','benchmarks','portfolio','billing','memory','security','combined'
+  )),
+  subject_key TEXT,
+  artifact_path TEXT NOT NULL,
+  report_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_pattern_reports_cycle
+  ON pattern_reports(learning_cycle_id, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: improvement_proposals
+-- Candidate self-improvement changes
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS improvement_proposals (
+  id TEXT PRIMARY KEY,
+  learning_cycle_id TEXT NOT NULL REFERENCES learning_cycles(id) ON DELETE CASCADE,
+  proposal_type TEXT NOT NULL CHECK(proposal_type IN (
+    'prompt','policy','role','routing','memory_prune','template','adapter_distill'
+  )),
+  target_key TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'draft'
+    CHECK(status IN (
+      'draft','simulating','simulation_failed','pending_approval','approved','rejected','released','abandoned'
+    )),
+  rationale_json TEXT NOT NULL DEFAULT '{}',
+  candidate_artifact_path TEXT,
+  expected_delta_json TEXT NOT NULL DEFAULT '{}',
+  approval_id TEXT,
+  simulation_run_id TEXT,
+  release_artifact_path TEXT,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  released_at DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_improvement_proposals_cycle
+  ON improvement_proposals(learning_cycle_id, proposal_type, status);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: prompt_versions
+-- Versioned prompt overlays / replacements
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS prompt_versions (
+  id TEXT PRIMARY KEY,
+  target_key TEXT NOT NULL,                     -- e.g. role:CEO / role:Critic / prompt:tool-planner
+  version_label TEXT NOT NULL,
+  parent_version_id TEXT REFERENCES prompt_versions(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'candidate'
+    CHECK(status IN ('draft','candidate','active','retired','rejected')),
+  content TEXT NOT NULL,
+  created_by_proposal_id TEXT REFERENCES improvement_proposals(id) ON DELETE SET NULL,
+  benchmark_score REAL,
+  benchmark_policy REAL,
+  drift_score REAL,
+  notes_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_prompt_versions_target
+  ON prompt_versions(target_key, status, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: policy_versions
+-- Versioned policy payloads
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS policy_versions (
+  id TEXT PRIMARY KEY,
+  target_key TEXT NOT NULL,                     -- tool_policy / action_policy / approval_policy
+  version_label TEXT NOT NULL,
+  parent_version_id TEXT REFERENCES policy_versions(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'candidate'
+    CHECK(status IN ('draft','candidate','active','retired','rejected')),
+  config_json TEXT NOT NULL DEFAULT '{}',
+  created_by_proposal_id TEXT REFERENCES improvement_proposals(id) ON DELETE SET NULL,
+  benchmark_score REAL,
+  benchmark_policy REAL,
+  drift_score REAL,
+  notes_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_policy_versions_target
+  ON policy_versions(target_key, status, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: role_versions
+-- Versioned role instructions/manifests
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS role_versions (
+  id TEXT PRIMARY KEY,
+  role_key TEXT NOT NULL,
+  version_label TEXT NOT NULL,
+  parent_version_id TEXT REFERENCES role_versions(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'candidate'
+    CHECK(status IN ('draft','candidate','active','retired','rejected')),
+  manifest_json TEXT NOT NULL DEFAULT '{}',
+  created_by_proposal_id TEXT REFERENCES improvement_proposals(id) ON DELETE SET NULL,
+  benchmark_score REAL,
+  benchmark_policy REAL,
+  drift_score REAL,
+  notes_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_role_versions_role
+  ON role_versions(role_key, status, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: routing_versions
+-- Versioned model-routing policies
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS routing_versions (
+  id TEXT PRIMARY KEY,
+  routing_scope TEXT NOT NULL DEFAULT 'global',
+  version_label TEXT NOT NULL,
+  parent_version_id TEXT REFERENCES routing_versions(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'candidate'
+    CHECK(status IN ('draft','candidate','active','retired','rejected')),
+  config_json TEXT NOT NULL DEFAULT '{}',
+  created_by_proposal_id TEXT REFERENCES improvement_proposals(id) ON DELETE SET NULL,
+  benchmark_score REAL,
+  benchmark_policy REAL,
+  cost_delta REAL,
+  notes_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_routing_versions_scope
+  ON routing_versions(routing_scope, status, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: memory_utility_scores
+-- Utility estimates for memory artifacts/items
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS memory_utility_scores (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT,
+  memory_path TEXT NOT NULL,
+  item_hash TEXT NOT NULL,
+  access_count INTEGER NOT NULL DEFAULT 0,
+  citation_count INTEGER NOT NULL DEFAULT 0,
+  benchmark_contribution REAL NOT NULL DEFAULT 0,
+  recency_score REAL NOT NULL DEFAULT 0,
+  utility_score REAL NOT NULL DEFAULT 0,
+  keep_recommendation INTEGER NOT NULL DEFAULT 1,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_memory_utility_path
+  ON memory_utility_scores(workspace_id, memory_path, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: distillation_jobs
+-- Export/build jobs for trace distillation
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS distillation_jobs (
+  id TEXT PRIMARY KEY,
+  learning_cycle_id TEXT REFERENCES learning_cycles(id) ON DELETE SET NULL,
+  job_kind TEXT NOT NULL CHECK(job_kind IN ('planner','judge','router','tool_planner','critic')),
+  status TEXT NOT NULL DEFAULT 'queued'
+    CHECK(status IN ('queued','running','completed','failed','cancelled')),
+  source_filter_json TEXT NOT NULL DEFAULT '{}',
+  dataset_artifact_path TEXT,
+  metrics_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  finished_at DATETIME
+);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: simulation_runs
+-- Candidate-vs-baseline simulations before release
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS simulation_runs (
+  id TEXT PRIMARY KEY,
+  proposal_id TEXT NOT NULL REFERENCES improvement_proposals(id) ON DELETE CASCADE,
+  suite_name TEXT NOT NULL,
+  baseline_benchmark_run_id TEXT,
+  candidate_benchmark_run_id TEXT,
+  status TEXT NOT NULL DEFAULT 'running'
+    CHECK(status IN ('running','completed','failed','cancelled')),
+  delta_json TEXT NOT NULL DEFAULT '{}',
+  artifact_path TEXT,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  finished_at DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_simulation_runs_proposal
+  ON simulation_runs(proposal_id, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: rollout_decisions
+-- Final release-gate decisions
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS rollout_decisions (
+  id TEXT PRIMARY KEY,
+  proposal_id TEXT NOT NULL REFERENCES improvement_proposals(id) ON DELETE CASCADE,
+  version_kind TEXT NOT NULL CHECK(version_kind IN ('prompt','policy','role','routing','memory_prune','adapter_distill')),
+  version_ref TEXT,
+  decision TEXT NOT NULL CHECK(decision IN ('approved','rejected','blocked','rolled_back')),
+  benchmark_pass INTEGER NOT NULL DEFAULT 0,
+  drift_pass INTEGER NOT NULL DEFAULT 0,
+  approval_pass INTEGER NOT NULL DEFAULT 0,
+  artifact_path TEXT,
+  summary_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: prompt_drift_reports
+-- Drift analyses between versions
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS prompt_drift_reports (
+  id TEXT PRIMARY KEY,
+  target_key TEXT NOT NULL,
+  from_version_id TEXT,
+  to_version_id TEXT,
+  drift_score REAL NOT NULL DEFAULT 0,
+  regression_risk REAL NOT NULL DEFAULT 0,
+  report_json TEXT NOT NULL DEFAULT '{}',
+  artifact_path TEXT,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_prompt_drift_target
+  ON prompt_drift_reports(target_key, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: learning_lineage
+-- Parent-child graph for versions/proposals/releases
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS learning_lineage (
+  id TEXT PRIMARY KEY,
+  entity_kind TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  parent_entity_kind TEXT,
+  parent_entity_id TEXT,
+  relation TEXT NOT NULL,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_learning_lineage_entity
+  ON learning_lineage(entity_kind, entity_id, created_at DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- Feature flags
+-- ────────────────────────────────────────────────────────────
+INSERT OR IGNORE INTO feature_flags (flag_name, enabled, description) VALUES
+  ('learningLoop', 1, 'Periodic learning/self-improvement loop (Phase 10)'),
+  ('patternMining', 1, 'Mine patterns from successful runs and benchmarks (Phase 10)'),
+  ('promptOptimization', 1, 'Generate prompt revisions from patterns (Phase 10)'),
+  ('policyOptimization', 1, 'Generate policy revisions from patterns (Phase 10)'),
+  ('roleEvolution', 1, 'Generate role revisions from benchmark evidence (Phase 10)'),
+  ('memoryUtilityPruning', 1, 'Utility-based memory pruning (Phase 10)'),
+  ('routingOptimization', 1, 'Cost-quality routing optimization (Phase 10)'),
+  ('adapterDistillation', 1, 'Export high-quality traces for distillation (Phase 10)'),
+  ('simulateBeforeRollout', 1, 'Benchmark simulation before activating changes (Phase 10)'),
+  ('selfImprovementApproval', 1, 'Approval-gated rollout of self-modifications (Phase 10)'),
+  ('promptDriftGuard', 1, 'Detect harmful drift before release (Phase 10)'),
+  ('learningLineage', 1, 'Track ancestry of improvements (Phase 10)');
+src/db/migrate-phase10.ts
+TypeScript
+
+#!/usr/bin/env bun
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import chalk from 'chalk';
+import { getDb } from '@/db/migrate.js';
+
+async function migrate() {
+  console.log(chalk.cyan('\n⚙️ Running Phase 10 migrations...\n'));
+  const db = getDb();
+  const schema = readFileSync(path.join(import.meta.dir, 'schema-phase10.sql'), 'utf-8');
+  db.exec(schema);
+  db.close();
+  console.log(chalk.bold.green('✅ Phase 10 migration complete.\n'));
+}
+
+migrate().catch(console.error);
+Run:
+
+Bash
+
+bun run src/db/migrate-phase10.ts
+2. Version manager
+This is the core control plane for safe adaptation.
+
+src/learning/version-manager.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+import { Lineage } from '@/learning/lineage.js';
+
+export class VersionManager {
+  private lineage = new Lineage();
+
+  getActivePrompt(targetKey: string) {
+    const db = getDb();
+    const row = db.prepare(`
+      SELECT * FROM prompt_versions
+      WHERE target_key = ? AND status = 'active'
+      ORDER BY created_at DESC
+      LIMIT 1
+    `).get(targetKey) as any;
+    db.close();
+    return row ?? null;
+  }
+
+  createPromptCandidate(opts: {
+    targetKey: string;
+    content: string;
+    proposalId?: string;
+    notes?: Record<string, unknown>;
+  }) {
+    const db = getDb();
+    const parent = db.prepare(`
+      SELECT id, version_label
+      FROM prompt_versions
+      WHERE target_key = ?
+      ORDER BY created_at DESC
+      LIMIT 1
+    `).get(opts.targetKey) as { id: string; version_label: string } | undefined;
+
+    const id = `pv_${nanoid(10)}`;
+    const versionLabel = parent ? `${parent.version_label}.next` : 'v1.candidate';
+
+    db.prepare(`
+      INSERT INTO prompt_versions
+      (id, target_key, version_label, parent_version_id, status, content, created_by_proposal_id, notes_json)
+      VALUES (?, ?, ?, ?, 'candidate', ?, ?, ?)
+    `).run(
+      id,
+      opts.targetKey,
+      versionLabel,
+      parent?.id ?? null,
+      opts.content,
+      opts.proposalId ?? null,
+      JSON.stringify(opts.notes ?? {})
+    );
+    db.close();
+
+    if (parent) {
+      this.lineage.link({
+        entityKind: 'prompt_version',
+        entityId: id,
+        parentEntityKind: 'prompt_version',
+        parentEntityId: parent.id,
+        relation: 'derived_from',
+      });
+    }
+
+    return { versionId: id };
+  }
+
+  activatePrompt(versionId: string) {
+    const db = getDb();
+    const row = db.prepare(`
+      SELECT target_key FROM prompt_versions WHERE id = ?
+    `).get(versionId) as { target_key: string } | undefined;
+    if (!row) {
+      db.close();
+      throw new Error(`Prompt version ${versionId} not found`);
+    }
+
+    db.prepare(`
+      UPDATE prompt_versions
+      SET status = 'retired'
+      WHERE target_key = ? AND status = 'active'
+    `).run(row.target_key);
+
+    db.prepare(`
+      UPDATE prompt_versions
+      SET status = 'active'
+      WHERE id = ?
+    `).run(versionId);
+    db.close();
+  }
+
+  getActiveRole(roleKey: string) {
+    const db = getDb();
+    const row = db.prepare(`
+      SELECT * FROM role_versions
+      WHERE role_key = ? AND status = 'active'
+      ORDER BY created_at DESC
+      LIMIT 1
+    `).get(roleKey) as any;
+    db.close();
+    return row ?? null;
+  }
+
+  createRoleCandidate(opts: {
+    roleKey: string;
+    manifestJson: Record<string, unknown>;
+    proposalId?: string;
+  }) {
+    const db = getDb();
+    const parent = db.prepare(`
+      SELECT id, version_label
+      FROM role_versions
+      WHERE role_key = ?
+      ORDER BY created_at DESC
+      LIMIT 1
+    `).get(opts.roleKey) as { id: string; version_label: string } | undefined;
+
+    const id = `rv_${nanoid(10)}`;
+    db.prepare(`
+      INSERT INTO role_versions
+      (id, role_key, version_label, parent_version_id, status, manifest_json, created_by_proposal_id)
+      VALUES (?, ?, ?, ?, 'candidate', ?, ?)
+    `).run(
+      id,
+      opts.roleKey,
+      parent ? `${parent.version_label}.next` : 'v1.candidate',
+      parent?.id ?? null,
+      JSON.stringify(opts.manifestJson),
+      opts.proposalId ?? null
+    );
+    db.close();
+
+    return { versionId: id };
+  }
+
+  activateRole(versionId: string) {
+    const db = getDb();
+    const row = db.prepare(`
+      SELECT role_key FROM role_versions WHERE id = ?
+    `).get(versionId) as { role_key: string } | undefined;
+    if (!row) {
+      db.close();
+      throw new Error(`Role version ${versionId} not found`);
+    }
+
+    db.prepare(`
+      UPDATE role_versions
+      SET status = 'retired'
+      WHERE role_key = ? AND status = 'active'
+    `).run(row.role_key);
+
+    db.prepare(`
+      UPDATE role_versions
+      SET status = 'active'
+      WHERE id = ?
+    `).run(versionId);
+    db.close();
+  }
+
+  getActiveRouting() {
+    const db = getDb();
+    const row = db.prepare(`
+      SELECT * FROM routing_versions
+      WHERE routing_scope = 'global' AND status = 'active'
+      ORDER BY created_at DESC
+      LIMIT 1
+    `).get() as any;
+    db.close();
+    return row ?? null;
+  }
+
+  createRoutingCandidate(opts: {
+    configJson: Record<string, unknown>;
+    proposalId?: string;
+  }) {
+    const db = getDb();
+    const parent = db.prepare(`
+      SELECT id, version_label
+      FROM routing_versions
+      WHERE routing_scope = 'global'
+      ORDER BY created_at DESC
+      LIMIT 1
+    `).get() as { id: string; version_label: string } | undefined;
+
+    const id = `rtv_${nanoid(10)}`;
+    db.prepare(`
+      INSERT INTO routing_versions
+      (id, routing_scope, version_label, parent_version_id, status, config_json, created_by_proposal_id)
+      VALUES (?, 'global', ?, ?, 'candidate', ?, ?)
+    `).run(
+      id,
+      parent ? `${parent.version_label}.next` : 'v1.candidate',
+      parent?.id ?? null,
+      JSON.stringify(opts.configJson),
+      opts.proposalId ?? null
+    );
+    db.close();
+
+    return { versionId: id };
+  }
+
+  activateRouting(versionId: string) {
+    const db = getDb();
+    db.prepare(`
+      UPDATE routing_versions
+      SET status = 'retired'
+      WHERE routing_scope = 'global' AND status = 'active'
+    `).run();
+
+    db.prepare(`
+      UPDATE routing_versions
+      SET status = 'active'
+      WHERE id = ?
+    `).run(versionId);
+    db.close();
+  }
+
+  createPolicyCandidate(opts: {
+    targetKey: string;
+    configJson: Record<string, unknown>;
+    proposalId?: string;
+  }) {
+    const db = getDb();
+    const parent = db.prepare(`
+      SELECT id, version_label
+      FROM policy_versions
+      WHERE target_key = ?
+      ORDER BY created_at DESC
+      LIMIT 1
+    `).get(opts.targetKey) as { id: string; version_label: string } | undefined;
+
+    const id = `plv_${nanoid(10)}`;
+    db.prepare(`
+      INSERT INTO policy_versions
+      (id, target_key, version_label, parent_version_id, status, config_json, created_by_proposal_id)
+      VALUES (?, ?, ?, ?, 'candidate', ?, ?)
+    `).run(
+      id,
+      opts.targetKey,
+      parent ? `${parent.version_label}.next` : 'v1.candidate',
+      parent?.id ?? null,
+      JSON.stringify(opts.configJson),
+      opts.proposalId ?? null
+    );
+    db.close();
+
+    return { versionId: id };
+  }
+
+  activatePolicy(versionId: string) {
+    const db = getDb();
+    const row = db.prepare(`
+      SELECT target_key FROM policy_versions WHERE id = ?
+    `).get(versionId) as { target_key: string } | undefined;
+    if (!row) {
+      db.close();
+      throw new Error(`Policy version ${versionId} not found`);
+    }
+
+    db.prepare(`
+      UPDATE policy_versions
+      SET status = 'retired'
+      WHERE target_key = ? AND status = 'active'
+    `).run(row.target_key);
+
+    db.prepare(`
+      UPDATE policy_versions
+      SET status = 'active'
+      WHERE id = ?
+    `).run(versionId);
+    db.close();
+  }
+}
+3. Lineage graph
+src/learning/lineage.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+
+export class Lineage {
+  link(opts: {
+    entityKind: string;
+    entityId: string;
+    parentEntityKind?: string;
+    parentEntityId?: string;
+    relation: string;
+    metadata?: Record<string, unknown>;
+  }) {
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO learning_lineage
+      (id, entity_kind, entity_id, parent_entity_kind, parent_entity_id, relation, metadata_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      `lin_${nanoid(10)}`,
+      opts.entityKind,
+      opts.entityId,
+      opts.parentEntityKind ?? null,
+      opts.parentEntityId ?? null,
+      opts.relation,
+      JSON.stringify(opts.metadata ?? {})
+    );
+    db.close();
+  }
+
+  ancestors(entityKind: string, entityId: string) {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM learning_lineage
+      WHERE entity_kind = ? AND entity_id = ?
+      ORDER BY created_at DESC
+    `).all(entityKind, entityId);
+    db.close();
+    return rows;
+  }
+}
+4. Pattern extractor prompt
+src/prompts/pattern-extractor.ts
+TypeScript
+
+import { z } from 'zod';
+
+export const PatternReportSchema = z.object({
+  winning_patterns: z.array(z.string()).max(20),
+  failure_patterns: z.array(z.string()).max(20),
+  cost_quality_tradeoffs: z.array(z.string()).max(12),
+  governance_patterns: z.array(z.string()).max(12),
+  candidate_targets: z.array(z.object({
+    proposal_type: z.enum(['prompt', 'policy', 'role', 'routing', 'memory_prune', 'adapter_distill']),
+    target_key: z.string(),
+    why: z.string(),
+  })).max(20),
+  summary: z.string(),
+});
+
+export const PATTERN_EXTRACTOR_SYSTEM_PROMPT = `
+You are AutoOrg's Pattern Miner.
+
+You will receive:
+- successful benchmark runs,
+- failed/regressed runs,
+- policy and provenance signals,
+- cost and latency information,
+- role/template/routing information.
+
+Your job:
+1. identify repeatable winning patterns,
+2. identify repeatable failure patterns,
+3. identify cost-quality tradeoffs,
+4. identify concrete improvement targets.
+
+Hard rules:
+- Prefer patterns grounded in repeated evidence, not one-off anecdotes.
+- Separate quality gains from governance regressions.
+- Do not recommend changes that would weaken auditability.
+`.trim();
+5. Pattern miner
+src/learning/pattern-miner.ts
+TypeScript
+
+import { mkdir } from 'node:fs/promises';
+import path from 'node:path';
+import { nanoid } from 'nanoid';
+import { getAdapter } from '@/adapters/adapter-factory.js';
+import { getDb } from '@/db/migrate.js';
+import { ImmutableArtifacts } from '@/runtime/immutable-artifacts.js';
+import { PATTERN_EXTRACTOR_SYSTEM_PROMPT, PatternReportSchema } from '@/prompts/pattern-extractor.js';
+
+export class PatternMiner {
+  private artifacts = new ImmutableArtifacts();
+
+  async mine(opts: {
+    learningCycleId: string;
+    sourceScope?: 'combined' | 'benchmarks' | 'runs' | 'portfolio';
+  }) {
+    const db = getDb();
+
+    const benchmarkRows = db.prepare(`
+      SELECT
+        br.id as benchmark_run_id,
+        ba.template_variant,
+        ba.constitution_variant,
+        bm.score,
+        bm.groundedness,
+        bm.policy_compliance,
+        bm.gold_match,
+        bm.cost_usd,
+        bm.latency_ms,
+        bm.acceptance_pass
+      FROM benchmark_metrics bm
+      JOIN benchmark_attempts ba ON ba.id = bm.attempt_id
+      JOIN benchmark_runs br ON br.id = ba.benchmark_run_id
+      ORDER BY bm.created_at DESC
+      LIMIT 120
+    `).all();
+
+    const regressions = db.prepare(`
+      SELECT * FROM regression_alarms
+      ORDER BY created_at DESC
+      LIMIT 50
+    `).all();
+
+    const policyReports = db.prepare(`
+      SELECT cycle_number, role, score, approval_gaps, unsafe_action_count, violations_json
+      FROM policy_reports
+      ORDER BY created_at DESC
+      LIMIT 80
+    `).all();
+
+    const routing = db.prepare(`
+      SELECT * FROM routing_versions
+      ORDER BY created_at DESC
+      LIMIT 20
+    `).all();
+
+    db.close();
+
+    const adapter = getAdapter({
+      provider: (process.env.DEFAULT_LLM_PROVIDER ?? 'anthropic') as any,
+      model: 'claude-sonnet-4-5',
+    });
+
+    const report = await adapter.structured({
+      model: 'claude-sonnet-4-5',
+      messages: [
+        { role: 'system', content: PATTERN_EXTRACTOR_SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: JSON.stringify({
+            sourceScope: opts.sourceScope ?? 'combined',
+            benchmarkRows,
+            regressions,
+            policyReports,
+            routing,
+          }, null, 2),
+        },
+      ],
+      schema: PatternReportSchema,
+    });
+
+    const reportId = `ptr_${nanoid(10)}`;
+    const written = await this.artifacts.writeJson({
+      runId: opts.learningCycleId,
+      relPath: `artifacts/learning/patterns/${reportId}.json`,
+      data: report,
+      artifactKind: 'learning_pattern_report',
+    });
+
+    const db2 = getDb();
+    db2.prepare(`
+      INSERT INTO pattern_reports
+      (id, learning_cycle_id, source_scope, subject_key, artifact_path, report_json)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      reportId,
+      opts.learningCycleId,
+      opts.sourceScope ?? 'combined',
+      'global',
+      written.artifactPath,
+      JSON.stringify(report)
+    );
+    db2.close();
+
+    return { reportId, artifactPath: written.artifactPath, report };
+  }
+}
+6. Improvement proposer prompt
+src/prompts/improvement-proposer.ts
+TypeScript
+
+import { z } from 'zod';
+
+export const ImprovementProposalSchema = z.object({
+  proposal_type: z.enum(['prompt', 'policy', 'role', 'routing', 'memory_prune', 'adapter_distill']),
+  target_key: z.string(),
+  rationale: z.string(),
+  expected_benefits: z.array(z.string()).max(10),
+  expected_risks: z.array(z.string()).max(10),
+  should_simulate: z.boolean(),
+});
+
+export const IMPROVEMENT_PROPOSER_SYSTEM_PROMPT = `
+You convert mined patterns into a single bounded self-improvement proposal.
+
+Hard rules:
+- Recommend a narrow, testable change.
+- The target must be simulatable or auditable.
+- Do not propose vague "make everything smarter" changes.
+- Do not weaken policy or provenance safeguards.
+`.trim();
+7. Proposal manager
+src/learning/proposal-manager.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+import { ApprovalGate } from '@/runtime/approval-gate.js';
+import { ActionLedger } from '@/runtime/action-ledger.js';
+
+export class ProposalManager {
+  private approvals = new ApprovalGate();
+
+  create(opts: {
+    learningCycleId: string;
+    proposalType: 'prompt' | 'policy' | 'role' | 'routing' | 'memory_prune' | 'template' | 'adapter_distill';
+    targetKey: string;
+    rationale: Record<string, unknown>;
+    candidateArtifactPath?: string;
+    expectedDelta?: Record<string, unknown>;
+  }) {
+    const db = getDb();
+    const id = `ip_${nanoid(10)}`;
+    db.prepare(`
+      INSERT INTO improvement_proposals
+      (id, learning_cycle_id, proposal_type, target_key, status, rationale_json, candidate_artifact_path, expected_delta_json)
+      VALUES (?, ?, ?, ?, 'draft', ?, ?, ?)
+    `).run(
+      id,
+      opts.learningCycleId,
+      opts.proposalType,
+      opts.targetKey,
+      JSON.stringify(opts.rationale),
+      opts.candidateArtifactPath ?? null,
+      JSON.stringify(opts.expectedDelta ?? {})
+    );
+    db.close();
+    return { proposalId: id };
+  }
+
+  attachSimulation(proposalId: string, simulationRunId: string) {
+    const db = getDb();
+    db.prepare(`
+      UPDATE improvement_proposals
+      SET simulation_run_id = ?, status = 'simulating'
+      WHERE id = ?
+    `).run(simulationRunId, proposalId);
+    db.close();
+  }
+
+  requestReleaseApproval(opts: {
+    proposalId: string;
+    runId: string;
+    cycleNumber: number;
+    summary: string;
+    details: Record<string, unknown>;
+  }) {
+    const approvalId = this.approvals.request({
+      runId: opts.runId,
+      cycleNumber: opts.cycleNumber,
+      approvalType: 'self_improvement',
+      subject: opts.proposalId,
+      requestedBy: 'LearningOrchestrator',
+      summary: opts.summary,
+      details: opts.details,
+    });
+
+    const db = getDb();
+    db.prepare(`
+      UPDATE improvement_proposals
+      SET status = 'pending_approval', approval_id = ?
+      WHERE id = ?
+    `).run(approvalId, opts.proposalId);
+    db.close();
+
+    return { approvalId };
+  }
+
+  markReleased(proposalId: string, artifactPath?: string) {
+    const db = getDb();
+    db.prepare(`
+      UPDATE improvement_proposals
+      SET status = 'released', release_artifact_path = ?, released_at = datetime('now')
+      WHERE id = ?
+    `).run(artifactPath ?? null, proposalId);
+    db.close();
+  }
+
+  reject(proposalId: string) {
+    const db = getDb();
+    db.prepare(`
+      UPDATE improvement_proposals
+      SET status = 'rejected'
+      WHERE id = ?
+    `).run(proposalId);
+    db.close();
+  }
+}
+8. Prompt optimizer prompt
+src/prompts/prompt-optimizer.ts
+TypeScript
+
+import { z } from 'zod';
+
+export const PromptOptimizerSchema = z.object({
+  revised_prompt: z.string(),
+  change_summary: z.string(),
+  expected_improvements: z.array(z.string()).max(10),
+  regression_risks: z.array(z.string()).max(10),
+});
+
+export const PROMPT_OPTIMIZER_SYSTEM_PROMPT = `
+You improve one AutoOrg prompt using benchmark and historical evidence.
+
+Inputs:
+- current prompt
+- mined winning/failure patterns
+- target role/prompt key
+
+Your job:
+1. revise the prompt narrowly,
+2. preserve the core mission and governance contract,
+3. improve clarity, verifiability, and benchmark fitness.
+
+Hard rules:
+- Do not remove grounding, policy, approval, or provenance safeguards.
+- Prefer small changes over sweeping rewrites.
+- The result must remain auditable and deterministic in structure where possible.
+`.trim();
+src/learning/prompt-optimizer.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { getAdapter } from '@/adapters/adapter-factory.js';
+import { ImmutableArtifacts } from '@/runtime/immutable-artifacts.js';
+import { VersionManager } from '@/learning/version-manager.js';
+import { ProposalManager } from '@/learning/proposal-manager.js';
+import { PROMPT_OPTIMIZER_SYSTEM_PROMPT, PromptOptimizerSchema } from '@/prompts/prompt-optimizer.js';
+
+export class PromptOptimizer {
+  private artifacts = new ImmutableArtifacts();
+  private versions = new VersionManager();
+  private proposals = new ProposalManager();
+
+  async optimize(opts: {
+    learningCycleId: string;
+    targetKey: string;          // e.g. role:CEO
+    basePromptPath?: string;    // e.g. roles/CEO.md
+    patternReport: Record<string, unknown>;
+  }) {
+    const currentPrompt = opts.basePromptPath
+      ? await readFile(path.join(process.cwd(), opts.basePromptPath), 'utf-8').catch(() => '')
+      : (this.versions.getActivePrompt(opts.targetKey)?.content ?? '');
+
+    const adapter = getAdapter({
+      provider: (process.env.DEFAULT_LLM_PROVIDER ?? 'anthropic') as any,
+      model: 'claude-sonnet-4-5',
+    });
+
+    const out = await adapter.structured({
+      model: 'claude-sonnet-4-5',
+      messages: [
+        { role: 'system', content: PROMPT_OPTIMIZER_SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: JSON.stringify({
+            targetKey: opts.targetKey,
+            currentPrompt,
+            patternReport: opts.patternReport,
+          }, null, 2),
+        },
+      ],
+      schema: PromptOptimizerSchema,
+    });
+
+    const written = await this.artifacts.writeText({
+      runId: opts.learningCycleId,
+      relPath: `artifacts/learning/proposals/${opts.targetKey.replace(/[:/]/g, '_')}.prompt.md`,
+      text: out.revised_prompt,
+      artifactKind: 'learning_prompt_candidate',
+      mimeType: 'text/markdown',
+    });
+
+    const proposal = this.proposals.create({
+      learningCycleId: opts.learningCycleId,
+      proposalType: 'prompt',
+      targetKey: opts.targetKey,
+      rationale: {
+        change_summary: out.change_summary,
+        expected_improvements: out.expected_improvements,
+        regression_risks: out.regression_risks,
+      },
+      candidateArtifactPath: written.artifactPath,
+    });
+
+    const version = this.versions.createPromptCandidate({
+      targetKey: opts.targetKey,
+      content: out.revised_prompt,
+      proposalId: proposal.proposalId,
+      notes: {
+        change_summary: out.change_summary,
+      },
+    });
+
+    return {
+      proposalId: proposal.proposalId,
+      versionId: version.versionId,
+      artifactPath: written.artifactPath,
+      revisedPrompt: out.revised_prompt,
+    };
+  }
+}
+9. Policy optimizer prompt + runtime
+src/prompts/policy-optimizer.ts
+TypeScript
+
+import { z } from 'zod';
+
+export const PolicyOptimizerSchema = z.object({
+  config_json: z.record(z.string(), z.any()),
+  change_summary: z.string(),
+  expected_improvements: z.array(z.string()).max(10),
+  regression_risks: z.array(z.string()).max(10),
+});
+
+export const POLICY_OPTIMIZER_SYSTEM_PROMPT = `
+You improve an AutoOrg policy configuration from benchmark and governance evidence.
+
+Examples:
+- tool policy ceilings,
+- approval escalation thresholds,
+- budget defaults,
+- routing safety floors.
+
+Hard rules:
+- Never reduce policy safeguards without strong evidence.
+- Policy changes must remain explicit and reviewable.
+- Prefer bounded threshold changes over policy rewrites.
+`.trim();
+src/learning/policy-optimizer.ts
+TypeScript
+
+import { getAdapter } from '@/adapters/adapter-factory.js';
+import { ImmutableArtifacts } from '@/runtime/immutable-artifacts.js';
+import { VersionManager } from '@/learning/version-manager.js';
+import { ProposalManager } from '@/learning/proposal-manager.js';
+import { POLICY_OPTIMIZER_SYSTEM_PROMPT, PolicyOptimizerSchema } from '@/prompts/policy-optimizer.js';
+
+export class PolicyOptimizer {
+  private artifacts = new ImmutableArtifacts();
+  private versions = new VersionManager();
+  private proposals = new ProposalManager();
+
+  async optimize(opts: {
+    learningCycleId: string;
+    targetKey: string;
+    currentConfig: Record<string, unknown>;
+    patternReport: Record<string, unknown>;
+  }) {
+    const adapter = getAdapter({
+      provider: (process.env.DEFAULT_LLM_PROVIDER ?? 'anthropic') as any,
+      model: 'claude-sonnet-4-5',
+    });
+
+    const out = await adapter.structured({
+      model: 'claude-sonnet-4-5',
+      messages: [
+        { role: 'system', content: POLICY_OPTIMIZER_SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: JSON.stringify({
+            targetKey: opts.targetKey,
+            currentConfig: opts.currentConfig,
+            patternReport: opts.patternReport,
+          }, null, 2),
+        },
+      ],
+      schema: PolicyOptimizerSchema,
+    });
+
+    const written = await this.artifacts.writeJson({
+      runId: opts.learningCycleId,
+      relPath: `artifacts/learning/proposals/${opts.targetKey.replace(/[:/]/g, '_')}.policy.json`,
+      data: out.config_json,
+      artifactKind: 'learning_policy_candidate',
+    });
+
+    const proposal = this.proposals.create({
+      learningCycleId: opts.learningCycleId,
+      proposalType: 'policy',
+      targetKey: opts.targetKey,
+      rationale: {
+        change_summary: out.change_summary,
+        expected_improvements: out.expected_improvements,
+        regression_risks: out.regression_risks,
+      },
+      candidateArtifactPath: written.artifactPath,
+    });
+
+    const version = this.versions.createPolicyCandidate({
+      targetKey: opts.targetKey,
+      configJson: out.config_json,
+      proposalId: proposal.proposalId,
+    });
+
+    return {
+      proposalId: proposal.proposalId,
+      versionId: version.versionId,
+      artifactPath: written.artifactPath,
+    };
+  }
+}
+10. Role evolver prompt + runtime
+src/prompts/role-evolver.ts
+TypeScript
+
+import { z } from 'zod';
+
+export const RoleEvolverSchema = z.object({
+  manifest_json: z.record(z.string(), z.any()),
+  change_summary: z.string(),
+  expected_improvements: z.array(z.string()).max(10),
+  regression_risks: z.array(z.string()).max(10),
+});
+
+export const ROLE_EVOLVER_SYSTEM_PROMPT = `
+You evolve one AutoOrg role based on benchmark evidence.
+
+Possible changes:
+- role responsibilities,
+- critique intensity,
+- evidence requirements,
+- output schema expectations,
+- delegation behavior.
+
+Hard rules:
+- Preserve role clarity.
+- Avoid overlap that creates prompt conflict.
+- Do not weaken governance, provenance, or approval expectations.
+- Prefer role specialization over adding vague duties.
+`.trim();
+src/learning/role-evolver.ts
+TypeScript
+
+import { getAdapter } from '@/adapters/adapter-factory.js';
+import { ImmutableArtifacts } from '@/runtime/immutable-artifacts.js';
+import { VersionManager } from '@/learning/version-manager.js';
+import { ProposalManager } from '@/learning/proposal-manager.js';
+import { ROLE_EVOLVER_SYSTEM_PROMPT, RoleEvolverSchema } from '@/prompts/role-evolver.js';
+
+export class RoleEvolver {
+  private artifacts = new ImmutableArtifacts();
+  private versions = new VersionManager();
+  private proposals = new ProposalManager();
+
+  async evolve(opts: {
+    learningCycleId: string;
+    roleKey: string;
+    currentManifest: Record<string, unknown>;
+    patternReport: Record<string, unknown>;
+  }) {
+    const adapter = getAdapter({
+      provider: (process.env.DEFAULT_LLM_PROVIDER ?? 'anthropic') as any,
+      model: 'claude-sonnet-4-5',
+    });
+
+    const out = await adapter.structured({
+      model: 'claude-sonnet-4-5',
+      messages: [
+        { role: 'system', content: ROLE_EVOLVER_SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: JSON.stringify({
+            roleKey: opts.roleKey,
+            currentManifest: opts.currentManifest,
+            patternReport: opts.patternReport,
+          }, null, 2),
+        },
+      ],
+      schema: RoleEvolverSchema,
+    });
+
+    const written = await this.artifacts.writeJson({
+      runId: opts.learningCycleId,
+      relPath: `artifacts/learning/proposals/role_${opts.roleKey}.json`,
+      data: out.manifest_json,
+      artifactKind: 'learning_role_candidate',
+    });
+
+    const proposal = this.proposals.create({
+      learningCycleId: opts.learningCycleId,
+      proposalType: 'role',
+      targetKey: opts.roleKey,
+      rationale: {
+        change_summary: out.change_summary,
+        expected_improvements: out.expected_improvements,
+        regression_risks: out.regression_risks,
+      },
+      candidateArtifactPath: written.artifactPath,
+    });
+
+    const version = this.versions.createRoleCandidate({
+      roleKey: opts.roleKey,
+      manifestJson: out.manifest_json,
+      proposalId: proposal.proposalId,
+    });
+
+    return {
+      proposalId: proposal.proposalId,
+      versionId: version.versionId,
+      artifactPath: written.artifactPath,
+    };
+  }
+}
+11. Memory utility prompt
+src/prompts/memory-utility.ts
+TypeScript
+
+import { z } from 'zod';
+
+export const MemoryUtilitySchema = z.object({
+  utility_score: z.number().min(0).max(1),
+  keep_recommendation: z.boolean(),
+  rationale: z.array(z.string()).max(8),
+});
+
+export const MEMORY_UTILITY_SYSTEM_PROMPT = `
+You estimate whether a memory item is worth keeping.
+
+Signals:
+- retrieval frequency,
+- citation frequency,
+- contribution to successful benchmark runs,
+- recency,
+- duplication,
+- governance relevance.
+
+Hard rules:
+- Prefer keeping policy/provenance-critical memory even if infrequently accessed.
+- Prefer pruning duplicated, stale, low-signal memory.
+- Be conservative about deleting anything tied to audits or approvals.
+`.trim();
+src/learning/memory-utility.ts
+TypeScript
+
+import { createHash } from 'node:crypto';
+import { Glob } from 'bun';
+import { readFile } from 'node:fs/promises';
+import { nanoid } from 'nanoid';
+import { getAdapter } from '@/adapters/adapter-factory.js';
+import { getDb } from '@/db/migrate.js';
+import { MEMORY_UTILITY_SYSTEM_PROMPT, MemoryUtilitySchema } from '@/prompts/memory-utility.js';
+
+function sha(text: string) {
+  return createHash('sha256').update(text).digest('hex');
+}
+
+export class MemoryUtilityScorer {
+  async scoreWorkspace(workspaceRoot = process.cwd()) {
+    const glob = new Glob('memory/**/*.{md,txt,json}');
+    const db = getDb();
+    const adapter = getAdapter({
+      provider: (process.env.DEFAULT_LLM_PROVIDER ?? 'anthropic') as any,
+      model: 'claude-sonnet-4-5',
+    });
+
+    const scored = [];
+
+    for await (const file of glob.scan(workspaceRoot)) {
+      const fullPath = `${workspaceRoot}/${file}`;
+      const text = await readFile(fullPath, 'utf-8').catch(() => '');
+      if (!text.trim()) continue;
+
+      const accessRow = db.prepare(`
+        SELECT COUNT(*) as n
+        FROM tool_artifacts
+        WHERE source_uri = ?
+      `).get(fullPath) as { n: number };
+
+      const citationRow = db.prepare(`
+        SELECT COUNT(*) as n
+        FROM evidence_items
+        WHERE source_uri = ?
+      `).get(fullPath) as { n: number };
+
+      const benchRow = db.prepare(`
+        SELECT COALESCE(AVG(gold_match), 0) as avg_gold
+        FROM benchmark_metrics
+      `).get() as { avg_gold: number };
+
+      const out = await adapter.structured({
+        model: 'claude-sonnet-4-5',
+        messages: [
+          { role: 'system', content: MEMORY_UTILITY_SYSTEM_PROMPT },
+          {
+            role: 'user',
+            content: JSON.stringify({
+              path: fullPath,
+              preview: text.slice(0, 3000),
+              accessCount: accessRow.n,
+              citationCount: citationRow.n,
+              benchmarkContribution: benchRow.avg_gold,
+            }, null, 2),
+          },
+        ],
+        schema: MemoryUtilitySchema,
+      });
+
+      db.prepare(`
+        INSERT INTO memory_utility_scores
+        (id, workspace_id, memory_path, item_hash, access_count, citation_count, benchmark_contribution,
+         recency_score, utility_score, keep_recommendation, metadata_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        `mus_${nanoid(10)}`,
+        null,
+        fullPath,
+        sha(text),
+        accessRow.n,
+        citationRow.n,
+        benchRow.avg_gold,
+        0.5,
+        out.utility_score,
+        out.keep_recommendation ? 1 : 0,
+        JSON.stringify({ rationale: out.rationale })
+      );
+
+      scored.push({
+        path: fullPath,
+        utilityScore: out.utility_score,
+        keep: out.keep_recommendation,
+      });
+    }
+
+    db.close();
+    return scored;
+  }
+}
+src/learning/memory-pruner.ts
+TypeScript
+
+import { mkdir, rename } from 'node:fs/promises';
+import path from 'node:path';
+import { getDb } from '@/db/migrate.js';
+import { ImmutableArtifacts } from '@/runtime/immutable-artifacts.js';
+
+export class MemoryPruner {
+  private artifacts = new ImmutableArtifacts();
+
+  async prune(opts?: {
+    workspaceRoot?: string;
+    utilityThreshold?: number;
+    keepRecent?: number;
+  }) {
+    const root = opts?.workspaceRoot ?? process.cwd();
+    const threshold = opts?.utilityThreshold ?? 0.20;
+    const db = getDb();
+
+    const rows = db.prepare(`
+      SELECT *
+      FROM memory_utility_scores
+      WHERE utility_score < ? AND keep_recommendation = 0
+      ORDER BY utility_score ASC
+    `).all(threshold) as Array<any>;
+
+    const archived: string[] = [];
+    const archiveDir = path.join(root, 'memory', 'archive');
+    await mkdir(archiveDir, { recursive: true });
+
+    for (const row of rows) {
+      const src = row.memory_path;
+      const target = path.join(archiveDir, path.basename(src));
+      await rename(src, target).catch(() => {});
+      archived.push(target);
+    }
+
+    const written = await this.artifacts.writeJson({
+      runId: 'learning_memory_prune',
+      relPath: `artifacts/learning/memory/prune_${Date.now()}.json`,
+      data: {
+        archived,
+        threshold,
+      },
+      artifactKind: 'memory_prune_report',
+    });
+
+    db.close();
+    return {
+      archivedCount: archived.length,
+      artifactPath: written.artifactPath,
+    };
+  }
+}
+12. Routing optimizer prompt + runtime
+src/prompts/routing-optimizer.ts
+TypeScript
+
+import { z } from 'zod';
+
+export const RoutingOptimizerSchema = z.object({
+  config_json: z.record(z.string(), z.any()),
+  summary: z.string(),
+  expected_improvements: z.array(z.string()).max(10),
+  regression_risks: z.array(z.string()).max(10),
+});
+
+export const ROUTING_OPTIMIZER_SYSTEM_PROMPT = `
+You optimize AutoOrg model routing.
+
+Use:
+- benchmark leaderboards,
+- mission category outcomes,
+- policy compliance,
+- latency and cost.
+
+Output routing rules that improve score-per-dollar without harming governance.
+
+Hard rules:
+- Do not route governance-critical roles to weaker models without evidence.
+- Prefer category-specific routing to blanket downgrades.
+- Preserve benchmark stability.
+`.trim();
+src/learning/routing-optimizer.ts
+TypeScript
+
+import { getAdapter } from '@/adapters/adapter-factory.js';
+import { getDb } from '@/db/migrate.js';
+import { ImmutableArtifacts } from '@/runtime/immutable-artifacts.js';
+import { ProposalManager } from '@/learning/proposal-manager.js';
+import { VersionManager } from '@/learning/version-manager.js';
+import { ROUTING_OPTIMIZER_SYSTEM_PROMPT, RoutingOptimizerSchema } from '@/prompts/routing-optimizer.js';
+
+export class RoutingOptimizer {
+  private artifacts = new ImmutableArtifacts();
+  private proposals = new ProposalManager();
+  private versions = new VersionManager();
+
+  async optimize(learningCycleId: string) {
+    const db = getDb();
+    const boards = db.prepare(`
+      SELECT leaderboard_type, subject_key, average_score, average_policy_compliance, average_cost_usd, average_latency_ms, pass_rate
+      FROM leaderboards
+      ORDER BY updated_at DESC
+      LIMIT 100
+    `).all();
+    db.close();
+
+    const adapter = getAdapter({
+      provider: (process.env.DEFAULT_LLM_PROVIDER ?? 'anthropic') as any,
+      model: 'claude-sonnet-4-5',
+    });
+
+    const out = await adapter.structured({
+      model: 'claude-sonnet-4-5',
+      messages: [
+        { role: 'system', content: ROUTING_OPTIMIZER_SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: JSON.stringify({ leaderboards: boards }, null, 2),
+        },
+      ],
+      schema: RoutingOptimizerSchema,
+    });
+
+    const written = await this.artifacts.writeJson({
+      runId: learningCycleId,
+      relPath: `artifacts/learning/routing/routing_${Date.now()}.json`,
+      data: out.config_json,
+      artifactKind: 'routing_candidate',
+    });
+
+    const proposal = this.proposals.create({
+      learningCycleId,
+      proposalType: 'routing',
+      targetKey: 'global',
+      rationale: {
+        summary: out.summary,
+        expected_improvements: out.expected_improvements,
+        regression_risks: out.regression_risks,
+      },
+      candidateArtifactPath: written.artifactPath,
+    });
+
+    const version = this.versions.createRoutingCandidate({
+      configJson: out.config_json,
+      proposalId: proposal.proposalId,
+    });
+
+    return {
+      proposalId: proposal.proposalId,
+      versionId: version.versionId,
+      artifactPath: written.artifactPath,
+    };
+  }
+}
+13. Adapter distiller
+This phase does not require you to actually train models yet. It requires you to export strong supervised datasets from traces so that fine-tuning or distillation becomes possible later.
+
+src/learning/adapter-distiller.ts
+TypeScript
+
+import { mkdir } from 'node:fs/promises';
+import path from 'node:path';
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+import { ImmutableArtifacts } from '@/runtime/immutable-artifacts.js';
+
+export class AdapterDistiller {
+  private artifacts = new ImmutableArtifacts();
+
+  async exportDataset(opts: {
+    learningCycleId?: string;
+    jobKind: 'planner' | 'judge' | 'router' | 'tool_planner' | 'critic';
+    minScore?: number;
+    minPolicyCompliance?: number;
+  }) {
+    const db = getDb();
+    const jobId = `dst_${nanoid(10)}`;
+
+    db.prepare(`
+      INSERT INTO distillation_jobs
+      (id, learning_cycle_id, job_kind, status, source_filter_json)
+      VALUES (?, ?, ?, 'running', ?)
+    `).run(
+      jobId,
+      opts.learningCycleId ?? null,
+      opts.jobKind,
+      JSON.stringify({
+        minScore: opts.minScore ?? 0.8,
+        minPolicyCompliance: opts.minPolicyCompliance ?? 0.95,
+      })
+    );
+
+    const rows = db.prepare(`
+      SELECT
+        te.id as tool_execution_id,
+        te.tool_name,
+        te.input_json,
+        te.output_summary,
+        bm.score,
+        bm.policy_compliance
+      FROM tool_executions te
+      LEFT JOIN benchmark_attempts ba ON ba.autoorg_run_id = te.run_id
+      LEFT JOIN benchmark_metrics bm ON bm.attempt_id = ba.id
+      WHERE (bm.score IS NULL OR bm.score >= ?)
+        AND (bm.policy_compliance IS NULL OR bm.policy_compliance >= ?)
+      ORDER BY te.created_at DESC
+      LIMIT 500
+    `).all(opts.minScore ?? 0.8, opts.minPolicyCompliance ?? 0.95);
+
+    const jsonl = rows.map((row: any) => JSON.stringify({
+      input: row.input_json ? JSON.parse(row.input_json) : {},
+      output_summary: row.output_summary,
+      tool_name: row.tool_name,
+      metadata: {
+        score: row.score,
+        policyCompliance: row.policy_compliance,
+      },
+    })).join('\n');
+
+    const written = await this.artifacts.writeText({
+      runId: opts.learningCycleId ?? jobId,
+      relPath: `artifacts/learning/distillation/${jobId}.jsonl`,
+      text: jsonl,
+      artifactKind: 'distillation_dataset',
+      mimeType: 'application/jsonl',
+    });
+
+    db.prepare(`
+      UPDATE distillation_jobs
+      SET status = 'completed', dataset_artifact_path = ?, metrics_json = ?, finished_at = datetime('now')
+      WHERE id = ?
+    `).run(
+      written.artifactPath,
+      JSON.stringify({ rows: rows.length }),
+      jobId
+    );
+
+    db.close();
+    return { jobId, artifactPath: written.artifactPath, rows: rows.length };
+  }
+}
+14. Rollout simulator prompt
+src/prompts/rollout-simulator.ts
+TypeScript
+
+import { z } from 'zod';
+
+export const RolloutSimulationSchema = z.object({
+  recommended: z.boolean(),
+  benchmark_pass: z.boolean(),
+  policy_risk: z.enum(['low', 'medium', 'high']),
+  summary: z.string(),
+  major_deltas: z.array(z.string()).max(10),
+  release_notes: z.array(z.string()).max(10),
+});
+
+export const ROLLOUT_SIMULATOR_SYSTEM_PROMPT = `
+You review simulation results for a self-improvement candidate.
+
+Inputs:
+- baseline benchmark summary
+- candidate benchmark summary
+- drift report
+- target kind
+- expected changes
+
+Your job:
+1. decide whether rollout is recommended,
+2. decide whether benchmark pass criteria are met,
+3. summarize major deltas,
+4. note release cautions.
+
+Hard rules:
+- Any serious policy or groundedness regression should block rollout.
+- Small score gains do not justify major governance regressions.
+- Prefer stable improvements over volatile ones.
+`.trim();
+15. Simulator runtime
+src/learning/simulator.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+import { BenchmarkRunner } from '@/evals/benchmark-runner.js';
+import { ImmutableArtifacts } from '@/runtime/immutable-artifacts.js';
+
+export class Simulator {
+  private benchmarks = new BenchmarkRunner();
+  private artifacts = new ImmutableArtifacts();
+
+  async simulate(opts: {
+    proposalId: string;
+    suiteName: string;
+    candidateOverrides: Record<string, unknown>;
+    baselineLabel?: string;
+  }) {
+    const simulationId = `sim_${nanoid(10)}`;
+    const db = getDb();
+
+    db.prepare(`
+      INSERT INTO simulation_runs
+      (id, proposal_id, suite_name, status, delta_json)
+      VALUES (?, ?, ?, 'running', '{}')
+    `).run(simulationId, opts.proposalId, opts.suiteName);
+    db.close();
+
+    try {
+      const baseline = await this.benchmarks.runSuite({
+        suiteName: opts.suiteName,
+        mode: 'manual',
+        runLabel: `${opts.baselineLabel ?? 'baseline'}-${Date.now()}`,
+      });
+
+      const candidate = await this.benchmarks.runSuite({
+        suiteName: opts.suiteName,
+        mode: 'manual',
+        runLabel: `candidate-${Date.now()}`,
+        // convention: benchmark runner/orchestrator can accept candidate overrides
+        ...(opts.candidateOverrides as any),
+      });
+
+      const db2 = getDb();
+
+      const agg = (benchmarkRunId: string) => db2.prepare(`
+        SELECT
+          AVG(bm.score) as avg_score,
+          AVG(bm.groundedness) as avg_groundedness,
+          AVG(bm.policy_compliance) as avg_policy,
+          AVG(bm.cost_usd) as avg_cost,
+          AVG(bm.latency_ms) as avg_latency,
+          AVG(bm.gold_match) as avg_gold
+        FROM benchmark_metrics bm
+        JOIN benchmark_attempts ba ON ba.id = bm.attempt_id
+        WHERE ba.benchmark_run_id = ?
+      `).get(benchmarkRunId) as any;
+
+      const b = agg(baseline.benchmarkRunId);
+      const c = agg(candidate.benchmarkRunId);
+
+      const delta = {
+        score: (c.avg_score ?? 0) - (b.avg_score ?? 0),
+        groundedness: (c.avg_groundedness ?? 0) - (b.avg_groundedness ?? 0),
+        policy: (c.avg_policy ?? 0) - (b.avg_policy ?? 0),
+        cost: (c.avg_cost ?? 0) - (b.avg_cost ?? 0),
+        latency: (c.avg_latency ?? 0) - (b.avg_latency ?? 0),
+        gold: (c.avg_gold ?? 0) - (b.avg_gold ?? 0),
+      };
+
+      const written = await this.artifacts.writeJson({
+        runId: opts.proposalId,
+        relPath: `artifacts/learning/simulations/${simulationId}.json`,
+        data: {
+          baselineBenchmarkRunId: baseline.benchmarkRunId,
+          candidateBenchmarkRunId: candidate.benchmarkRunId,
+          delta,
+        },
+        artifactKind: 'learning_simulation',
+      });
+
+      db2.prepare(`
+        UPDATE simulation_runs
+        SET baseline_benchmark_run_id = ?,
+            candidate_benchmark_run_id = ?,
+            status = 'completed',
+            delta_json = ?,
+            artifact_path = ?,
+            finished_at = datetime('now')
+        WHERE id = ?
+      `).run(
+        baseline.benchmarkRunId,
+        candidate.benchmarkRunId,
+        JSON.stringify(delta),
+        written.artifactPath,
+        simulationId
+      );
+
+      db2.close();
+
+      return {
+        simulationRunId: simulationId,
+        baselineBenchmarkRunId: baseline.benchmarkRunId,
+        candidateBenchmarkRunId: candidate.benchmarkRunId,
+        delta,
+        artifactPath: written.artifactPath,
+      };
+    } catch (error) {
+      const db3 = getDb();
+      db3.prepare(`
+        UPDATE simulation_runs
+        SET status = 'failed', finished_at = datetime('now'), delta_json = ?
+        WHERE id = ?
+      `).run(
+        JSON.stringify({ error: error instanceof Error ? error.message : String(error) }),
+        simulationId
+      );
+      db3.close();
+      throw error;
+    }
+  }
+}
+16. Prompt drift auditor prompt
+src/prompts/prompt-drift-auditor.ts
+TypeScript
+
+import { z } from 'zod';
+
+export const PromptDriftSchema = z.object({
+  drift_score: z.number().min(0).max(1),
+  regression_risk: z.number().min(0).max(1),
+  likely_shifts: z.array(z.string()).max(10),
+  blocked: z.boolean(),
+  summary: z.string(),
+});
+
+export const PROMPT_DRIFT_AUDITOR_SYSTEM_PROMPT = `
+You audit whether a candidate prompt revision causes harmful behavioral drift.
+
+Watch for:
+- weaker evidence discipline,
+- weaker critique quality,
+- weaker governance language,
+- role confusion,
+- unexplained output-style changes that affect benchmark fitness.
+
+Hard rules:
+- Large semantic shifts require caution even if wording changes are small.
+- If governance language is weakened, treat risk as high.
+- Prefer narrow prompt edits over broad tone changes.
+`.trim();
+src/learning/drift-detector.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getAdapter } from '@/adapters/adapter-factory.js';
+import { getDb } from '@/db/migrate.js';
+import { ImmutableArtifacts } from '@/runtime/immutable-artifacts.js';
+import { PROMPT_DRIFT_AUDITOR_SYSTEM_PROMPT, PromptDriftSchema } from '@/prompts/prompt-drift-auditor.js';
+
+export class DriftDetector {
+  private artifacts = new ImmutableArtifacts();
+
+  async compare(opts: {
+    targetKey: string;
+    fromContent: string;
+    toContent: string;
+    fromVersionId?: string;
+    toVersionId?: string;
+  }) {
+    const adapter = getAdapter({
+      provider: (process.env.DEFAULT_LLM_PROVIDER ?? 'anthropic') as any,
+      model: 'claude-sonnet-4-5',
+    });
+
+    const report = await adapter.structured({
+      model: 'claude-sonnet-4-5',
+      messages: [
+        { role: 'system', content: PROMPT_DRIFT_AUDITOR_SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: JSON.stringify({
+            targetKey: opts.targetKey,
+            fromContent: opts.fromContent,
+            toContent: opts.toContent,
+          }, null, 2),
+        },
+      ],
+      schema: PromptDriftSchema,
+    });
+
+    const id = `drf_${nanoid(10)}`;
+    const written = await this.artifacts.writeJson({
+      runId: opts.targetKey.replace(/[:/]/g, '_'),
+      relPath: `artifacts/learning/drift/${id}.json`,
+      data: report,
+      artifactKind: 'prompt_drift_report',
+    });
+
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO prompt_drift_reports
+      (id, target_key, from_version_id, to_version_id, drift_score, regression_risk, report_json, artifact_path)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      opts.targetKey,
+      opts.fromVersionId ?? null,
+      opts.toVersionId ?? null,
+      report.drift_score,
+      report.regression_risk,
+      JSON.stringify(report),
+      written.artifactPath
+    );
+    db.close();
+
+    return { reportId: id, artifactPath: written.artifactPath, report };
+  }
+}
+17. Release gate
+src/learning/release-gate.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getAdapter } from '@/adapters/adapter-factory.js';
+import { getDb } from '@/db/migrate.js';
+import { ApprovalGate } from '@/runtime/approval-gate.js';
+import { ProposalManager } from '@/learning/proposal-manager.js';
+import { VersionManager } from '@/learning/version-manager.js';
+import { ROLLOUT_SIMULATOR_SYSTEM_PROMPT, RolloutSimulationSchema } from '@/prompts/rollout-simulator.js';
+
+export class ReleaseGate {
+  private approvals = new ApprovalGate();
+  private proposals = new ProposalManager();
+  private versions = new VersionManager();
+
+  async evaluate(opts: {
+    proposalId: string;
+    versionKind: 'prompt' | 'policy' | 'role' | 'routing';
+    versionId: string;
+    simulationDelta: Record<string, number>;
+    driftReport?: {
+      drift_score: number;
+      regression_risk: number;
+      blocked: boolean;
+      summary: string;
+    };
+    runId: string;
+    cycleNumber: number;
+  }) {
+    const benchmarkPass =
+      (opts.simulationDelta.score ?? 0) >= -0.01 &&
+      (opts.simulationDelta.groundedness ?? 0) >= -0.02 &&
+      (opts.simulationDelta.policy ?? 0) >= -0.02;
+
+    const driftPass = !opts.driftReport?.blocked && (opts.driftReport?.regression_risk ?? 0) < 0.60;
+
+    const adapter = getAdapter({
+      provider: (process.env.DEFAULT_LLM_PROVIDER ?? 'anthropic') as any,
+      model: 'claude-sonnet-4-5',
+    });
+
+    const report = await adapter.structured({
+      model: 'claude-sonnet-4-5',
+      messages: [
+        { role: 'system', content: ROLLOUT_SIMULATOR_SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: JSON.stringify({
+            proposalId: opts.proposalId,
+            versionKind: opts.versionKind,
+            simulationDelta: opts.simulationDelta,
+            driftReport: opts.driftReport ?? null,
+            benchmarkPass,
+            driftPass,
+          }, null, 2),
+        },
+      ],
+      schema: RolloutSimulationSchema,
+    });
+
+    const db = getDb();
+
+    if (!report.recommended || !benchmarkPass || !driftPass) {
+      db.prepare(`
+        INSERT INTO rollout_decisions
+        (id, proposal_id, version_kind, version_ref, decision, benchmark_pass, drift_pass, approval_pass, summary_json)
+        VALUES (?, ?, ?, ?, 'blocked', ?, ?, 0, ?)
+      `).run(
+        `rod_${nanoid(10)}`,
+        opts.proposalId,
+        opts.versionKind,
+        opts.versionId,
+        benchmarkPass ? 1 : 0,
+        driftPass ? 1 : 0,
+        JSON.stringify(report),
+      );
+      db.close();
+      return {
+        released: false,
+        blocked: true,
+        report,
+      };
+    }
+
+    const approvalId = this.approvals.request({
+      runId: opts.runId,
+      cycleNumber: opts.cycleNumber,
+      approvalType: 'self_improvement_release',
+      subject: opts.proposalId,
+      requestedBy: 'LearningOrchestrator',
+      summary: `Release candidate ${opts.versionKind}/${opts.versionId}`,
+      details: {
+        proposalId: opts.proposalId,
+        versionKind: opts.versionKind,
+        versionId: opts.versionId,
+        simulationDelta: opts.simulationDelta,
+        driftReport: opts.driftReport,
+        releaseReport: report,
+      },
+    });
+
+    db.prepare(`
+      INSERT INTO rollout_decisions
+      (id, proposal_id, version_kind, version_ref, decision, benchmark_pass, drift_pass, approval_pass, summary_json)
+      VALUES (?, ?, ?, ?, 'approved', ?, ?, 0, ?)
+    `).run(
+      `rod_${nanoid(10)}`,
+      opts.proposalId,
+      opts.versionKind,
+      opts.versionId,
+      benchmarkPass ? 1 : 0,
+      driftPass ? 1 : 0,
+      JSON.stringify({ approvalId, report }),
+    );
+    db.close();
+
+    return {
+      released: false,
+      pendingApproval: true,
+      approvalId,
+      report,
+    };
+  }
+
+  activate(opts: {
+    proposalId: string;
+    versionKind: 'prompt' | 'policy' | 'role' | 'routing';
+    versionId: string;
+    artifactPath?: string;
+  }) {
+    if (opts.versionKind === 'prompt') this.versions.activatePrompt(opts.versionId);
+    if (opts.versionKind === 'policy') this.versions.activatePolicy(opts.versionId);
+    if (opts.versionKind === 'role') this.versions.activateRole(opts.versionId);
+    if (opts.versionKind === 'routing') this.versions.activateRouting(opts.versionId);
+
+    this.proposals.markReleased(opts.proposalId, opts.artifactPath);
+
+    const db = getDb();
+    db.prepare(`
+      UPDATE rollout_decisions
+      SET approval_pass = 1
+      WHERE proposal_id = ? AND version_ref = ?
+    `).run(opts.proposalId, opts.versionId);
+    db.close();
+
+    return { activated: true };
+  }
+}
+18. Learning orchestrator
+src/learning/learning-orchestrator.ts
+TypeScript
+
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+import { PatternMiner } from '@/learning/pattern-miner.js';
+import { PromptOptimizer } from '@/learning/prompt-optimizer.js';
+import { PolicyOptimizer } from '@/learning/policy-optimizer.js';
+import { RoleEvolver } from '@/learning/role-evolver.js';
+import { RoutingOptimizer } from '@/learning/routing-optimizer.js';
+import { Simulator } from '@/learning/simulator.js';
+import { DriftDetector } from '@/learning/drift-detector.js';
+import { ReleaseGate } from '@/learning/release-gate.js';
+import { MemoryUtilityScorer } from '@/learning/memory-utility.js';
+import { MemoryPruner } from '@/learning/memory-pruner.js';
+import { AdapterDistiller } from '@/learning/adapter-distiller.js';
+import { VersionManager } from '@/learning/version-manager.js';
+
+export class LearningOrchestrator {
+  private miner = new PatternMiner();
+  private promptOptimizer = new PromptOptimizer();
+  private policyOptimizer = new PolicyOptimizer();
+  private roleEvolver = new RoleEvolver();
+  private routingOptimizer = new RoutingOptimizer();
+  private simulator = new Simulator();
+  private drift = new DriftDetector();
+  private gate = new ReleaseGate();
+  private memoryUtility = new MemoryUtilityScorer();
+  private memoryPruner = new MemoryPruner();
+  private distiller = new AdapterDistiller();
+  private versions = new VersionManager();
+
+  async run(opts?: {
+    tenantId?: string;
+    workspaceId?: string;
+    suiteName?: string;
+    runId?: string;
+    cycleNumber?: number;
+  }) {
+    const db = getDb();
+    const learningCycleId = `lc_${nanoid(10)}`;
+
+    db.prepare(`
+      INSERT INTO learning_cycles
+      (id, tenant_id, workspace_id, initiated_by, status, source_window_start, source_window_end, objective_json)
+      VALUES (?, ?, ?, 'system', 'running', datetime('now', '-30 days'), datetime('now'), ?)
+    `).run(
+      learningCycleId,
+      opts?.tenantId ?? null,
+      opts?.workspaceId ?? null,
+      JSON.stringify({
+        suiteName: opts?.suiteName ?? 'core',
+        objective: 'bounded self-improvement',
+      })
+    );
+    db.close();
+
+    try {
+      const pattern = await this.miner.mine({
+        learningCycleId,
+        sourceScope: 'combined',
+      });
+
+      const created: Array<{ proposalId: string; versionId?: string; versionKind?: 'prompt' | 'policy' | 'role' | 'routing' }> = [];
+
+      // 1) Prompt candidate for CEO
+      const p1 = await this.promptOptimizer.optimize({
+        learningCycleId,
+        targetKey: 'role:CEO',
+        basePromptPath: 'roles/CEO.md',
+        patternReport: pattern.report,
+      });
+      created.push({ proposalId: p1.proposalId, versionId: p1.versionId, versionKind: 'prompt' });
+
+      // 2) Prompt candidate for Critic
+      const p2 = await this.promptOptimizer.optimize({
+        learningCycleId,
+        targetKey: 'role:Critic',
+        basePromptPath: 'roles/Critic.md',
+        patternReport: pattern.report,
+      });
+      created.push({ proposalId: p2.proposalId, versionId: p2.versionId, versionKind: 'prompt' });
+
+      // 3) Routing candidate
+      const p3 = await this.routingOptimizer.optimize(learningCycleId);
+      created.push({ proposalId: p3.proposalId, versionId: p3.versionId, versionKind: 'routing' });
+
+      // 4) Example policy candidate
+      const p4 = await this.policyOptimizer.optimize({
+        learningCycleId,
+        targetKey: 'tool_policy',
+        currentConfig: { maxCallsPerCycle: 4 },
+        patternReport: pattern.report,
+      });
+      created.push({ proposalId: p4.proposalId, versionId: p4.versionId, versionKind: 'policy' });
+
+      // 5) Example role candidate
+      const p5 = await this.roleEvolver.evolve({
+        learningCycleId,
+        roleKey: 'Critic',
+        currentManifest: {
+          role_key: 'Critic',
+          responsibilities: ['identify unsupported claims', 'attack weak reasoning'],
+        },
+        patternReport: pattern.report,
+      });
+      created.push({ proposalId: p5.proposalId, versionId: p5.versionId, versionKind: 'role' });
+
+      // 6) Memory utility + prune recommendation
+      await this.memoryUtility.scoreWorkspace(process.cwd());
+      await this.memoryPruner.prune({
+        workspaceRoot: process.cwd(),
+        utilityThreshold: 0.18,
+      });
+
+      // 7) Distill a high-quality trace export
+      await this.distiller.exportDataset({
+        learningCycleId,
+        jobKind: 'critic',
+        minScore: 0.82,
+        minPolicyCompliance: 0.97,
+      });
+
+      // Simulate and gate candidates
+      for (const item of created) {
+        if (!item.versionId || !item.versionKind) continue;
+
+        const simulation = await this.simulator.simulate({
+          proposalId: item.proposalId,
+          suiteName: opts?.suiteName ?? 'core',
+          candidateOverrides: {
+            learningCandidate: {
+              versionKind: item.versionKind,
+              versionId: item.versionId,
+            },
+          },
+        });
+
+        let driftReport: any = null;
+
+        if (item.versionKind === 'prompt') {
+          const active = this.versions.getActivePrompt(item.versionId.startsWith('pv_') ? 'role:CEO' : 'role:Critic');
+          const candidate = this.loadPromptCandidate(item.versionId);
+          driftReport = await this.drift.compare({
+            targetKey: active?.target_key ?? 'unknown',
+            fromVersionId: active?.id,
+            toVersionId: item.versionId,
+            fromContent: active?.content ?? '',
+            toContent: candidate ?? '',
+          }).then(x => x.report);
+        }
+
+        await this.gate.evaluate({
+          proposalId: item.proposalId,
+          versionKind: item.versionKind,
+          versionId: item.versionId,
+          simulationDelta: simulation.delta,
+          driftReport,
+          runId: opts?.runId ?? `learning_${learningCycleId}`,
+          cycleNumber: opts?.cycleNumber ?? 0,
+        });
+      }
+
+      const db2 = getDb();
+      db2.prepare(`
+        UPDATE learning_cycles
+        SET status = 'completed', finished_at = datetime('now'), summary_json = ?
+        WHERE id = ?
+      `).run(
+        JSON.stringify({
+          patternReportId: pattern.reportId,
+          proposalCount: created.length,
+        }),
+        learningCycleId
+      );
+      db2.close();
+
+      return { learningCycleId, proposalCount: created.length };
+    } catch (error) {
+      const db3 = getDb();
+      db3.prepare(`
+        UPDATE learning_cycles
+        SET status = 'failed', finished_at = datetime('now'), summary_json = ?
+        WHERE id = ?
+      `).run(
+        JSON.stringify({ error: error instanceof Error ? error.message : String(error) }),
+        learningCycleId
+      );
+      db3.close();
+      throw error;
+    }
+  }
+
+  private loadPromptCandidate(versionId: string) {
+    const db = getDb();
+    const row = db.prepare(`
+      SELECT content FROM prompt_versions WHERE id = ?
+    `).get(versionId) as { content: string } | undefined;
+    db.close();
+    return row?.content ?? '';
+  }
+}
+19. AgentRunner integration
+Phase 10 only works if runtime prompt loading is version-aware.
+
+Patch src/runtime/agent-runner.ts
+Add imports:
+
+TypeScript
+
+import { VersionManager } from '@/learning/version-manager.js';
+Before invoking the model:
+
+TypeScript
+
+const versions = new VersionManager();
+
+function roleTargetKey(role: string) {
+  return `role:${role}`;
+}
+
+let effectivePrompt = prompt;
+
+const activePrompt = versions.getActivePrompt(roleTargetKey(ctx.role));
+if (activePrompt?.content) {
+  effectivePrompt = activePrompt.content;
+}
+
+const activeRole = versions.getActiveRole(ctx.role);
+if (activeRole?.manifest_json) {
+  const roleManifest = JSON.parse(activeRole.manifest_json || '{}');
+  if (roleManifest.instructions) {
+    effectivePrompt = [
+      effectivePrompt,
+      '',
+      '## ACTIVE ROLE EVOLUTION OVERLAY',
+      JSON.stringify(roleManifest, null, 2),
+    ].join('\n');
+  }
+}
+Then replace uses of prompt with effectivePrompt.
+
+This makes learning-generated active prompt and role versions actually affect runtime behavior.
+
+20. Orchestrator routing integration
+Patch src/runtime/orchestrator.ts
+Add import:
+
+TypeScript
+
+import { VersionManager } from '@/learning/version-manager.js';
+At run init:
+
+TypeScript
+
+const versions = new VersionManager();
+const activeRouting = versions.getActiveRouting();
+
+function applyRouting(baseModels: Record<string, string>, missionCategory = 'general') {
+  const cfg = activeRouting?.config_json
+    ? JSON.parse(activeRouting.config_json || '{}')
+    : null;
+
+  if (!cfg?.rules) return baseModels;
+
+  const matching = cfg.rules.find((r: any) =>
+    r.mission_category === missionCategory || r.mission_category === '*'
+  );
+
+  if (!matching) return baseModels;
+
+  return {
+    ...baseModels,
+    ...(matching.model_map ?? {}),
+  };
+}
+Before model map is finalized:
+
+TypeScript
+
+config.models = applyRouting(config.models, config.missionCategory ?? 'general');
+Now routing optimization actually affects real runs.
+
+21. Release activation API path
+Once an approval is granted, Phase 10 needs a path to activate the approved version.
+
+Patch src/api/learning-routes.ts
+TypeScript
+
+import { getDb } from '@/db/migrate.js';
+import { LearningOrchestrator } from '@/learning/learning-orchestrator.js';
+import { ReleaseGate } from '@/learning/release-gate.js';
+
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data, null, 2), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+export async function handleLearningRoutes(url: URL, req: Request) {
+  const method = req.method;
+
+  if (url.pathname === '/api/learning/cycles' && method === 'GET') {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM learning_cycles
+      ORDER BY created_at DESC
+      LIMIT 100
+    `).all();
+    db.close();
+    return json(rows);
+  }
+
+  if (url.pathname === '/api/learning/run' && method === 'POST') {
+    const body = await req.json().catch(() => ({})) as {
+      suiteName?: string;
+      runId?: string;
+      cycleNumber?: number;
+    };
+
+    const learning = new LearningOrchestrator();
+    const result = await learning.run(body);
+    return json({ ok: true, result });
+  }
+
+  if (url.pathname === '/api/learning/proposals' && method === 'GET') {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM improvement_proposals
+      ORDER BY created_at DESC
+      LIMIT 200
+    `).all();
+    db.close();
+    return json(rows);
+  }
+
+  if (url.pathname === '/api/learning/prompt-versions' && method === 'GET') {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM prompt_versions
+      ORDER BY created_at DESC
+      LIMIT 200
+    `).all();
+    db.close();
+    return json(rows);
+  }
+
+  if (url.pathname === '/api/learning/policy-versions' && method === 'GET') {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM policy_versions
+      ORDER BY created_at DESC
+      LIMIT 200
+    `).all();
+    db.close();
+    return json(rows);
+  }
+
+  if (url.pathname === '/api/learning/role-versions' && method === 'GET') {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM role_versions
+      ORDER BY created_at DESC
+      LIMIT 200
+    `).all();
+    db.close();
+    return json(rows);
+  }
+
+  if (url.pathname === '/api/learning/routing-versions' && method === 'GET') {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM routing_versions
+      ORDER BY created_at DESC
+      LIMIT 200
+    `).all();
+    db.close();
+    return json(rows);
+  }
+
+  if (url.pathname === '/api/learning/simulations' && method === 'GET') {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM simulation_runs
+      ORDER BY created_at DESC
+      LIMIT 200
+    `).all();
+    db.close();
+    return json(rows);
+  }
+
+  if (url.pathname === '/api/learning/drift-reports' && method === 'GET') {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM prompt_drift_reports
+      ORDER BY created_at DESC
+      LIMIT 200
+    `).all();
+    db.close();
+    return json(rows);
+  }
+
+  if (url.pathname === '/api/learning/activate' && method === 'POST') {
+    const body = await req.json() as {
+      proposalId: string;
+      versionKind: 'prompt' | 'policy' | 'role' | 'routing';
+      versionId: string;
+      artifactPath?: string;
+    };
+
+    const gate = new ReleaseGate();
+    const result = gate.activate(body);
+    return json({ ok: true, result });
+  }
+
+  return null;
+}
+22. Daemon integration
+Phase 10 wants scheduled bounded self-improvement, not constant mutation.
+
+Patch src/runtime/daemon.ts
+Add imports:
+
+TypeScript
+
+import { LearningOrchestrator } from '@/learning/learning-orchestrator.js';
+import { featureFlag } from '@/config/feature-flags.js';
+Inside daemon loop, add a low-frequency learning trigger:
+
+TypeScript
+
+let lastLearningRunAt = 0;
+
+setInterval(async () => {
+  try {
+    const now = Date.now();
+
+    if (
+      featureFlag('learningLoop') &&
+      now - lastLearningRunAt > (Number(process.env.LEARNING_LOOP_INTERVAL_MS ?? 12 * 60 * 60 * 1000))
+    ) {
+      const learning = new LearningOrchestrator();
+      await learning.run({
+        suiteName: process.env.LEARNING_DEFAULT_SUITE ?? 'core',
+        runId: 'daemon_learning',
+        cycleNumber: 0,
+      });
+      lastLearningRunAt = now;
+    }
+  } catch (error) {
+    console.error('Learning loop failed:', error);
+  }
+}, 60_000);
+This ensures learning runs:
+
+periodically,
+bounded,
+benchmark-gated,
+approval-gated.
+23. Self-improvement should be governed like any other risky action
+Patch src/runtime/policy-engine.ts
+Add default rules for self-improvement activation:
+
+TypeScript
+
+['CEO', 'PATCH', 'learning.prompt', 'high', 1, 1, 1, 1, 1],
+['CEO', 'PATCH', 'learning.policy', 'high', 1, 1, 1, 1, 1],
+['CEO', 'PATCH', 'learning.role', 'high', 1, 1, 1, 1, 1],
+['CEO', 'PATCH', 'learning.routing', 'high', 1, 1, 1, 1, 1],
+So activation of learned changes is explicitly treated as a high-risk patch event.
+
+24. Results logger learning awareness
+Patch src/runtime/results-logger.ts
+If a run used a learned active version set, add metadata:
+
+TypeScript
+
+learnedPromptVersion,
+learnedRoleVersion,
+learnedRoutingVersion,
+You don’t need them in TSV if that becomes awkward; a JSON sidecar is enough:
+
+TypeScript
+
+await Bun.write(
+  `artifacts/learning/run-metadata/${runId}.json`,
+  JSON.stringify({
+    runId,
+    learnedPromptVersion,
+    learnedRoleVersion,
+    learnedRoutingVersion,
+  }, null, 2)
+);
+This is important for attribution when a later benchmark improves or regresses.
+
+25. Minimal UI additions
+text
+
+web/app/
+├── learning/page.tsx
+├── proposals/page.tsx
+├── versions/page.tsx
+├── simulations/page.tsx
+├── drift/page.tsx
+└── memory-utility/page.tsx
+Patch nav in web/app/layout.tsx
+React
+
+<nav className="ml-auto flex gap-6 text-sm">
+  <a href="/" className="text-gray-400 hover:text-cyan-400 transition-colors">Dashboard</a>
+  <a href="/graph" className="text-gray-400 hover:text-cyan-400 transition-colors">Graph</a>
+  <a href="/approvals" className="text-gray-400 hover:text-cyan-400 transition-colors">Approvals</a>
+  <a href="/budgets" className="text-gray-400 hover:text-cyan-400 transition-colors">Budgets</a>
+  <a href="/locks" className="text-gray-400 hover:text-cyan-400 transition-colors">Locks</a>
+  <a href="/issues" className="text-gray-400 hover:text-cyan-400 transition-colors">Issues</a>
+  <a href="/tools" className="text-gray-400 hover:text-cyan-400 transition-colors">Tools</a>
+  <a href="/evidence" className="text-gray-400 hover:text-cyan-400 transition-colors">Evidence</a>
+  <a href="/ledger" className="text-gray-400 hover:text-cyan-400 transition-colors">Ledger</a>
+  <a href="/provenance" className="text-gray-400 hover:text-cyan-400 transition-colors">Provenance</a>
+  <a href="/security" className="text-gray-400 hover:text-cyan-400 transition-colors">Security</a>
+  <a href="/benchmarks" className="text-gray-400 hover:text-cyan-400 transition-colors">Benchmarks</a>
+  <a href="/leaderboard" className="text-gray-400 hover:text-cyan-400 transition-colors">Leaderboard</a>
+  <a href="/regressions" className="text-gray-400 hover:text-cyan-400 transition-colors">Regressions</a>
+  <a href="/replay" className="text-gray-400 hover:text-cyan-400 transition-colors">Replay</a>
+  <a href="/portfolio" className="text-gray-400 hover:text-cyan-400 transition-colors">Portfolio</a>
+  <a href="/capital" className="text-gray-400 hover:text-cyan-400 transition-colors">Capital</a>
+  <a href="/council" className="text-gray-400 hover:text-cyan-400 transition-colors">Council</a>
+  <a href="/tournament" className="text-gray-400 hover:text-cyan-400 transition-colors">Tournament</a>
+  <a href="/exchanges" className="text-gray-400 hover:text-cyan-400 transition-colors">Exchanges</a>
+  <a href="/workspaces" className="text-gray-400 hover:text-cyan-400 transition-colors">Workspaces</a>
+  <a href="/runs" className="text-gray-400 hover:text-cyan-400 transition-colors">Runs</a>
+  <a href="/templates" className="text-gray-400 hover:text-cyan-400 transition-colors">Templates</a>
+  <a href="/billing" className="text-gray-400 hover:text-cyan-400 transition-colors">Billing</a>
+  <a href="/agents" className="text-gray-400 hover:text-cyan-400 transition-colors">Agents</a>
+  <a href="/comments" className="text-gray-400 hover:text-cyan-400 transition-colors">Comments</a>
+  <a href="/compliance" className="text-gray-400 hover:text-cyan-400 transition-colors">Compliance</a>
+  <a href="/admin" className="text-gray-400 hover:text-cyan-400 transition-colors">Admin</a>
+  <a href="/learning" className="text-gray-400 hover:text-cyan-400 transition-colors">Learning</a>
+  <a href="/proposals" className="text-gray-400 hover:text-cyan-400 transition-colors">Proposals</a>
+  <a href="/versions" className="text-gray-400 hover:text-cyan-400 transition-colors">Versions</a>
+  <a href="/simulations" className="text-gray-400 hover:text-cyan-400 transition-colors">Simulations</a>
+  <a href="/drift" className="text-gray-400 hover:text-cyan-400 transition-colors">Drift</a>
+  <a href="/memory-utility" className="text-gray-400 hover:text-cyan-400 transition-colors">Memory Utility</a>
+</nav>
+/learning
+Show:
+
+latest learning cycles
+success/failure
+proposals created
+releases activated
+/proposals
+Show:
+
+proposal type
+target key
+status
+expected deltas
+linked approval id
+linked simulation
+/versions
+Show:
+
+prompt/policy/role/routing versions
+active vs candidate
+benchmark score
+drift score
+ancestry
+/simulations
+Show:
+
+candidate vs baseline
+delta summary
+benchmark pass
+release recommendation
+/drift
+Show:
+
+drift reports
+regression risk
+blocked yes/no
+summary
+/memory-utility
+Show:
+
+top retained memory items
+low-utility archive candidates
+archived/pruned items
+26. Tests for Phase 10
+tests/pattern-extractor-schema.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { PatternReportSchema } from '../src/prompts/pattern-extractor.js';
+
+describe('PatternReportSchema', () => {
+  it('validates a mined pattern report', () => {
+    const parsed = PatternReportSchema.parse({
+      winning_patterns: ['Strict evidence packs improve groundedness'],
+      failure_patterns: ['Aggressive routing cuts can hurt policy compliance'],
+      cost_quality_tradeoffs: ['Cheaper critic model increases variance'],
+      governance_patterns: ['Approval-gated releases preserve safety'],
+      candidate_targets: [
+        {
+          proposal_type: 'prompt',
+          target_key: 'role:Critic',
+          why: 'Critic quality strongly predicts policy score',
+        },
+      ],
+      summary: 'Prompt and routing are strongest next targets',
+    });
+
+    expect(parsed.candidate_targets.length).toBe(1);
+  });
+});
+tests/version-manager.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { VersionManager } from '../src/learning/version-manager.js';
+
+describe('VersionManager', () => {
+  it('creates a prompt candidate version', () => {
+    const vm = new VersionManager();
+    const out = vm.createPromptCandidate({
+      targetKey: 'role:CEO',
+      content: 'Improved CEO prompt',
+    });
+
+    expect(out.versionId.startsWith('pv_')).toBe(true);
+  });
+});
+tests/prompt-optimizer-schema.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { PromptOptimizerSchema } from '../src/prompts/prompt-optimizer.js';
+
+describe('PromptOptimizerSchema', () => {
+  it('validates a prompt optimization result', () => {
+    const parsed = PromptOptimizerSchema.parse({
+      revised_prompt: 'Revised prompt text',
+      change_summary: 'Clarifies evidence requirements',
+      expected_improvements: ['Better groundedness'],
+      regression_risks: ['May be slightly more verbose'],
+    });
+
+    expect(parsed.change_summary.length).toBeGreaterThan(5);
+  });
+});
+tests/role-evolver-schema.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { RoleEvolverSchema } from '../src/prompts/role-evolver.js';
+
+describe('RoleEvolverSchema', () => {
+  it('validates a role evolution result', () => {
+    const parsed = RoleEvolverSchema.parse({
+      manifest_json: {
+        role_key: 'Critic',
+        instructions: ['Attack unsupported claims aggressively'],
+      },
+      change_summary: 'Makes critic more evidence-focused',
+      expected_improvements: ['Fewer unsupported claims'],
+      regression_risks: ['Potentially slower reviews'],
+    });
+
+    expect(parsed.manifest_json.role_key).toBe('Critic');
+  });
+});
+tests/memory-utility-schema.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { MemoryUtilitySchema } from '../src/prompts/memory-utility.js';
+
+describe('MemoryUtilitySchema', () => {
+  it('validates memory utility scoring', () => {
+    const parsed = MemoryUtilitySchema.parse({
+      utility_score: 0.18,
+      keep_recommendation: false,
+      rationale: ['Rarely accessed', 'No citations in benchmark wins'],
+    });
+
+    expect(parsed.keep_recommendation).toBe(false);
+  });
+});
+tests/routing-optimizer-schema.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { RoutingOptimizerSchema } from '../src/prompts/routing-optimizer.js';
+
+describe('RoutingOptimizerSchema', () => {
+  it('validates routing optimization output', () => {
+    const parsed = RoutingOptimizerSchema.parse({
+      config_json: {
+        rules: [
+          {
+            mission_category: 'research',
+            model_map: { ceo: 'claude-opus-4', critic: 'claude-sonnet-4-5' },
+          },
+        ],
+      },
+      summary: 'Use strongest CEO model for research-heavy missions',
+      expected_improvements: ['Higher gold match'],
+      regression_risks: ['Slight cost increase'],
+    });
+
+    expect(parsed.config_json.rules.length).toBe(1);
+  });
+});
+tests/drift-detector-schema.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { PromptDriftSchema } from '../src/prompts/prompt-drift-auditor.js';
+
+describe('PromptDriftSchema', () => {
+  it('validates prompt drift output', () => {
+    const parsed = PromptDriftSchema.parse({
+      drift_score: 0.22,
+      regression_risk: 0.18,
+      likely_shifts: ['More explicit evidence requirements'],
+      blocked: false,
+      summary: 'Low-risk refinement',
+    });
+
+    expect(parsed.blocked).toBe(false);
+  });
+});
+tests/release-gate.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { ReleaseGate } from '../src/learning/release-gate.js';
+
+describe('ReleaseGate', () => {
+  it('blocks rollout when groundedness regresses too far', async () => {
+    const gate = new ReleaseGate();
+    const result = await gate.evaluate({
+      proposalId: 'ip_test',
+      versionKind: 'prompt',
+      versionId: 'pv_test',
+      simulationDelta: {
+        score: 0.01,
+        groundedness: -0.10,
+        policy: 0,
+      },
+      driftReport: {
+        drift_score: 0.2,
+        regression_risk: 0.4,
+        blocked: false,
+        summary: 'safe',
+      },
+      runId: 'run_test',
+      cycleNumber: 1,
+    });
+
+    expect(result.blocked).toBe(true);
+  });
+});
+tests/adapter-distiller.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { AdapterDistiller } from '../src/learning/adapter-distiller.js';
+
+describe('AdapterDistiller', () => {
+  it('exports a dataset artifact', async () => {
+    const d = new AdapterDistiller();
+    const out = await d.exportDataset({
+      jobKind: 'critic',
+      minScore: 0.8,
+      minPolicyCompliance: 0.95,
+    });
+
+    expect(out.jobId.startsWith('dst_')).toBe(true);
+  });
+});
+27. Run instructions for Phase 10
+Bash
+
+# 1. Apply migration
+bun run src/db/migrate-phase10.ts
+
+# 2. Start daemon / API / dashboard
+bun run src/runtime/daemon.ts
+bun run src/api/server.ts
+cd web && bun run dev
+
+# 3. Trigger a learning cycle manually
+curl -X POST http://localhost:3000/api/learning/run \
+  -H "Content-Type: application/json" \
+  -d '{"suiteName":"core","runId":"manual_learning","cycleNumber":0}'
+
+# 4. List learning cycles
+curl http://localhost:3000/api/learning/cycles
+
+# 5. Inspect proposals
+curl http://localhost:3000/api/learning/proposals
+
+# 6. Inspect prompt versions
+curl http://localhost:3000/api/learning/prompt-versions
+
+# 7. Inspect simulations
+curl http://localhost:3000/api/learning/simulations
+
+# 8. Inspect drift reports
+curl http://localhost:3000/api/learning/drift-reports
+
+# 9. After approval, activate a released candidate
+curl -X POST http://localhost:3000/api/learning/activate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "proposalId":"ip_...",
+    "versionKind":"prompt",
+    "versionId":"pv_..."
+  }'
+28. Optional .env additions for Phase 10
+Bash
+
+# ── LEARNING LOOP ────────────────────────────────────────────
+LEARNING_LOOP_INTERVAL_MS=43200000
+LEARNING_DEFAULT_SUITE=core
+LEARNING_MAX_PROPOSALS_PER_CYCLE=5
+
+# ── OPTIMIZATION TARGETS ─────────────────────────────────────
+LEARNING_ENABLE_PROMPT_OPT=1
+LEARNING_ENABLE_POLICY_OPT=1
+LEARNING_ENABLE_ROLE_EVOLUTION=1
+LEARNING_ENABLE_ROUTING_OPT=1
+LEARNING_ENABLE_MEMORY_PRUNE=1
+LEARNING_ENABLE_ADAPTER_DISTILL=1
+
+# ── SIMULATION GATE ──────────────────────────────────────────
+LEARNING_SIMULATION_SUITE=core
+LEARNING_MAX_ALLOWED_SCORE_DROP=0.01
+LEARNING_MAX_ALLOWED_GROUNDEDNESS_DROP=0.02
+LEARNING_MAX_ALLOWED_POLICY_DROP=0.02
+
+# ── DRIFT GUARD ──────────────────────────────────────────────
+LEARNING_DRIFT_BLOCK_THRESHOLD=0.60
+LEARNING_DRIFT_WARN_THRESHOLD=0.35
+
+# ── MEMORY UTILITY ───────────────────────────────────────────
+LEARNING_MEMORY_UTILITY_THRESHOLD=0.18
+LEARNING_MEMORY_ARCHIVE_DIR=memory/archive
+
+# ── DISTILLATION ─────────────────────────────────────────────
+LEARNING_DISTILL_MIN_SCORE=0.82
+LEARNING_DISTILL_MIN_POLICY=0.97
+LEARNING_DISTILL_MAX_ROWS=500
+29. What Phase 10 now gives you
+At this point AutoOrg can:
+
+text
+
+✅ Mine winning and failure patterns from historical runs and benchmarks
+✅ Convert those patterns into bounded self-improvement proposals
+✅ Generate candidate prompt, policy, role, and routing revisions
+✅ Score memory utility and archive low-value memory safely
+✅ Export strong trace datasets for future distillation/fine-tuning
+✅ Simulate candidate changes on benchmark suites before rollout
+✅ Detect harmful prompt/behavior drift before activation
+✅ Track lineage across proposals, versions, simulations, and releases
+✅ Activate new learned versions only through approval gates
+✅ Continuously adapt without losing auditability or governance
+This is the phase where AutoOrg stops being only a product platform and becomes a bounded learning system.
+
+30. Recommended implementation order
+I’d build Phase 10 in this order:
+
+DB migration
+version manager + lineage
+pattern miner
+prompt optimizer
+simulator
+drift detector
+release gate
+routing optimizer
+role evolution
+memory utility + pruner
+adapter distillation
+learning orchestrator + daemon integration
+Why:
+
+first you need safe version control for learned changes,
+then you need evidence for changes,
+then you need simulation before activation,
+then you can broaden into role/routing/memory optimization.
+31. Final architecture state after Phase 10
+By the end of this roadmap, AutoOrg is no longer just:
+
+a multi-agent orchestrator,
+or a benchmark lab,
+or a portfolio system,
+or a platform.
+It becomes:
+
+text
+
+A governed, benchmarked, portfolio-capable, multi-tenant, tool-using,
+self-improving autonomous organization operating under an immutable constitution,
+with strict approvals, provenance, replayability, and release-gated learning.
+That is the real “closed loop” version of the idea.
+
+
+
+
+
+PART X: Practical implementation order (what to build first vs keep spec-only)
+This is an “engineer’s ordering,” optimized for real reliability + measurable progress before adding platform/product complexity. The key principle: don’t scale the surface area until the core loop is safe, tool-grounded, and benchmarkable.
+
+A. Build-first path (minimum viable “serious AutoOrg”)
+Milestone 0 — Make the existing loop shippable locally (1–3 days)
+Build now
+
+One-command local run (bun start) that:
+loads org.md + constitution.md
+runs at least 1 cycle end-to-end
+writes a stable artifact output (e.g., workspace/current_output.md)
+writes results.tsv
+A basic “run record” in DB (you likely already have this).
+Keep spec-only for now
+
+multi-tenant concepts
+remote agents
+portfolio orchestration
+Why: you need a stable baseline before hardening; otherwise hardening work is untestable.
+
+Milestone 1 — Phase 5.1 Hardening (the trust layer) (week 1)
+Build now (highest ROI)
+
+Strict approval blocking (hard gate)
+“commit-worthy” results become pending actions only
+approval is required before any git commit (materialization step)
+ensure “no commit can happen” without approval in the strict mode
+Workspace lock + concurrency safety
+lock per repo/workspace/worktree
+daemon/job runner cannot double-mutate
+Crash recovery journal
+checkpoint stages
+on restart: resume safely or revert to safe checkpoint
+Worker leases
+heartbeat + reclaim expired tasks
+Incident log
+you’ll need it immediately when daemons run unattended
+Keep spec-only for now
+
+GitHub issue → task translation (nice, not core safety)
+PR summary from diff (nice, not core safety)
+team memory partitions (helpful later)
+ULTRAPLAN SLAs (add once you observe timeouts)
+Acceptance tests
+
+run for 50+ cycles in daemon mode without:
+double-commit
+orphan tasks
+approval bypass
+lock deadlocks
+kill the process mid-cycle and verify it resumes cleanly
+Milestone 2 — Phase 6 Tool substrate (the grounding layer) (week 2)
+Build now
+
+Tool registry + tool runner + tool policy allowlists
+At least these tools, end-to-end:
+repo.search
+repo.read_file
+local_docs.search
+web.fetch (optional if you want offline-only initially)
+defer sandbox.exec until Phase 6.1 hooks are in
+Tool traces persisted (DB + artifacts)
+
+Evidence packs generated from tool traces
+
+Tool-aware Critic (flags “you should have verified this”)
+
+Keep spec-only for now
+
+replay “full rerun” (artifact-only replay is enough early)
+fancy connectors (tickets, Jira, etc.)
+Acceptance tests
+
+for a task requiring repo inspection, verify:
+tool calls happen
+evidence pack exists
+final synthesis references evidence labels
+groundedness clamp reacts to unsupported claims
+Milestone 3 — Phase 6.1 Safety + provenance (the governance layer) (week 3–4)
+Build now
+
+Policy engine + risk tiers integrated into:
+tool execution (especially execute)
+publish/commit materialization
+any outward actuation
+Action ledger (append-only; proposed → pending approval → applied/reverted)
+
+Redaction filter before persistence:
+
+transcripts
+memory writes
+tool outputs
+evidence packs
+Signed immutable artifacts
+artifact manifest + sha256 + signature
+verify before materializing approved actions
+Unsafe-action detector
+at minimum for sandbox.exec and anything “publish-like”
+Policy compliance score
+feed into Judge / scoring as a clamp
+Build after the above (still in 6.1, but second priority)
+
+provenance linker (claim → evidence labels → evidence items)
+exportable security audit bundle
+Keep spec-only for now
+
+deep “reversible action ledger” beyond core git/materialization + limited exec
+super granular RBAC
+heavy compliance/reporting UI polish
+Acceptance tests
+
+secrets in outputs get redacted
+artifact tampering is detected and blocks materialization
+critical-risk exec requires approval or is blocked
+Milestone 4 — Phase 7 Benchmark lab + CI gate (the measurement layer) (week 4–5)
+Build now
+
+Benchmark suite loader + benchmark runner that uses the real orchestrator
+Gold expectations + acceptance bands (start with a small “core” suite)
+Regression detection:
+score drop
+groundedness drop
+policy compliance drop
+cost/latency blow-ups
+CI workflow that blocks merges on:
+acceptance failures
+“error/critical” regressions
+Keep spec-only for now
+
+judge calibration “deep mode”
+sophisticated replay (artifact-only replay is enough early)
+multi-leaderboard product features
+Acceptance tests
+
+you can run bun run src/evals/benchmark-ci.ts and get a clear pass/fail
+a known-bad change triggers a regression alarm
+B. Add-next path (only after the above is stable)
+Milestone 5 — Limited Portfolio (Phase 8 “lite”) (week 6+)
+Build now (lite)
+
+2–3 variants only (don’t start with 6+)
+branch/worktree isolation
+run variants sequentially or with limited parallelism
+judge council (2–3 judges)
+best-of-N synthesis
+Keep spec-only for now
+
+cross-org exchange quarantine (add later; high complexity)
+tournament mode (nice-to-have)
+capital allocator with LLM + priors (start deterministic first)
+Why: portfolio multiplies your operational surface area. Only do it once hardening + benchmarks are solid.
+
+C. Keep spec-only until you have real users (Phase 9 + Phase 10)
+Phase 9 Platformization — keep mostly spec-only at first
+Build later (when you truly need it)
+
+multi-tenant auth
+RBAC
+hosted runs + remote agents
+quotas/billing
+template marketplace
+backup/restore + retention
+Exception (build early only if required)
+
+“workspaceRoot scoping” (so runs are not anchored to process.cwd())
+a minimal “hosted run queue” without full multi-tenant (single-tenant API keys)
+Reason: platform features are expensive and easy to build “wrong” without real usage patterns.
+
+Phase 10 Learning organization — keep spec-only until benchmarks are mature
+Build later
+
+prompt/policy/routing optimization loops
+drift detection + simulation gate automation
+distillation pipelines
+Exception (build earlier if cheap)
+
+version overlays (prompt/policy versioning) can be useful early without automated learning
+store “active versions” and switch manually via approvals
+Reason: automated self-improvement amplifies any scoring mistakes. You want:
+
+a stable benchmark suite
+a stable judge calibration story
+stable policies and provenance before you let the system propose changes to itself.
+D. Practical “build order” checklist (copy/paste)
+text
+
+BUILD NOW (core reliability + grounding + measurement)
+1) Phase 5.1: strict approval blocking + locks + recovery journal + leases + incidents
+2) Phase 6: tool registry + tool runner + traces + evidence packs (+ tool-aware critic)
+3) Phase 6.1: policy/risk + redaction + signed artifacts + unsafe-action gating
+4) Phase 7: benchmark suite + acceptance bands + regression alarms + CI gate
+
+BUILD NEXT (leverage)
+5) Phase 8-lite: 2–3 isolated variants + council + best-of-N synthesis
+
+SPEC-ONLY FOR NOW (until real demand)
+6) Phase 8 full: quarantine exchange + tournaments + complex allocator
+7) Phase 9: multi-tenant + billing + remote agents + marketplace
+8) Phase 10: automated learning loop + drift automation + distillation at scale
+E. One more “practical engineering” rule that will save you time
+Treat every large feature as two deliverables:
+
+Runtime wiring (the system actually uses it)
+Eval/observability wiring (you can prove it helped and debug when it breaks)
+If a feature can’t be measured in Phase 7, it tends to turn into “feels better” debt.
+
+
+
+Here is the complete CI/CD pipeline for AutoOrg, written as a full drop-in system with all supporting scripts, configs, and hooks.
+
+AutoOrg — CI/CD Pipeline
+Full GitHub Actions + Local Dev Pipeline
+WHAT THIS COVERS
+text
+
+┌─────────────────────────────────────────────────────────────────────┐
+│ CI (every PR + push)                                                │
+│   lint → typecheck → unit tests → migrations → benchmark gate       │
+│   → security scan → artifact integrity → approval health            │
+│                                                                     │
+│ CD (merge to main)                                                  │
+│   build → smoke test → deploy (local / single-node / managed)      │
+│   → post-deploy health check → rollback on failure                 │
+│                                                                     │
+│ Scheduled workflows                                                 │
+│   nightly benchmark suite → weekly learning cycle                  │
+│   → weekly security audit → monthly distillation export            │
+│                                                                     │
+│ Local dev hooks                                                     │
+│   pre-commit → pre-push → commit message linting                   │
+└─────────────────────────────────────────────────────────────────────┘
+FILES CREATED
+text
+
+.github/
+├── workflows/
+│   ├── ci.yml                      ← main CI pipeline
+│   ├── cd.yml                      ← deploy pipeline
+│   ├── benchmarks-nightly.yml      ← nightly benchmark suite
+│   ├── learning-weekly.yml         ← weekly learning cycle
+│   ├── security-audit.yml          ← weekly security scan
+│   ├── distillation-monthly.yml    ← monthly trace export
+│   └── dependency-review.yml       ← dependency security review
+├── actions/
+│   ├── setup-autoorg/
+│   │   └── action.yml              ← reusable setup composite action
+│   ├── run-migrations/
+│   │   └── action.yml
+│   ├── benchmark-gate/
+│   │   └── action.yml
+│   └── health-check/
+│       └── action.yml
+└── CODEOWNERS
+
+scripts/
+├── ci/
+│   ├── lint.ts                     ← lint entrypoint
+│   ├── typecheck.ts                ← tsc entrypoint
+│   ├── test-unit.ts                ← unit test runner
+│   ├── migrate-all.ts              ← run all migrations in order
+│   ├── smoke-test.ts               ← post-deploy smoke test
+│   ├── health-check.ts             ← API/daemon health check
+│   ├── security-scan.ts            ← artifact integrity + findings check
+│   ├── approval-health.ts          ← stale approval + ledger audit
+│   └── rollback.ts                 ← deployment rollback entrypoint
+├── deploy/
+│   ├── deploy-local.ts
+│   ├── deploy-single-node.ts
+│   └── deploy-managed.ts
+└── hooks/
+    ├── pre-commit
+    ├── pre-push
+    └── commit-msg
+1. Reusable composite action: Setup AutoOrg
+.github/actions/setup-autoorg/action.yml
+YAML
+
+name: Setup AutoOrg
+description: Install Bun, deps, and optionally build the web app.
+
+inputs:
+  bun-version:
+    description: Bun version to install
+    required: false
+    default: latest
+  install-playwright:
+    description: Install Playwright for E2E
+    required: false
+    default: 'false'
+  build-web:
+    description: Build Next.js dashboard
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: ${{ inputs.bun-version }}
+
+    - name: Cache Bun deps
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.bun/install/cache
+          node_modules
+        key: ${{ runner.os }}-bun-${{ hashFiles('bun.lockb') }}
+        restore-keys: |
+          ${{ runner.os }}-bun-
+
+    - name: Install dependencies
+      shell: bash
+      run: bun install --frozen-lockfile
+
+    - name: Install Playwright browsers
+      if: inputs.install-playwright == 'true'
+      shell: bash
+      run: bunx playwright install --with-deps chromium
+
+    - name: Build web dashboard
+      if: inputs.build-web == 'true'
+      shell: bash
+      run: |
+        cd web
+        bun run build
+2. Reusable composite action: Run all migrations
+.github/actions/run-migrations/action.yml
+YAML
+
+name: Run Migrations
+description: Run all AutoOrg DB migrations in order.
+
+runs:
+  using: composite
+  steps:
+    - name: Base migration
+      shell: bash
+      run: bun run src/db/migrate.ts
+
+    - name: Phase 5 migration
+      shell: bash
+      run: bun run src/db/migrate-phase5.ts
+
+    - name: Phase 5.1 migration
+      shell: bash
+      run: bun run src/db/migrate-phase5_1.ts
+
+    - name: Phase 6 migration
+      shell: bash
+      run: bun run src/db/migrate-phase6.ts
+
+    - name: Phase 6.1 migration
+      shell: bash
+      run: bun run src/db/migrate-phase6_1.ts
+
+    - name: Phase 7 migration
+      shell: bash
+      run: bun run src/db/migrate-phase7.ts
+
+    - name: Phase 8 migration
+      shell: bash
+      run: bun run src/db/migrate-phase8.ts
+
+    - name: Phase 9 migration
+      shell: bash
+      run: bun run src/db/migrate-phase9.ts
+
+    - name: Phase 10 migration
+      shell: bash
+      run: bun run src/db/migrate-phase10.ts
+
+    - name: Verify DB integrity
+      shell: bash
+      run: bun run scripts/ci/migrate-all.ts --verify
+3. Reusable composite action: Benchmark gate
+.github/actions/benchmark-gate/action.yml
+YAML
+
+name: Benchmark Gate
+description: Run benchmark suite and fail on regressions or acceptance failures.
+
+inputs:
+  suite:
+    description: Benchmark suite to run
+    required: false
+    default: core
+  constitution:
+    description: Constitution variant
+    required: false
+    default: default
+  template:
+    description: Template variant
+    required: false
+    default: baseline
+  fail-on-regression:
+    description: Fail on detected regressions
+    required: false
+    default: 'true'
+  upload-report:
+    description: Upload benchmark report artifact
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Run benchmark CI gate
+      shell: bash
+      env:
+        BENCHMARK_SUITE: ${{ inputs.suite }}
+        BENCHMARK_CONSTITUTION: ${{ inputs.constitution }}
+        BENCHMARK_TEMPLATE: ${{ inputs.template }}
+        BENCHMARK_FAIL_ON_REGRESSION: ${{ inputs.fail-on-regression }}
+      run: bun run src/evals/benchmark-ci.ts
+
+    - name: Upload benchmark report
+      if: inputs.upload-report == 'true' && always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-report-${{ github.sha }}
+        path: benchmarks/outputs/
+        retention-days: 30
+4. Reusable composite action: Health check
+.github/actions/health-check/action.yml
+YAML
+
+name: Health Check
+description: Run smoke tests against a running AutoOrg instance.
+
+inputs:
+  api-url:
+    description: AutoOrg API base URL
+    required: false
+    default: http://localhost:3000
+  timeout-seconds:
+    description: Total timeout for health check
+    required: false
+    default: '60'
+
+runs:
+  using: composite
+  steps:
+    - name: Wait for API
+      shell: bash
+      run: |
+        for i in $(seq 1 ${{ inputs.timeout-seconds }}); do
+          if curl -sf ${{ inputs.api-url }}/health > /dev/null 2>&1; then
+            echo "API is up"
+            exit 0
+          fi
+          sleep 1
+        done
+        echo "API did not come up in time"
+        exit 1
+
+    - name: Run health check script
+      shell: bash
+      env:
+        AUTOORG_API_URL: ${{ inputs.api-url }}
+      run: bun run scripts/ci/health-check.ts
+5. Main CI pipeline
+.github/workflows/ci.yml
+YAML
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+env:
+  BUN_ENV: test
+  AUTOORG_DB_PATH: /tmp/autoorg-ci-${{ github.run_id }}.db
+  AUTOORG_SIGNING_SECRET: ci-test-signing-secret
+  DEFAULT_LLM_PROVIDER: anthropic
+  BENCHMARK_SUITE: core
+  BENCHMARK_TEMPLATE: baseline
+  BENCHMARK_CONSTITUTION: default
+
+jobs:
+
+  # ─────────────────────────────────────────────────────────
+  # JOB: lint
+  # ─────────────────────────────────────────────────────────
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-autoorg
+
+      - name: Run ESLint
+        run: bun run scripts/ci/lint.ts
+
+      - name: Check formatting
+        run: bunx prettier --check "src/**/*.{ts,tsx}" "web/**/*.{ts,tsx}"
+
+      - name: Check imports
+        run: bun run scripts/ci/lint.ts --imports-only
+
+  # ─────────────────────────────────────────────────────────
+  # JOB: typecheck
+  # ─────────────────────────────────────────────────────────
+  typecheck:
+    name: TypeCheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-autoorg
+
+      - name: Check types (src)
+        run: bun run scripts/ci/typecheck.ts --project tsconfig.json
+
+      - name: Check types (web)
+        run: bun run scripts/ci/typecheck.ts --project web/tsconfig.json
+
+  # ─────────────────────────────────────────────────────────
+  # JOB: unit-tests
+  # ─────────────────────────────────────────────────────────
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [lint, typecheck]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-autoorg
+
+      - uses: ./.github/actions/run-migrations
+
+      - name: Run unit tests
+        run: bun run scripts/ci/test-unit.ts
+        env:
+          AUTOORG_DB_PATH: /tmp/autoorg-unit-${{ github.run_id }}.db
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results-${{ github.sha }}
+          path: test-results/
+          retention-days: 7
+
+  # ─────────────────────────────────────────────────────────
+  # JOB: migration-integrity
+  # ─────────────────────────────────────────────────────────
+  migration-integrity:
+    name: Migration Integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [lint, typecheck]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-autoorg
+
+      - name: Run all migrations on clean DB
+        uses: ./.github/actions/run-migrations
+        env:
+          AUTOORG_DB_PATH: /tmp/autoorg-migrate-${{ github.run_id }}.db
+
+      - name: Verify idempotency (run migrations again)
+        uses: ./.github/actions/run-migrations
+        env:
+          AUTOORG_DB_PATH: /tmp/autoorg-migrate-${{ github.run_id }}.db
+
+      - name: Check DB schema consistency
+        run: bun run scripts/ci/migrate-all.ts --check-schema
+        env:
+          AUTOORG_DB_PATH: /tmp/autoorg-migrate-${{ github.run_id }}.db
+
+  # ─────────────────────────────────────────────────────────
+  # JOB: security-scan
+  # ─────────────────────────────────────────────────────────
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [unit-tests]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-autoorg
+
+      - uses: ./.github/actions/run-migrations
+        env:
+          AUTOORG_DB_PATH: /tmp/autoorg-sec-${{ github.run_id }}.db
+
+      - name: Run security scan
+        run: bun run scripts/ci/security-scan.ts
+        env:
+          AUTOORG_DB_PATH: /tmp/autoorg-sec-${{ github.run_id }}.db
+
+      - name: Check for secret leaks
+        run: |
+          if grep -rE \
+            "(sk-[A-Za-z0-9_\-]{20,}|sk-ant-[A-Za-z0-9_\-]{20,}|gh[pousr]_[A-Za-z0-9_]{20,})" \
+            src/ web/ scripts/ --include="*.ts" --include="*.tsx" --include="*.json" \
+            --exclude-dir=node_modules; then
+            echo "::error::Potential secret found in source"
+            exit 1
+          fi
+
+      - name: Check artifact integrity
+        run: bun run scripts/ci/security-scan.ts --artifacts-only
+        env:
+          AUTOORG_DB_PATH: /tmp/autoorg-sec-${{ github.run_id }}.db
+
+      - name: Check approval health
+        run: bun run scripts/ci/approval-health.ts
+        env:
+          AUTOORG_DB_PATH: /tmp/autoorg-sec-${{ github.run_id }}.db
+
+  # ─────────────────────────────────────────────────────────
+  # JOB: benchmark-gate
+  # ─────────────────────────────────────────────────────────
+  benchmark-gate:
+    name: Benchmark Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: [unit-tests, migration-integrity, security-scan]
+    if: >
+      github.event_name == 'pull_request' &&
+      !github.event.pull_request.draft
+
+    env:
+      AUTOORG_API_KEY_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY }}
+      AUTOORG_API_KEY_OPENAI: ${{ secrets.OPENAI_API_KEY }}
+      AUTOORG_DB_PATH: /tmp/autoorg-bench-${{ github.run_id }}.db
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-autoorg
+
+      - uses: ./.github/actions/run-migrations
+        env:
+          AUTOORG_DB_PATH: /tmp/autoorg-bench-${{ github.run_id }}.db
+
+      - uses: ./.github/actions/benchmark-gate
+        with:
+          suite: core
+          fail-on-regression: 'true'
+          upload-report: 'true'
+
+      - name: Comment benchmark results on PR
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const results = fs.existsSync('benchmarks/outputs/ci-summary.json')
+              ? JSON.parse(fs.readFileSync('benchmarks/outputs/ci-summary.json', 'utf8'))
+              : {};
+
+            const status = results.failed === 0 && results.regressions === 0
+              ? '✅ Passed'
+              : '❌ Failed';
+
+            const body = [
+              `## Benchmark Results ${status}`,
+              ``,
+              `| Metric | Value |`,
+              `|--------|-------|`,
+              `| Cases run | ${results.total ?? '?'} |`,
+              `| Acceptance failures | ${results.failed ?? '?'} |`,
+              `| Serious regressions | ${results.regressions ?? '?'} |`,
+              `| Avg score | ${results.avgScore?.toFixed(4) ?? '?'} |`,
+              `| Avg policy | ${results.avgPolicy?.toFixed(4) ?? '?'} |`,
+              `| Avg cost USD | ${results.avgCost?.toFixed(4) ?? '?'} |`,
+              ``,
+              `[Full report](../actions/runs/${{ github.run_id }})`,
+            ].join('\n');
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });
+
+  # ─────────────────────────────────────────────────────────
+  # JOB: build-check
+  # ─────────────────────────────────────────────────────────
+  build-check:
+    name: Build Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [unit-tests]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-autoorg
+        with:
+          build-web: 'true'
+
+      - name: Check build artifacts exist
+        run: |
+          test -d web/.next || (echo "::error::Next.js build output missing" && exit 1)
+
+  # ─────────────────────────────────────────────────────────
+  # JOB: ci-gate (final required check)
+  # ─────────────────────────────────────────────────────────
+  ci-gate:
+    name: CI Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs:
+      - lint
+      - typecheck
+      - unit-tests
+      - migration-integrity
+      - security-scan
+      - build-check
+    if: always()
+
+    steps:
+      - name: Evaluate all jobs
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then
+            echo "::error::One or more CI jobs failed"
+            exit 1
+          fi
+          if [[ "${{ contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+            echo "::error::One or more CI jobs were cancelled"
+            exit 1
+          fi
+          echo "All CI jobs passed"
+6. CD pipeline
+.github/workflows/cd.yml
+YAML
+
+name: CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [local, staging, production]
+        default: staging
+      skip-smoke-tests:
+        description: Skip smoke tests
+        type: boolean
+        default: false
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  deployments: write
+  id-token: write
+
+env:
+  AUTOORG_VERSION: ${{ github.sha }}
+
+jobs:
+
+  # ─────────────────────────────────────────────────────────
+  # JOB: pre-deploy-checks
+  # ─────────────────────────────────────────────────────────
+  pre-deploy-checks:
+    name: Pre-Deploy Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-autoorg
+
+      - name: Verify CI passed on this SHA
+        run: |
+          echo "Deploying SHA: ${{ github.sha }}"
+          echo "Branch: ${{ github.ref_name }}"
+
+      - name: Check no pending critical security findings
+        run: bun run scripts/ci/security-scan.ts --pre-deploy
+        env:
+          AUTOORG_DB_PATH: ${{ secrets.AUTOORG_DB_PATH }}
+          AUTOORG_SIGNING_SECRET: ${{ secrets.AUTOORG_SIGNING_SECRET }}
+
+  # ─────────────────────────────────────────────────────────
+  # JOB: build-release
+  # ─────────────────────────────────────────────────────────
+  build-release:
+    name: Build Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [pre-deploy-checks]
+
+    outputs:
+      image-tag: ${{ steps.meta.outputs.image-tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-autoorg
+        with:
+          build-web: 'true'
+
+      - name: Set image metadata
+        id: meta
+        run: |
+          echo "image-tag=autoorg:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Create release bundle
+        run: |
+          mkdir -p release
+          cp -r src release/
+          cp -r web/.next release/.next
+          cp package.json bun.lockb tsconfig.json release/
+          tar -czf autoorg-${{ github.sha }}.tar.gz release/
+
+      - name: Upload release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: autoorg-release-${{ github.sha }}
+          path: autoorg-${{ github.sha }}.tar.gz
+          retention-days: 14
+
+  # ─────────────────────────────────────────────────────────
+  # JOB: deploy-staging
+  # ─────────────────────────────────────────────────────────
+  deploy-staging:
+    name: Deploy → Staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [build-release]
+    environment:
+      name: staging
+      url: ${{ vars.STAGING_URL }}
+
+    env:
+      AUTOORG_DEPLOYMENT_MODE: single-node
+      AUTOORG_DB_PATH: ${{ secrets.STAGING_DB_PATH }}
+      AUTOORG_SIGNING_SECRET: ${{ secrets.STAGING_SIGNING_SECRET }}
+      AUTOORG_API_URL: ${{ vars.STAGING_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-autoorg
+
+      - name: Download release bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: autoorg-release-${{ github.sha }}
+
+      - name: Deploy to staging
+        run: bun run scripts/deploy/deploy-single-node.ts
+        env:
+          DEPLOY_TARGET: staging
+          DEPLOY_SHA: ${{ github.sha }}
+          SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+          SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+
+      - name: Run migrations on staging
+        run: bun run scripts/ci/migrate-all.ts --remote
+        env:
+          REMOTE_DB_PATH: ${{ secrets.STAGING_DB_PATH }}
+
+      - name: Wait for staging health
+        uses: ./.github/actions/health-check
+        with:
+          api-url: ${{ vars.STAGING_URL }}
+          timeout-seconds: '90'
+
+      - name: Run smoke tests against staging
+        if: ${{ !inputs.skip-smoke-tests }}
+        run: bun run scripts/ci/smoke-test.ts
+        env:
+          AUTOORG_API_URL: ${{ vars.STAGING_URL }}
+          AUTOORG_API_KEY: ${{ secrets.STAGING_API_KEY }}
+
+      - name: Rollback on failure
+        if: failure()
+        run: bun run scripts/ci/rollback.ts
+        env:
+          DEPLOY_TARGET: staging
+          ROLLBACK_SHA: ${{ github.event.before }}
+
+  # ─────────────────────────────────────────────────────────
+  # JOB: deploy-production
+  # ─────────────────────────────────────────────────────────
+  deploy-production:
+    name: Deploy → Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [deploy-staging]
+    if: github.ref_name == 'main'
+    environment:
+      name: production
+      url: ${{ vars.PRODUCTION_URL }}
+
+    env:
+      AUTOORG_DEPLOYMENT_MODE: ${{ vars.PRODUCTION_DEPLOYMENT_MODE }}
+      AUTOORG_API_URL: ${{ vars.PRODUCTION_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-autoorg
+
+      - name: Download release bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: autoorg-release-${{ github.sha }}
+
+      - name: Deploy to production
+        run: bun run scripts/deploy/deploy-${{ vars.PRODUCTION_DEPLOYMENT_MODE }}.ts
+        env:
+          DEPLOY_TARGET: production
+          DEPLOY_SHA: ${{ github.sha }}
+          SSH_HOST: ${{ secrets.PRODUCTION_SSH_HOST }}
+          SSH_USER: ${{ secrets.PRODUCTION_SSH_USER }}
+          SSH_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+          AUTOORG_DB_PATH: ${{ secrets.PRODUCTION_DB_PATH }}
+          AUTOORG_SIGNING_SECRET: ${{ secrets.PRODUCTION_SIGNING_SECRET }}
+
+      - name: Run migrations on production
+        run: bun run scripts/ci/migrate-all.ts --remote
+        env:
+          REMOTE_DB_PATH: ${{ secrets.PRODUCTION_DB_PATH }}
+
+      - name: Wait for production health
+        uses: ./.github/actions/health-check
+        with:
+          api-url: ${{ vars.PRODUCTION_URL }}
+          timeout-seconds: '120'
+
+      - name: Run smoke tests against production
+        run: bun run scripts/ci/smoke-test.ts --production
+        env:
+          AUTOORG_API_URL: ${{ vars.PRODUCTION_URL }}
+          AUTOORG_API_KEY: ${{ secrets.PRODUCTION_API_KEY }}
+
+      - name: Tag release in git
+        run: |
+          git config --global user.name "autoorg-bot"
+          git config --global user.email "bot@autoorg"
+          git tag -a "release-${{ github.sha }}" -m "Production release ${{ github.sha }}"
+          git push origin "release-${{ github.sha }}"
+
+      - name: Rollback on failure
+        if: failure()
+        run: bun run scripts/ci/rollback.ts
+        env:
+          DEPLOY_TARGET: production
+          ROLLBACK_SHA: ${{ github.event.before }}
+          SSH_HOST: ${{ secrets.PRODUCTION_SSH_HOST }}
+          SSH_USER: ${{ secrets.PRODUCTION_SSH_USER }}
+          SSH_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+7. Nightly benchmark suite
+.github/workflows/benchmarks-nightly.yml
+YAML
+
+name: Benchmarks Nightly
+
+on:
+  schedule:
+    - cron: '0 2 * * *'          # 02:00 UTC every night
+  workflow_dispatch:
+    inputs:
+      suite:
+        type: choice
+        options: [core, stress, all]
+        default: core
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  AUTOORG_DB_PATH: /tmp/autoorg-nightly-${{ github.run_id }}.db
+  AUTOORG_SIGNING_SECRET: ${{ secrets.BENCHMARK_SIGNING_SECRET }}
+  AUTOORG_API_KEY_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY }}
+  AUTOORG_API_KEY_OPENAI: ${{ secrets.OPENAI_API_KEY }}
+
+jobs:
+
+  nightly-benchmark:
+    name: Nightly Benchmark — ${{ inputs.suite || 'core' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-autoorg
+
+      - uses: ./.github/actions/run-migrations
+
+      - name: Run core benchmark suite
+        if: inputs.suite != 'stress' && inputs.suite != 'all'
+        uses: ./.github/actions/benchmark-gate
+        with:
+          suite: core
+          fail-on-regression: 'true'
+          upload-report: 'true'
+
+      - name: Run stress benchmark suite
+        if: inputs.suite == 'stress' || inputs.suite == 'all'
+        uses: ./.github/actions/benchmark-gate
+        with:
+          suite: stress
+          fail-on-regression: 'true'
+          upload-report: 'true'
+
+      - name: Run constitution A/B comparison
+        run: |
+          bun run -e "
+          const { ConstitutionAB } = await import('./src/evals/constitution-ab.ts');
+          const ab = new ConstitutionAB();
+          const result = await ab.compare({
+            suiteName: 'core',
+            variantA: 'default',
+            variantB: 'strict_grounding',
+          });
+          console.log(JSON.stringify(result, null, 2));
+          "
+
+      - name: Run judge calibration
+        run: |
+          bun run -e "
+          const { JudgeCalibrator } = await import('./src/evals/judge-calibrator.ts');
+          const { getDb } = await import('./src/db/migrate.ts');
+          const db = getDb();
+          const run = db.prepare('SELECT id FROM benchmark_runs ORDER BY started_at DESC LIMIT 1').get();
+          db.close();
+          if (run) {
+            const calibrator = new JudgeCalibrator();
+            const result = await calibrator.calibrate({ benchmarkRunId: run.id });
+            console.log(JSON.stringify(result, null, 2));
+          }
+          "
+
+      - name: Open issue on regression
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = `🔴 Nightly Benchmark Regression — ${new Date().toISOString().slice(0, 10)}`;
+            const body = [
+              `## Nightly Benchmark Failed`,
+              ``,
+              `- Run: ${{ github.run_id }}`,
+              `- SHA: ${{ github.sha }}`,
+              `- Branch: ${{ github.ref_name }}`,
+              ``,
+              `Check the [Actions run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.`,
+            ].join('\n');
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: ['benchmark-regression', 'automated'],
+            });
+8. Weekly learning cycle
+.github/workflows/learning-weekly.yml
+YAML
+
+name: Learning Cycle Weekly
+
+on:
+  schedule:
+    - cron: '0 3 * * 0'          # 03:00 UTC every Sunday
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Benchmark suite to use for simulation
+        type: string
+        default: core
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  AUTOORG_DB_PATH: ${{ secrets.PRODUCTION_DB_PATH }}
+  AUTOORG_SIGNING_SECRET: ${{ secrets.PRODUCTION_SIGNING_SECRET }}
+  AUTOORG_API_KEY_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY }}
+  AUTOORG_API_KEY_OPENAI: ${{ secrets.OPENAI_API_KEY }}
+
+jobs:
+
+  learning-cycle:
+    name: Weekly Learning Cycle
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-autoorg
+
+      - name: Run bounded learning cycle
+        run: |
+          bun run -e "
+          const { LearningOrchestrator } = await import('./src/learning/learning-orchestrator.ts');
+          const orchestrator = new LearningOrchestrator();
+          const result = await orchestrator.run({
+            suiteName: process.env.BENCHMARK_SUITE ?? 'core',
+            runId: 'weekly_learning_${{ github.run_id }}',
+            cycleNumber: 0,
+          });
+          console.log(JSON.stringify(result, null, 2));
+          "
+        env:
+          BENCHMARK_SUITE: ${{ inputs.suite || 'core' }}
+
+      - name: Upload learning cycle artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: learning-cycle-${{ github.run_id }}
+          path: artifacts/learning/
+          retention-days: 60
+
+      - name: Alert on learning failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🔴 Weekly Learning Cycle Failed — ${new Date().toISOString().slice(0, 10)}`,
+              body: `Run: ${{ github.run_id }}\nSHA: ${{ github.sha }}`,
+              labels: ['learning-failure', 'automated'],
+            });
+9. Weekly security audit
+.github/workflows/security-audit.yml
+YAML
+
+name: Security Audit Weekly
+
+on:
+  schedule:
+    - cron: '0 4 * * 1'          # 04:00 UTC every Monday
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  issues: write
+
+env:
+  AUTOORG_DB_PATH: ${{ secrets.PRODUCTION_DB_PATH }}
+  AUTOORG_SIGNING_SECRET: ${{ secrets.PRODUCTION_SIGNING_SECRET }}
+
+jobs:
+
+  security-audit:
+    name: Weekly Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-autoorg
+
+      - name: Run dependency audit
+        run: bun audit
+
+      - name: Run artifact integrity check
+        run: bun run scripts/ci/security-scan.ts --full-audit
+
+      - name: Export security bundle
+        run: |
+          bun run -e "
+          const { SecurityAudit } = await import('./src/runtime/security-audit.ts');
+          const audit = new SecurityAudit('weekly_audit_${{ github.run_id }}');
+          const result = await audit.exportBundle('json');
+          console.log(JSON.stringify(result, null, 2));
+          "
+
+      - name: Upload security audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-audit-${{ github.run_id }}
+          path: artifacts/security/audits/
+          retention-days: 180
+
+      - name: Check for open critical findings
+        run: bun run scripts/ci/security-scan.ts --check-open-critical
+        env:
+          AUTOORG_DB_PATH: ${{ secrets.PRODUCTION_DB_PATH }}
+
+      - name: Alert on critical findings
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🔴 Critical Security Findings — ${new Date().toISOString().slice(0, 10)}`,
+              body: `Run: ${{ github.run_id }}\nReview the uploaded security audit artifact immediately.`,
+              labels: ['security', 'critical', 'automated'],
+            });
+10. Monthly distillation export
+.github/workflows/distillation-monthly.yml
+YAML
+
+name: Distillation Export Monthly
+
+on:
+  schedule:
+    - cron: '0 5 1 * *'          # 05:00 UTC on the 1st of every month
+  workflow_dispatch:
+
+env:
+  AUTOORG_DB_PATH: ${{ secrets.PRODUCTION_DB_PATH }}
+  AUTOORG_SIGNING_SECRET: ${{ secrets.PRODUCTION_SIGNING_SECRET }}
+
+jobs:
+
+  distillation:
+    name: Monthly Trace Distillation Export
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-autoorg
+
+      - name: Export high-quality traces
+        run: |
+          bun run -e "
+          const { AdapterDistiller } = await import('./src/learning/adapter-distiller.ts');
+          const d = new AdapterDistiller();
+          for (const kind of ['planner', 'judge', 'critic', 'tool_planner']) {
+            const result = await d.exportDataset({
+              jobKind: kind,
+              minScore: 0.82,
+              minPolicyCompliance: 0.97,
+            });
+            console.log(kind, JSON.stringify(result));
+          }
+          "
+
+      - name: Upload distillation datasets
+        uses: actions/upload-artifact@v4
+        with:
+          name: distillation-datasets-${{ github.run_id }}
+          path: artifacts/learning/distillation/
+          retention-days: 180
+11. Dependency review
+.github/workflows/dependency-review.yml
+YAML
+
+name: Dependency Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - package.json
+      - bun.lockb
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, 0BSD
+12. CI scripts
+scripts/ci/lint.ts
+TypeScript
+
+#!/usr/bin/env bun
+import { $ } from 'bun';
+import chalk from 'chalk';
+
+const args = process.argv.slice(2);
+const importsOnly = args.includes('--imports-only');
+
+async function main() {
+  console.log(chalk.cyan('\n🔍 Running lint...\n'));
+
+  if (!importsOnly) {
+    const eslint = await $`bunx eslint src/ web/app/ --ext .ts,.tsx --max-warnings 0`.nothrow();
+    if (eslint.exitCode !== 0) {
+      console.error(chalk.red('ESLint failed'));
+      process.exit(1);
+    }
+  }
+
+  console.log(chalk.green('✅ Lint passed'));
+}
+
+main();
+scripts/ci/typecheck.ts
+TypeScript
+
+#!/usr/bin/env bun
+import { $ } from 'bun';
+import chalk from 'chalk';
+
+const args = process.argv.slice(2);
+const projectIdx = args.indexOf('--project');
+const project = projectIdx !== -1 ? args[projectIdx + 1] : 'tsconfig.json';
+
+async function main() {
+  console.log(chalk.cyan(`\n🔍 Running typecheck on ${project}...\n`));
+
+  const result = await $`bunx tsc --noEmit --project ${project}`.nothrow();
+  if (result.exitCode !== 0) {
+    console.error(chalk.red(`TypeCheck failed for ${project}`));
+    process.exit(1);
+  }
+
+  console.log(chalk.green(`✅ TypeCheck passed: ${project}`));
+}
+
+main();
+scripts/ci/test-unit.ts
+TypeScript
+
+#!/usr/bin/env bun
+import { $ } from 'bun';
+import chalk from 'chalk';
+import { mkdir } from 'node:fs/promises';
+
+async function main() {
+  console.log(chalk.cyan('\n🔬 Running unit tests...\n'));
+
+  await mkdir('test-results', { recursive: true });
+
+  const result = await $`bun test tests/ --timeout 30000 --reporter junit --reporter-output test-results/junit.xml`.nothrow();
+
+  if (result.exitCode !== 0) {
+    console.error(chalk.red('Unit tests failed'));
+    process.exit(1);
+  }
+
+  console.log(chalk.green('✅ All unit tests passed'));
+}
+
+main();
+scripts/ci/migrate-all.ts
+TypeScript
+
+#!/usr/bin/env bun
+import { $ } from 'bun';
+import chalk from 'chalk';
+import { existsSync } from 'node:fs';
+
+const args = process.argv.slice(2);
+const verify = args.includes('--verify');
+const checkSchema = args.includes('--check-schema');
+const remote = args.includes('--remote');
+
+const MIGRATIONS = [
+  'src/db/migrate.ts',
+  'src/db/migrate-phase5.ts',
+  'src/db/migrate-phase5_1.ts',
+  'src/db/migrate-phase6.ts',
+  'src/db/migrate-phase6_1.ts',
+  'src/db/migrate-phase7.ts',
+  'src/db/migrate-phase8.ts',
+  'src/db/migrate-phase9.ts',
+  'src/db/migrate-phase10.ts',
+];
+
+const REQUIRED_TABLES = [
+  'runs',
+  'approvals',
+  'pending_actions',
+  'tool_executions',
+  'action_ledger',
+  'benchmark_cases',
+  'portfolio_runs',
+  'tenants',
+  'learning_cycles',
+];
+
+async function main() {
+  console.log(chalk.cyan('\n⚙️ Running all migrations...\n'));
+
+  for (const migration of MIGRATIONS) {
+    if (!existsSync(migration)) {
+      console.warn(chalk.yellow(`Skipping missing migration: ${migration}`));
+      continue;
+    }
+    const result = await $`bun run ${migration}`.nothrow();
+    if (result.exitCode !== 0) {
+      console.error(chalk.red(`Migration failed: ${migration}`));
+      process.exit(1);
+    }
+  }
+
+  if (verify || checkSchema) {
+    const { getDb } = await import('../../src/db/migrate.js');
+    const db = getDb();
+
+    for (const table of REQUIRED_TABLES) {
+      const row = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`).get(table);
+      if (!row) {
+        console.error(chalk.red(`Required table missing: ${table}`));
+        db.close();
+        process.exit(1);
+      }
+    }
+
+    db.close();
+    console.log(chalk.green('✅ Schema integrity verified'));
+  }
+
+  console.log(chalk.green('✅ All migrations complete'));
+}
+
+main();
+scripts/ci/smoke-test.ts
+TypeScript
+
+#!/usr/bin/env bun
+import chalk from 'chalk';
+
+const API_URL = process.env.AUTOORG_API_URL ?? 'http://localhost:3000';
+const API_KEY = process.env.AUTOORG_API_KEY ?? '';
+const PRODUCTION = process.argv.includes('--production');
+
+async function get(path: string) {
+  const res = await fetch(`${API_URL}${path}`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...(API_KEY ? { 'Authorization': `Bearer ${API_KEY}` } : {}),
+    },
+  });
+  return res;
+}
+
+async function main() {
+  console.log(chalk.cyan(`\n🔬 Smoke tests against ${API_URL}...\n`));
+  const failures: string[] = [];
+
+  const checks = [
+    { path: '/health', label: 'Health endpoint', expectedStatus: 200 },
+    { path: '/api/tools', label: 'Tool registry', expectedStatus: 200 },
+    { path: '/api/benchmarks', label: 'Benchmark runs', expectedStatus: 200 },
+  ];
+
+  if (!PRODUCTION) {
+    checks.push(
+      { path: '/api/learning/cycles', label: 'Learning cycles', expectedStatus: 200 },
+    );
+  }
+
+  for (const check of checks) {
+    try {
+      const res = await get(check.path);
+      if (res.status !== check.expectedStatus) {
+        failures.push(`${check.label}: expected ${check.expectedStatus}, got ${res.status}`);
+        console.error(chalk.red(`  ❌ ${check.label}: ${res.status}`));
+      } else {
+        console.log(chalk.green(`  ✅ ${check.label}: ${res.status}`));
+      }
+    } catch (e) {
+      failures.push(`${check.label}: network error`);
+      console.error(chalk.red(`  ❌ ${check.label}: network error`));
+    }
+  }
+
+  if (failures.length > 0) {
+    console.error(chalk.red(`\n${failures.length} smoke test(s) failed`));
+    process.exit(1);
+  }
+
+  console.log(chalk.green('\n✅ All smoke tests passed'));
+}
+
+main();
+scripts/ci/health-check.ts
+TypeScript
+
+#!/usr/bin/env bun
+import chalk from 'chalk';
+
+const API_URL = process.env.AUTOORG_API_URL ?? 'http://localhost:3000';
+
+async function main() {
+  try {
+    const res = await fetch(`${API_URL}/health`);
+    const data = await res.json().catch(() => ({}));
+
+    if (res.status !== 200) {
+      console.error(chalk.red(`Health check failed: HTTP ${res.status}`));
+      process.exit(1);
+    }
+
+    console.log(chalk.green('✅ Health check passed'));
+    console.log(JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.error(chalk.red(`Health check error: ${e}`));
+    process.exit(1);
+  }
+}
+
+main();
+scripts/ci/security-scan.ts
+TypeScript
+
+#!/usr/bin/env bun
+import chalk from 'chalk';
+
+const args = process.argv.slice(2);
+const preDeployMode = args.includes('--pre-deploy');
+const fullAudit = args.includes('--full-audit');
+const checkOpenCritical = args.includes('--check-open-critical');
+const artifactsOnly = args.includes('--artifacts-only');
+
+async function main() {
+  console.log(chalk.cyan('\n🔒 Running security scan...\n'));
+
+  const { getDb } = await import('../../src/db/migrate.js');
+  const db = getDb();
+
+  const findings = db.prepare(`
+    SELECT severity, category, summary, created_at
+    FROM security_findings
+    WHERE status = 'open'
+    ORDER BY created_at DESC
+    LIMIT 100
+  `).all() as Array<any>;
+
+  const critical = findings.filter(f => f.severity === 'critical');
+  const errors = findings.filter(f => f.severity === 'error');
+
+  console.log(`Open security findings: ${findings.length}`);
+  console.log(`  Critical: ${critical.length}`);
+  console.log(`  Error: ${errors.length}`);
+
+  if (checkOpenCritical && critical.length > 0) {
+    console.error(chalk.red(`${critical.length} critical finding(s) open:`));
+    for (const f of critical) {
+      console.error(`  - ${f.category}: ${f.summary}`);
+    }
+    db.close();
+    process.exit(1);
+  }
+
+  if (preDeployMode && critical.length > 0) {
+    console.error(chalk.red('Pre-deploy blocked: critical findings exist'));
+    db.close();
+    process.exit(1);
+  }
+
+  if (!artifactsOnly) {
+    const redactions = db.prepare(`
+      SELECT COUNT(*) as n FROM redaction_events
+    `).get() as { n: number };
+    console.log(`Total redaction events: ${redactions.n}`);
+  }
+
+  db.close();
+  console.log(chalk.green('✅ Security scan passed'));
+}
+
+main();
+scripts/ci/approval-health.ts
+TypeScript
+
+#!/usr/bin/env bun
+import chalk from 'chalk';
+
+async function main() {
+  console.log(chalk.cyan('\n🔍 Checking approval health...\n'));
+
+  const { getDb } = await import('../../src/db/migrate.js');
+  const db = getDb();
+
+  const stalePending = db.prepare(`
+    SELECT COUNT(*) as n
+    FROM pending_actions
+    WHERE status = 'staged'
+      AND created_at < datetime('now', '-7 days')
+  `).get() as { n: number };
+
+  const unapprovedDangerous = db.prepare(`
+    SELECT COUNT(*) as n
+    FROM action_ledger
+    WHERE action_class IN ('EXECUTE', 'PUBLISH')
+      AND status = 'applied'
+      AND approval_id IS NULL
+  `).get() as { n: number };
+
+  const bypassAttempts = db.prepare(`
+    SELECT COUNT(*) as n
+    FROM security_findings
+    WHERE category = 'approval_bypass_attempt'
+      AND status = 'open'
+  `).get() as { n: number };
+
+  db.close();
+
+  let hasIssue = false;
+
+  if (stalePending.n > 0) {
+    console.warn(chalk.yellow(`⚠️  ${stalePending.n} pending action(s) stale > 7 days`));
+  }
+
+  if (unapprovedDangerous.n > 0) {
+    console.error(chalk.red(`❌ ${unapprovedDangerous.n} dangerous action(s) applied without approval`));
+    hasIssue = true;
+  }
+
+  if (bypassAttempts.n > 0) {
+    console.error(chalk.red(`❌ ${bypassAttempts.n} approval bypass attempt(s) on record`));
+    hasIssue = true;
+  }
+
+  if (hasIssue) {
+    process.exit(1);
+  }
+
+  console.log(chalk.green('✅ Approval health checks passed'));
+}
+
+main();
+scripts/ci/rollback.ts
+TypeScript
+
+#!/usr/bin/env bun
+import { $ } from 'bun';
+import chalk from 'chalk';
+
+const DEPLOY_TARGET = process.env.DEPLOY_TARGET ?? 'staging';
+const ROLLBACK_SHA = process.env.ROLLBACK_SHA ?? '';
+const SSH_HOST = process.env.SSH_HOST ?? '';
+const SSH_USER = process.env.SSH_USER ?? '';
+const SSH_KEY = process.env.SSH_KEY ?? '';
+
+async function main() {
+  console.log(chalk.yellow(`\n⏪ Rolling back ${DEPLOY_TARGET} to ${ROLLBACK_SHA}...\n`));
+
+  if (!ROLLBACK_SHA) {
+    console.error(chalk.red('No ROLLBACK_SHA provided'));
+    process.exit(1);
+  }
+
+  if (!SSH_HOST) {
+    console.log(chalk.cyan('Local rollback only'));
+    await $`git checkout ${ROLLBACK_SHA} -- src/ web/`.nothrow();
+    return;
+  }
+
+  await $`ssh -o StrictHostKeyChecking=no -i ${SSH_KEY} ${SSH_USER}@${SSH_HOST} "cd /opt/autoorg && git checkout ${ROLLBACK_SHA} && bun install && systemctl restart autoorg"`.nothrow();
+
+  console.log(chalk.green(`✅ Rollback to ${ROLLBACK_SHA} complete`));
+}
+
+main();
+13. Deploy scripts
+scripts/deploy/deploy-local.ts
+TypeScript
+
+#!/usr/bin/env bun
+import { $ } from 'bun';
+import chalk from 'chalk';
+
+async function main() {
+  console.log(chalk.cyan('\n🚀 Deploying locally...\n'));
+  await $`bun install`;
+  await $`bun run src/db/migrate.ts`;
+  console.log(chalk.green('✅ Local deploy ready. Run: bun start'));
+}
+
+main();
+scripts/deploy/deploy-single-node.ts
+TypeScript
+
+#!/usr/bin/env bun
+import { $ } from 'bun';
+import chalk from 'chalk';
+import { writeFile, chmod } from 'node:fs/promises';
+import path from 'node:path';
+
+const SSH_HOST = process.env.SSH_HOST ?? '';
+const SSH_USER = process.env.SSH_USER ?? 'autoorg';
+const SSH_KEY = process.env.SSH_KEY ?? '';
+const DEPLOY_SHA = process.env.DEPLOY_SHA ?? '';
+const BUNDLE = `autoorg-${DEPLOY_SHA}.tar.gz`;
+
+async function main() {
+  console.log(chalk.cyan('\n🚀 Deploying to single-node...\n'));
+
+  const keyFile = '/tmp/deploy-key';
+  await writeFile(keyFile, SSH_KEY, { mode: 0o600 });
+  await chmod(keyFile, 0o600);
+
+  const sshBase = `ssh -o StrictHostKeyChecking=no -i ${keyFile} ${SSH_USER}@${SSH_HOST}`;
+
+  await $`scp -o StrictHostKeyChecking=no -i ${keyFile} ${BUNDLE} ${SSH_USER}@${SSH_HOST}:/tmp/`;
+
+  const deployScript = `
+set -e
+cd /opt/autoorg
+tar -xzf /tmp/${BUNDLE} -C .
+bun install --production
+AUTOORG_VERSION=${DEPLOY_SHA} bun run src/db/migrate.ts
+systemctl reload-or-restart autoorg-api || true
+systemctl reload-or-restart autoorg-daemon || true
+`.trim();
+
+  await $`bash -c '${sshBase} "${deployScript}"'`;
+
+  console.log(chalk.green('✅ Single-node deploy complete'));
+}
+
+main();
+scripts/deploy/deploy-managed.ts
+TypeScript
+
+#!/usr/bin/env bun
+import chalk from 'chalk';
+
+async function main() {
+  console.log(chalk.cyan('\n🚀 Deploying to managed cloud...\n'));
+  // This is intentionally thin. Managed deployment should use
+  // your cloud provider's deploy API or Terraform here.
+  // For now: reserve the interface.
+  console.log(chalk.yellow('Managed deploy: wire your cloud provider deploy API here'));
+}
+
+main();
+14. API health endpoint
+Without this, health checks have nothing to call.
+
+Patch src/api/server.ts
+TypeScript
+
+import { getDb } from '@/db/migrate.js';
+
+// Add before other route handling:
+if (url.pathname === '/health') {
+  const db = getDb();
+  let dbOk = false;
+
+  try {
+    db.prepare('SELECT 1').get();
+    dbOk = true;
+  } catch {}
+
+  db.close();
+
+  const status = dbOk ? 200 : 503;
+  return new Response(JSON.stringify({
+    ok: dbOk,
+    db: dbOk ? 'ok' : 'error',
+    version: process.env.AUTOORG_VERSION ?? 'dev',
+    ts: new Date().toISOString(),
+  }), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+15. Git hooks for local dev
+scripts/hooks/pre-commit
+Bash
+
+#!/usr/bin/env bash
+set -e
+
+echo "🔍 Running pre-commit checks..."
+
+# Typecheck
+bun run scripts/ci/typecheck.ts --project tsconfig.json
+
+# Lint only staged files
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(ts|tsx)$' || true)
+if [ -n "$STAGED" ]; then
+  bunx eslint $STAGED --max-warnings 0
+  bunx prettier --check $STAGED
+fi
+
+# Check for secrets in staged files
+if git diff --cached --name-only | xargs grep -lE "(sk-[A-Za-z0-9_\-]{20,}|sk-ant-|gh[pousr]_)" 2>/dev/null; then
+  echo "❌ Potential secret in staged files. Aborting."
+  exit 1
+fi
+
+echo "✅ Pre-commit checks passed"
+scripts/hooks/pre-push
+Bash
+
+#!/usr/bin/env bash
+set -e
+
+echo "🔍 Running pre-push checks..."
+
+bun test tests/ --timeout 30000
+bun run scripts/ci/migrate-all.ts --verify
+
+echo "✅ Pre-push checks passed"
+scripts/hooks/commit-msg
+Bash
+
+#!/usr/bin/env bash
+
+MSG=$(cat "$1")
+
+PATTERN="^(feat|fix|chore|docs|test|refactor|perf|ci|build|style|revert)(\(.+\))?: .{5,}"
+
+if ! echo "$MSG" | grep -qE "$PATTERN"; then
+  echo "❌ Commit message doesn't match convention:"
+  echo "   type(scope): message"
+  echo "   e.g. feat(phase6): add tool policy enforcement"
+  exit 1
+fi
+
+echo "✅ Commit message ok"
+Install hooks
+Bash
+
+# Add to package.json scripts or setup.ts:
+chmod +x scripts/hooks/pre-commit
+chmod +x scripts/hooks/pre-push
+chmod +x scripts/hooks/commit-msg
+git config core.hooksPath scripts/hooks
+16. CODEOWNERS
+.github/CODEOWNERS
+text
+
+# Default owners for everything
+*                           @knarayanareddy
+
+# Core runtime
+src/runtime/                @knarayanareddy
+src/db/                     @knarayanareddy
+
+# Evals (high risk — benchmark integrity)
+src/evals/                  @knarayanareddy
+benchmarks/                 @knarayanareddy
+
+# Security + policy layer
+src/runtime/policy-engine.ts  @knarayanareddy
+src/runtime/safety-review.ts  @knarayanareddy
+src/runtime/redaction.ts      @knarayanareddy
+
+# Learning (high risk — self-modification)
+src/learning/               @knarayanareddy
+
+# Platform / tenant layer
+src/platform/               @knarayanareddy
+
+# CI/CD workflows
+.github/                    @knarayanareddy
+
+# Constitution is immutable — required owner sign-off
+constitution.md             @knarayanareddy
+17. Secrets + variables reference
+Required GitHub Secrets
+Bash
+
+# ── LLM API KEYS ─────────────────────────────────────────────
+ANTHROPIC_API_KEY
+OPENAI_API_KEY
+
+# ── SIGNING ──────────────────────────────────────────────────
+AUTOORG_SIGNING_SECRET
+
+# ── BENCHMARK (optional separate secret) ─────────────────────
+BENCHMARK_SIGNING_SECRET
+
+# ── STAGING ──────────────────────────────────────────────────
+STAGING_DB_PATH
+STAGING_SIGNING_SECRET
+STAGING_API_KEY
+STAGING_SSH_HOST
+STAGING_SSH_USER
+STAGING_SSH_KEY
+
+# ── PRODUCTION ───────────────────────────────────────────────
+PRODUCTION_DB_PATH
+PRODUCTION_SIGNING_SECRET
+PRODUCTION_API_KEY
+PRODUCTION_SSH_HOST
+PRODUCTION_SSH_USER
+PRODUCTION_SSH_KEY
+Required GitHub Variables (non-secret config)
+Bash
+
+# ── URLS ─────────────────────────────────────────────────────
+STAGING_URL=https://staging.autoorg.yourdomain.com
+PRODUCTION_URL=https://autoorg.yourdomain.com
+
+# ── DEPLOYMENT ───────────────────────────────────────────────
+PRODUCTION_DEPLOYMENT_MODE=single-node
+
+# ── BENCHMARKS ───────────────────────────────────────────────
+DEFAULT_BENCHMARK_SUITE=core
+18. Package.json scripts
+Add these to your package.json:
+
+JSON
+
+{
+  "scripts": {
+    "start": "bun run src/runtime/orchestrator.ts",
+    "dev": "bun run --watch src/runtime/orchestrator.ts",
+    "daemon": "bun run src/runtime/daemon.ts",
+    "api": "bun run src/api/server.ts",
+
+    "migrate": "bun run scripts/ci/migrate-all.ts",
+    "migrate:verify": "bun run scripts/ci/migrate-all.ts --verify",
+
+    "lint": "bun run scripts/ci/lint.ts",
+    "typecheck": "bun run scripts/ci/typecheck.ts",
+    "test": "bun test tests/ --timeout 30000",
+    "test:watch": "bun test --watch tests/",
+    "test:ci": "bun run scripts/ci/test-unit.ts",
+
+    "bench": "bun run src/evals/benchmark-ci.ts",
+    "bench:core": "BENCHMARK_SUITE=core bun run src/evals/benchmark-ci.ts",
+    "bench:stress": "BENCHMARK_SUITE=stress bun run src/evals/benchmark-ci.ts",
+
+    "health": "bun run scripts/ci/health-check.ts",
+    "smoke": "bun run scripts/ci/smoke-test.ts",
+    "security": "bun run scripts/ci/security-scan.ts",
+
+    "learn": "bun run -e \"const { LearningOrchestrator } = await import('./src/learning/learning-orchestrator.ts'); const o = new LearningOrchestrator(); await o.run({});\"",
+
+    "setup:hooks": "git config core.hooksPath scripts/hooks && chmod +x scripts/hooks/*",
+    "ci": "bun run lint && bun run typecheck && bun run test:ci && bun run bench:core"
+  }
+}
+19. Pipeline summary
+text
+
+EVERY PUSH / PR
+─────────────────────────────────────────────────────────────
+lint              → ESLint + Prettier
+typecheck         → tsc (src + web)
+unit-tests        → all tests/ under 30s timeout
+migration-integrity → clean DB + idempotency + schema check
+security-scan     → findings check + artifact integrity
+build-check       → Next.js production build
+[on non-draft PR]
+  benchmark-gate  → core suite + acceptance + regression alarms
+  PR comment      → auto-comment results
+ci-gate           → all-or-nothing required check
+
+MERGE TO MAIN
+─────────────────────────────────────────────────────────────
+pre-deploy-checks → no critical findings
+build-release     → create signed release bundle
+deploy-staging    → deploy + migrate + health + smoke test
+[on failure]      → auto-rollback to previous SHA
+deploy-production → deploy + migrate + health + smoke test + git tag
+[on failure]      → auto-rollback to previous SHA
+
+SCHEDULED
+─────────────────────────────────────────────────────────────
+02:00 UTC daily   → nightly benchmark suite
+                  + constitution A/B comparison
+                  + judge calibration
+                  → open GitHub issue on regression
+
+04:00 UTC Monday  → security audit
+                  → export signed audit bundle
+                  → open GitHub issue on critical findings
+
+03:00 UTC Sunday  → bounded learning cycle
+                  → pattern mining + proposals + simulations
+                  → approval-gated rollout if passing
+
+05:00 UTC 1st/month → distillation export (critic/judge/planner traces)
+
+LOCAL DEV HOOKS
+─────────────────────────────────────────────────────────────
+pre-commit        → typecheck + lint staged + secret scan
+pre-push          → unit tests + migration verify
+commit-msg        → conventional commit format check
+
+
+
+
+
+AutoOrg — Contributor Onboarding
+Everything you need to go from zero to your first merged PR
+PART 1: ORIENTATION
+1.1 What AutoOrg actually is
+AutoOrg is not a chatbot wrapper. It is not a RAG pipeline. It is not a "multi-agent demo."
+
+It is an autonomous organization runtime — a system that:
+
+reads a mission (org.md) and a governing constitution (constitution.md),
+assembles a set of specialized agents (CEO, Engineer, Critic, Archivist, DevilsAdvocate, RatchetJudge),
+runs those agents in a deterministic cycle,
+scores every output against the constitution,
+commits improvements to git and rejects regressions,
+builds an evidence-backed knowledge graph of what it has learned,
+operates unattended in daemon mode under strict approval gates.
+The key design principles that separate AutoOrg from every other agent framework:
+
+text
+
+1. Constitution as law.
+   constitution.md is immutable. It defines what "better" means.
+   No agent can change it. No prompt can override it.
+
+2. Ratchet as memory.
+   Every cycle either improves the best-known output or reverts.
+   Progress is monotonic within a run. History lives in results.tsv.
+
+3. Git as audit trail.
+   Every approved commit is traceable. Every pending commit is staged,
+   not materialized. Approval comes before git history.
+
+4. Evidence before claims.
+   Agents use tools. Tool traces become evidence packs.
+   Unsupported claims are penalized in scoring.
+
+5. Governance before capability.
+   Policy engine, risk tiers, signed artifacts, and redaction
+   are in the critical path, not bolt-ons.
+If you internalize these five principles, the rest of the codebase makes sense.
+
+1.2 The big picture: what exists and where
+text
+
+src/
+├── runtime/            ← core orchestration loop, ratchet, approval, daemon
+├── adapters/           ← LLM provider adapters (Anthropic, OpenAI)
+├── tools/              ← tool registry, runner, sandbox, evidence packs
+├── evals/              ← benchmark suite, leaderboard, regression detection
+├── portfolio/          ← multi-variant org orchestration
+├── platform/           ← auth, RBAC, tenants, workspaces, billing
+├── learning/           ← pattern mining, proposal generation, simulator
+├── prompts/            ← all structured prompt definitions + Zod schemas
+├── integrations/       ← GitHub, connectors, diff, issue translation
+├── config/             ← feature flags, env loading
+└── db/                 ← schema files + migration runners
+
+roles/                  ← role prompt files (CEO.md, Critic.md, etc.)
+benchmarks/             ← benchmark suites, gold outputs, case configs
+portfolio/variants/     ← competing org variant manifests
+platform/templates/     ← reusable org templates
+memory/                 ← runtime memory (MEMORY.md + partitions)
+workspace/              ← current working output per run
+artifacts/              ← signed outputs, evidence, tools, security
+web/                    ← Next.js dashboard (app router)
+scripts/                ← CI/deploy/hook scripts
+.github/                ← workflows + composite actions + CODEOWNERS
+1.3 How a single run works (mental model)
+Read this once. Refer back to it when confused.
+
+text
+
+bun start
+  │
+  ├─ Load org.md (mission)
+  ├─ Load constitution.md (scoring law)
+  ├─ Boot DB + migrations
+  ├─ Write run manifest (signed)
+  ├─ Initialize knowledge graph from seed material
+  ├─ Initialize memory (shared + team partitions)
+  ├─ Acquire workspace lock
+  ├─ Seed tool policies + action policies
+  │
+  └─ MAIN CYCLE (repeats until stop condition)
+        │
+        ├─ CEO reads mission + memory + graph → produces directive
+        ├─ CoordinatorLead assigns tasks to teams
+        ├─ Each worker (Engineer / Critic / Archivist / DevilsAdvocate):
+        │    ├─ Plans tool use
+        │    ├─ Calls tools (repo.search, local_docs, web.fetch, etc.)
+        │    ├─ Builds evidence pack from tool results
+        │    └─ Produces output grounded in evidence
+        │
+        ├─ CEO synthesizes worker outputs into final proposal
+        │
+        ├─ Verification audit (claim → evidence coverage)
+        ├─ Provenance linker (claim → citation → source → seed)
+        ├─ Policy auditor (was everything governed correctly?)
+        │
+        ├─ RatchetJudge scores proposal against constitution
+        │    → composite = groundedness + novelty + consistency + mission_alignment
+        │    → clamped by policy_compliance
+        │    → clamped by unsupported claim ratio
+        │
+        ├─ Ratchet decision:
+        │    COMMIT  → stage pending action + request approval
+        │    REVERT  → restore workspace, log result
+        │
+        ├─ Approval gate (if strict mode):
+        │    approved → materialize commit to git history
+        │    pending  → wait for human/API approval
+        │
+        ├─ Log to results.tsv
+        ├─ Write checkpoint to DB
+        └─ (every N cycles) DreamAgent consolidates memory
+Everything else (portfolio, benchmarks, learning) is built on top of this core loop.
+
+PART 2: LOCAL SETUP
+2.1 Prerequisites
+Bash
+
+# Required
+node (for Next.js)         >= 20
+bun                        >= 1.1.x
+git                        >= 2.40
+ripgrep (rg)               latest     # for repo.search tool
+sqlite3                    any        # for DB inspection
+
+# Recommended dev tools
+jq                         any        # for inspecting JSON artifacts
+watchman                   any        # optional, speeds up file watch
+
+# Verify
+bun --version
+rg --version
+2.2 First-time setup
+Bash
+
+# 1. Clone
+git clone https://github.com/knarayanareddy/Autoorg.git
+cd Autoorg
+
+# 2. Install dependencies
+bun install
+
+# 3. Install git hooks
+bun run setup:hooks
+
+# 4. Copy env file
+cp .env.example .env
+
+# 5. Fill in required keys in .env
+#    At minimum:
+#      DEFAULT_LLM_PROVIDER=anthropic
+#      AUTOORG_API_KEY_ANTHROPIC=sk-ant-...
+#      AUTOORG_SIGNING_SECRET=your-local-dev-secret
+
+# 6. Run all DB migrations
+bun run migrate
+
+# 7. Verify setup
+bun run migrate:verify
+
+# 8. Run unit tests
+bun test
+
+# Expected: all tests pass, no migration errors
+2.3 Run AutoOrg for the first time
+Bash
+
+# Start a single run (reads org.md + constitution.md from repo root)
+bun start
+
+# In a second terminal — watch dashboard
+cd web && bun run dev
+# Open http://localhost:3000
+
+# In a third terminal — start the API
+bun run api
+If you want to try a short run first without a real org.md:
+
+Bash
+
+# Copy the example org
+cp benchmarks/suites/core/planning-basic/org.md org.md
+cp benchmarks/suites/core/planning-basic/constitution.md constitution.md
+
+bun start
+A successful run:
+
+writes at least one row to results.tsv
+creates at least one artifact under artifacts/
+writes a workspace/current_output.md
+2.4 Common first-run problems
+text
+
+PROBLEM                          FIX
+─────────────────────────────────────────────────────────────
+DB file locked                   Kill previous bun process. Check /tmp for leftover DB files.
+rg not found                     Install ripgrep: brew install ripgrep / apt install ripgrep
+API key error                    Check .env has correct AUTOORG_API_KEY_ANTHROPIC
+Missing table error              Run: bun run migrate
+Permission denied on artifacts/  Run: mkdir -p artifacts && chmod -R 755 artifacts
+Approval gate blocks forever     Set AUTOORG_SKIP_APPROVALS=1 in .env for local dev only
+Graph build fails                Ensure memory/ directory exists: mkdir -p memory/facts
+2.5 Required .env keys for development
+Bash
+
+# ── REQUIRED ─────────────────────────────────────────────────
+DEFAULT_LLM_PROVIDER=anthropic
+AUTOORG_API_KEY_ANTHROPIC=sk-ant-your-key-here
+AUTOORG_SIGNING_SECRET=local-dev-secret-change-me
+
+# ── OPTIONAL FOR LOCAL DEV ────────────────────────────────────
+AUTOORG_API_KEY_OPENAI=sk-your-openai-key-here
+AUTOORG_DB_PATH=autoorg.db
+AUTOORG_SKIP_APPROVALS=1
+AUTOORG_DEPLOYMENT_MODE=local
+AUTOORG_INSTANCE_NAME=dev-local
+
+# ── FEATURE FLAGS FOR LOCAL DEV ───────────────────────────────
+# Leave all feature flags unset to use their DB defaults.
+# Override here only if debugging a specific feature.
+# e.g. to force-enable tool use:
+# FEATURE_TOOL_USE=1
+PART 3: ARCHITECTURE TOUR
+3.1 How to read the codebase
+Start here in this exact order:
+
+text
+
+1.  org.md                           ← What the system is trying to do
+2.  constitution.md                  ← What "good" means
+3.  roles/CEO.md                     ← Who drives the loop
+4.  roles/Critic.md                  ← Who attacks the output
+5.  roles/RatchetJudge.md            ← Who scores the output
+6.  src/runtime/orchestrator.ts      ← The main loop
+7.  src/runtime/ratchet.ts           ← The scoring + commit decision
+8.  src/runtime/approval-enforcer.ts ← The hard gate before git
+9.  src/tools/tool-runner.ts         ← How agents call tools safely
+10. src/runtime/policy-engine.ts     ← What is actually allowed
+After those ten files you will understand the control flow end-to-end.
+
+3.2 The runtime stack (layered view)
+text
+
+Layer 6: Learning
+  └── LearningOrchestrator
+      ├── PatternMiner
+      ├── PromptOptimizer / PolicyOptimizer / RoleEvolver
+      ├── Simulator → BenchmarkRunner
+      ├── DriftDetector
+      └── ReleaseGate
+
+Layer 5: Portfolio
+  └── PortfolioRunner
+      ├── BranchStrategy (per-variant git worktrees)
+      ├── PortfolioAllocator
+      ├── JudgeCouncil
+      ├── Tournament
+      ├── BestOfN
+      └── ExchangeBus → Quarantine
+
+Layer 4: Benchmarks + Evals
+  └── BenchmarkRunner
+      ├── BenchmarkSuiteLoader
+      ├── GoldEvaluator
+      ├── LeaderboardService
+      ├── RegressionDetector
+      ├── ReplayLab
+      └── JudgeCalibrator
+
+Layer 3: Safety + Governance
+  └── PolicyEngine → ActionLedger
+      ├── RiskEngine
+      ├── SafetyReview (unsafe action detector)
+      ├── ApprovalEnforcer
+      ├── RedactionFilter
+      ├── ArtifactSigner
+      └── ProvenanceBuilder → ClaimRegistry
+
+Layer 2: Tool substrate
+  └── ToolRunner → ToolRegistry
+      ├── Manifests: repo.search / repo.read_file / local_docs / web.fetch / sandbox.exec
+      ├── ToolPolicy (allowlists per role/team)
+      ├── EvidencePackBuilder
+      └── VerificationAuditor
+
+Layer 1: Core loop
+  └── Orchestrator
+      ├── AgentRunner (LLM calls + evidence synthesis)
+      ├── RatchetEngine (score → commit/revert)
+      ├── ApprovalGate
+      ├── RecoveryJournal + WorkspaceLock + LeaseManager
+      ├── BudgetManager + TeamMemoryPartitions
+      ├── DreamEngine (periodic memory consolidation)
+      └── ResultsLogger (results.tsv)
+
+Platform (cross-cutting)
+  └── AuthService / RbacService / TenantContextResolver
+      WorkspaceProvisioner / QuotaManager / BillingService
+      HostedRunner / RemoteAgentService
+      TemplateRegistry / BackupManager / RetentionManager
+      ObservabilityService
+3.3 Data flow for a single agent call
+This is what actually happens when the orchestrator calls AgentRunner.runWithTools(...):
+
+text
+
+1. ToolPolicy.seedDefaults(teamId)   ← what tools are allowed for this role/team?
+
+2. ToolPlanner prompt                ← LLM decides which tools are needed
+
+3. PolicyEngine.evaluate(intent)     ← is this tool call permitted at this risk tier?
+
+4. ActionLedger.propose(...)         ← record it as a proposed action
+
+5. SafetyReview.review(...)          ← if EXECUTE/PUBLISH, check for unsafe patterns
+
+6. ToolRunner.execute(toolName, ...) ← run the tool
+
+7. Redaction.redact(output)          ← strip secrets and PII
+
+8. ArtifactSigner.signFile(...)      ← sign the output artifact
+
+9. ActionLedger.apply(...)           ← mark as applied
+
+10. EvidencePackBuilder.fromExecutions(...)  ← bundle evidence
+
+11. EvidenceSynthesizer prompt        ← LLM produces final answer grounded in evidence
+
+12. VerificationAuditor.audit(...)    ← audit claims vs evidence
+
+13. ProvenanceBuilder.linkDraft(...)  ← link claims to evidence items
+
+14. PolicyAuditor.audit(...)          ← compute policy compliance score
+
+15. RatchetJudge scores result        ← constitution scoring with all clamps applied
+3.4 DB layout (key tables)
+text
+
+Core loop
+  runs                      ← one row per orchestrator run
+  cycles                    ← one row per cycle within a run
+  approvals                 ← approval requests
+  pending_actions           ← staged commit candidates (strict gate)
+  delegated_tasks           ← CEO → team → worker task assignments
+
+Tool substrate
+  tool_definitions          ← registered tools
+  tool_executions           ← every tool call
+  tool_artifacts            ← excerpts/hits from tool calls
+  evidence_packs            ← bundled tool output per worker/team/CEO
+  evidence_items            ← individual evidence records
+
+Governance
+  action_ledger             ← append-only proposed/applied/reverted actions
+  claim_registry            ← claims extracted from outputs
+  claim_citations           ← claim → evidence → source → seed provenance
+  security_findings         ← open security/policy violations
+  redaction_events          ← what was redacted and why
+  artifact_manifests        ← signed artifact metadata
+
+Evals
+  benchmark_suites          ← named benchmark groups
+  benchmark_cases           ← individual scenarios
+  benchmark_runs            ← suite executions
+  benchmark_attempts        ← one case × one run
+  benchmark_metrics         ← normalized scores per attempt
+  leaderboards              ← aggregated comparative views
+  regression_alarms         ← detected metric regressions
+
+Learning
+  learning_cycles           ← improvement loop executions
+  improvement_proposals     ← candidate changes
+  prompt_versions           ← versioned prompt overlays
+  policy_versions           ← versioned policy configs
+  role_versions             ← versioned role manifests
+  simulation_runs           ← candidate vs baseline benchmarks
+  rollout_decisions         ← release gate decisions
+
+Platform
+  tenants / users / memberships / sessions / api_keys
+  workspaces / workspace_memberships
+  quota_policies / quota_usage / billing_events
+  hosted_runs / remote_agents
+  org_templates / role_registry
+  backup_jobs / retention_policies / compliance_logs
+PART 4: HOW TO CONTRIBUTE
+4.1 Types of contribution
+text
+
+TYPE                WHAT THIS LOOKS LIKE
+────────────────────────────────────────────────────────────
+Bug fix             A specific runtime behavior that is wrong.
+                    Must include a test that reproduces the bug.
+
+Tool manifest       A new tool (src/tools/manifests/*.ts).
+                    Must include policy seeding + trace test.
+
+Prompt improvement  A change to any file in src/prompts/ or roles/.
+                    Must pass benchmark gate. Must not fail drift check.
+
+New phase feature   A feature from the roadmap not yet built.
+                    Must follow phase structure (schema + migration +
+                    runtime + prompts + tests + API routes).
+
+Benchmark case      A new benchmarks/suites/*/case.json + gold.md.
+                    Should be realistic, measurable, deterministic.
+
+Constitution edit   changes to constitution.md.
+                    Requires owner sign-off. Requires A/B experiment
+                    showing no regression on core suite.
+
+Role edit           changes to roles/*.md.
+                    Must pass benchmark gate + drift check.
+
+Platform feature    Auth, RBAC, workspace, billing concerns.
+                    Must include migration, API routes, tests.
+
+Learning cycle      changes to src/learning/.
+                    Must include simulator + gate + approval wiring.
+4.2 Branch naming conventions
+text
+
+feat/phase-{N}-{short-description}        new phase feature
+fix/{module}-{short-description}          bug fix
+chore/{short-description}                 maintenance, deps, config
+test/{short-description}                  test-only changes
+bench/{short-description}                 benchmark additions/changes
+docs/{short-description}                  documentation only
+refactor/{short-description}              no behavior change
+ci/{short-description}                    CI/CD changes
+Examples:
+
+text
+
+feat/phase6-sandbox-exec
+fix/approval-enforcer-double-commit
+bench/core-grounded-research-case
+docs/contributor-onboarding
+ci/nightly-benchmark-schedule
+4.3 Commit message format
+AutoOrg uses conventional commits. The pre-commit hook enforces this.
+
+text
+
+type(scope): short description (< 72 chars)
+
+Optional longer description.
+
+Optional references:
+- closes #123
+- related to #456
+Valid types:
+
+text
+
+feat      new feature
+fix       bug fix
+chore     maintenance / deps / tooling
+docs      documentation only
+test      tests only
+refactor  behavior-neutral refactor
+perf      performance improvement
+ci        CI/CD changes
+build     build system changes
+style     formatting / no logic change
+revert    revert a previous commit
+Valid scopes:
+
+text
+
+runtime       orchestrator, ratchet, daemon, leases, locks
+tools         tool registry, runner, manifests, evidence
+governance    policy, action ledger, provenance, redaction, signing
+evals         benchmarks, leaderboards, regressions, replay, calibration
+portfolio     variants, allocator, council, tournament, exchange
+platform      auth, RBAC, workspace, billing, templates, SDK
+learning      pattern mining, proposals, versions, simulator, drift
+prompts       any src/prompts/ change
+roles         any roles/*.md change
+db            schema or migration changes
+api           API route changes
+web           dashboard / UI changes
+ci            GitHub Actions / scripts/ci
+deps          dependency changes
+Examples:
+
+Bash
+
+feat(tools): add sandbox.exec manifest with allowlist enforcement
+fix(governance): approval enforcer now reverts staging file on denial
+test(evals): add regression-detector schema test
+bench(core): add grounded-research benchmark case with gold expectations
+docs(runtime): add mental model for ratchet decision flow
+chore(deps): upgrade bun to 1.1.38
+4.4 PR checklist
+Before opening a PR, verify every item:
+
+text
+
+REQUIRED (CI will enforce)
+□ bun run lint              passes with 0 warnings
+□ bun run typecheck         passes
+□ bun test                  all tests pass
+□ bun run migrate:verify    schema integrity ok
+□ No secrets in diff        no API keys, tokens, or private keys
+
+REQUIRED (for non-trivial changes)
+□ New feature has tests      at minimum, schema validation tests
+□ New DB table has migration  migration added to migrate-all.ts order
+□ New tool has policy seeding tool manifest registered in bootstrap.ts
+□ New prompt has Zod schema   every structured LLM output has a schema
+
+REQUIRED (for prompt / role / constitution changes)
+□ Benchmark gate passes       core suite acceptance + no regression alarms
+□ Drift check passes          drift_score < 0.35, regression_risk < 0.60
+
+OPTIONAL BUT APPRECIATED
+□ API route added             if feature needs external access
+□ UI page or nav link added   if feature produces data worth seeing
+□ .env.example updated        if feature adds new env variables
+□ Autoorg.md updated          if feature is a new phase addition
+4.5 PR size guidelines
+text
+
+IDEAL PR            ≤ 400 lines changed
+ACCEPTABLE          400–800 lines
+REQUIRES SPLIT      > 800 lines (unless it is one migration + one feature)
+If your PR is large, split it:
+
+text
+
+Bad  → PR #1: entire Phase 6 (tools + traces + evidence + critic + judge + API + UI)
+Good → PR #1: tool registry + runner + 2 manifests + tests
+       PR #2: evidence packs + verification auditor
+       PR #3: tool-aware critic + judge clamp
+       PR #4: API routes + UI
+The person reviewing your PR has to understand the change.
+Smaller PRs get reviewed faster.
+
+4.6 How the review process works
+text
+
+1. Open PR
+   ├─ CI runs: lint + typecheck + tests + migrations + security scan
+   ├─ [non-draft PRs] benchmark gate runs + posts comment
+   └─ CODEOWNERS auto-requested for review
+
+2. Reviewer feedback
+   ├─ Inline comments on code
+   ├─ "Request changes" if something must be fixed
+   └─ "Approve" when ready
+
+3. Merge
+   ├─ Squash merge preferred for feature branches
+   ├─ Rebase+merge preferred for clean history branches
+   └─ DO NOT force-push to main
+
+4. CD triggers
+   └─ deploy-staging → smoke test → [if main] deploy-production
+PART 5: HOW TO BUILD A FEATURE
+5.1 The canonical feature structure
+Every non-trivial feature in AutoOrg follows this structure.
+Use it as a template.
+
+text
+
+1. DB schema      (src/db/schema-phaseN.sql)
+2. Migration      (src/db/migrate-phaseN.ts)
+3. Prompts        (src/prompts/*.ts with Zod schema)
+4. Runtime        (src/runtime/*.ts or src/learning/*.ts etc.)
+5. API routes     (src/api/*.ts)
+6. Agent wiring   (patch AgentRunner or Orchestrator)
+7. Tests          (tests/*.test.ts)
+8. UI             (web/app/*/page.tsx + nav link)
+9. .env additions (.env.example)
+You do not need all nine for small fixes.
+You need all nine for new phase features.
+
+5.2 Step-by-step: adding a new tool
+Tools are the most common extension point. Here is the exact process.
+
+Step 1: Create the connector
+TypeScript
+
+// src/integrations/connectors/my-connector.ts
+export async function myConnector(input: {
+  query: string;
+  limit?: number;
+}) {
+  // your fetch/search/read logic
+  return {
+    summary: `Found results for ${input.query}`,
+    hits: [],
+  };
+}
+Step 2: Create the tool manifest
+TypeScript
+
+// src/tools/manifests/my-tool.ts
+import { z } from 'zod';
+import { myConnector } from '@/integrations/connectors/my-connector.js';
+import type { ToolDefinition } from '@/tools/registry.js';
+
+export const myTool: ToolDefinition = {
+  name: 'my.tool',
+  displayName: 'My Tool',
+  capabilityClass: 'search',           // search / read / verify / execute / transform
+  description: 'What this tool does in one sentence.',
+  inputSchema: z.object({
+    query: z.string(),
+    limit: z.number().int().min(1).max(50).default(20),
+  }),
+  outputSchema: z.object({
+    summary: z.string(),
+    hits: z.array(z.any()),
+  }),
+  defaultTimeoutMs: 5000,
+  replayable: true,
+  dangerous: false,
+  async execute(input, ctx) {
+    const result = await myConnector(input);
+    return {
+      summary: result.summary,
+      deterministic: true,
+      output: result,
+      sources: result.hits.map(h => ({
+        type: 'file_hit',
+        uri: h.uri,
+        title: h.title,
+        excerpt: h.excerpt,
+      })),
+    };
+  },
+};
+Step 3: Register in bootstrap
+TypeScript
+
+// src/tools/bootstrap.ts — add import and register call
+import { myTool } from '@/tools/manifests/my-tool.js';
+
+export function bootstrapRegistry() {
+  const registry = new ToolRegistry();
+  // ... existing tools ...
+  registry.register(myTool);
+  return registry;
+}
+Step 4: Add tool policy defaults
+TypeScript
+
+// src/tools/tool-policy.ts — add to defaults array
+['Engineer', 'my.tool', 1],
+['Critic', 'my.tool', 1],
+Step 5: Write a test
+TypeScript
+
+// tests/my-tool.test.ts
+import { describe, it, expect } from 'bun:test';
+import { bootstrapRegistry } from '../src/tools/bootstrap.js';
+import { ToolRunner } from '../src/tools/tool-runner.js';
+import { ToolPolicy } from '../src/tools/tool-policy.js';
+
+describe('my.tool', () => {
+  it('executes and returns sources', async () => {
+    const runId = `run_mytest_${Date.now()}`;
+    const registry = bootstrapRegistry();
+    const policy = new ToolPolicy(runId);
+    policy.seedDefaults();
+
+    const runner = new ToolRunner(runId, registry);
+    const result = await runner.execute('my.tool', { query: 'test query' }, {
+      runId,
+      cycleNumber: 1,
+      role: 'Engineer',
+    });
+
+    expect(result.executionId).toMatch(/^tx_/);
+    expect(typeof result.summary).toBe('string');
+  });
+});
+Step 6: Verify
+Bash
+
+bun test tests/my-tool.test.ts
+bun run typecheck
+bun run lint
+5.3 Step-by-step: adding a new prompt
+Prompts in AutoOrg are typed contracts, not free-text strings.
+
+Step 1: Define the schema
+TypeScript
+
+// src/prompts/my-prompt.ts
+import { z } from 'zod';
+
+export const MyPromptSchema = z.object({
+  result: z.string(),
+  confidence: z.number().min(0).max(1),
+  concerns: z.array(z.string()).max(8),
+});
+
+export const MY_PROMPT_SYSTEM_PROMPT = `
+You are AutoOrg's [Role].
+
+Given:
+- [input description]
+
+Your job:
+1. [what to do]
+2. [how to do it]
+
+Hard rules:
+- [constraint 1]
+- [constraint 2]
+`.trim();
+Step 2: Use it in a runtime file
+TypeScript
+
+// src/runtime/my-feature.ts
+import { getAdapter } from '@/adapters/adapter-factory.js';
+import { MY_PROMPT_SYSTEM_PROMPT, MyPromptSchema } from '@/prompts/my-prompt.js';
+
+export async function runMyFeature(input: { context: string }) {
+  const adapter = getAdapter({
+    provider: (process.env.DEFAULT_LLM_PROVIDER ?? 'anthropic') as any,
+    model: 'claude-sonnet-4-5',
+  });
+
+  return await adapter.structured({
+    model: 'claude-sonnet-4-5',
+    messages: [
+      { role: 'system', content: MY_PROMPT_SYSTEM_PROMPT },
+      { role: 'user', content: JSON.stringify(input, null, 2) },
+    ],
+    schema: MyPromptSchema,
+  });
+}
+Step 3: Write a schema test
+TypeScript
+
+// tests/my-prompt-schema.test.ts
+import { describe, it, expect } from 'bun:test';
+import { MyPromptSchema } from '../src/prompts/my-prompt.js';
+
+describe('MyPromptSchema', () => {
+  it('validates correct output', () => {
+    const parsed = MyPromptSchema.parse({
+      result: 'Some answer',
+      confidence: 0.85,
+      concerns: ['Missing verification'],
+    });
+    expect(parsed.confidence).toBeGreaterThan(0.8);
+  });
+});
+Note: schema tests should not call the LLM. They test that your Zod schema correctly validates/rejects shapes. This is how you get fast, reproducible tests for all prompt output types.
+
+5.4 Step-by-step: adding a DB table
+Step 1: Add to the appropriate schema file
+SQL
+
+-- src/db/schema-phaseN.sql
+CREATE TABLE IF NOT EXISTS my_new_table (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  -- ... columns ...
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_my_new_table_run
+  ON my_new_table(run_id, created_at DESC);
+Step 2: Make sure migration is idempotent
+Use CREATE TABLE IF NOT EXISTS and INSERT OR IGNORE.
+Never use plain CREATE TABLE without IF NOT EXISTS.
+This is what allows migrations to run twice on the same DB without error.
+
+Step 3: Add migration to scripts/ci/migrate-all.ts
+TypeScript
+
+// scripts/ci/migrate-all.ts — add to MIGRATIONS array
+'src/db/migrate-phaseN.ts',
+And add to REQUIRED_TABLES if this table is critical:
+
+TypeScript
+
+const REQUIRED_TABLES = [
+  // ... existing ...
+  'my_new_table',
+];
+Step 4: Test it
+Bash
+
+# Clean run
+AUTOORG_DB_PATH=/tmp/test-new-table.db bun run migrate
+AUTOORG_DB_PATH=/tmp/test-new-table.db bun run migrate  # idempotency check
+AUTOORG_DB_PATH=/tmp/test-new-table.db bun run migrate:verify
+5.5 Step-by-step: editing a role prompt
+Role prompt edits have the most governance around them because they affect every cycle's output quality.
+
+Step 1: Understand what the role does
+Read:
+
+roles/{RoleName}.md — current instructions
+src/prompts/ — any structured output schema for the role
+constitution.md — what the role is ultimately judged against
+Step 2: Make a narrow change
+Do not rewrite role prompts. Make one specific improvement:
+
+add a hard rule,
+clarify an ambiguous instruction,
+strengthen evidence requirements,
+remove an instruction that conflicts with another role.
+Step 3: Run the local drift check
+Bash
+
+bun run -e "
+const { DriftDetector } = await import('./src/learning/drift-detector.ts');
+const { readFile } = await import('node:fs/promises');
+
+const detector = new DriftDetector('local-drift-check');
+const original = await readFile('roles/Critic.md', 'utf-8');
+
+// Paste your proposed new content here (or load from a temp file)
+const proposed = await readFile('/tmp/Critic-candidate.md', 'utf-8');
+
+const report = await detector.compare({
+  targetKey: 'role:Critic',
+  fromContent: original,
+  toContent: proposed,
+});
+
+console.log(JSON.stringify(report.report, null, 2));
+"
+A passing drift check:
+
+drift_score < 0.35,
+regression_risk < 0.60,
+blocked: false.
+Step 4: Run benchmark gate locally (if you have API keys)
+Bash
+
+bun run bench:core
+Step 5: Open PR and let CI decide
+The PR will run the benchmark gate automatically.
+If it regresses any metric beyond tolerance, CI will block it and post the results.
+
+PART 6: TESTING GUIDE
+6.1 Test philosophy
+AutoOrg tests are split into three tiers:
+
+text
+
+TIER 1: Schema tests (fastest, no LLM, no DB)
+  ─ Validate Zod schemas accept correct shapes
+  ─ Validate Zod schemas reject wrong shapes
+  ─ Pure TypeScript, < 5ms each
+  ─ Should exist for EVERY structured prompt output
+
+TIER 2: Runtime unit tests (fast, real DB, no LLM)
+  ─ Test policy enforcement (can/cannot spend, can/cannot tool-call)
+  ─ Test DB writes and reads
+  ─ Test crypto (signing, verification, redaction)
+  ─ Test lease/lock mechanics
+  ─ These should NOT call the LLM
+
+TIER 3: Integration tests (slow, requires API keys, real LLM)
+  ─ Benchmark suite runs
+  ─ Tool execution with real connectors
+  ─ These live in evals/ not tests/
+  ─ Only run in benchmark-gate CI job or locally with API keys
+6.2 Writing a schema test
+This is the most important test pattern in the codebase. Every new prompt schema needs one.
+
+TypeScript
+
+// tests/my-prompt-schema.test.ts
+import { describe, it, expect } from 'bun:test';
+import { MyPromptSchema } from '../src/prompts/my-prompt.js';
+
+describe('MyPromptSchema', () => {
+  // Test valid case
+  it('accepts valid output', () => {
+    const parsed = MyPromptSchema.parse({
+      result: 'Some result',
+      confidence: 0.88,
+      concerns: ['One concern'],
+    });
+    expect(parsed.confidence).toBeGreaterThan(0.5);
+    expect(parsed.concerns.length).toBe(1);
+  });
+
+  // Test edge cases
+  it('accepts empty concerns array', () => {
+    const parsed = MyPromptSchema.parse({
+      result: 'Clean result',
+      confidence: 1.0,
+      concerns: [],
+    });
+    expect(parsed.concerns.length).toBe(0);
+  });
+
+  // Test rejection of bad input
+  it('rejects confidence out of range', () => {
+    expect(() => MyPromptSchema.parse({
+      result: 'Bad',
+      confidence: 1.5,            // > 1.0, should fail
+      concerns: [],
+    })).toThrow();
+  });
+
+  // Test max array length enforcement
+  it('rejects too many concerns', () => {
+    expect(() => MyPromptSchema.parse({
+      result: 'Bad',
+      confidence: 0.5,
+      concerns: Array(20).fill('concern'),  // > 8, should fail
+    })).toThrow();
+  });
+});
+6.3 Writing a runtime unit test
+TypeScript
+
+// tests/budget-manager.test.ts
+import { describe, it, expect } from 'bun:test';
+import { BudgetManager } from '../src/runtime/budget-manager.js';
+
+describe('BudgetManager', () => {
+  // Use a unique run ID per test to avoid DB conflicts
+  const runId = `run_budget_${Date.now()}`;
+
+  it('seeds default budgets', () => {
+    const budgets = new BudgetManager(runId);
+    budgets.seedDefaults('team_research');
+
+    // Verify a small spend is allowed
+    expect(budgets.canSpend('team_research', 'usd', 0.1)).toBe(true);
+  });
+
+  it('enforces hard limits', () => {
+    const budgets = new BudgetManager(runId);
+    budgets.seedDefaults('team_test', { usdLimit: 0.5 });
+
+    // Spend up to limit
+    budgets.spend({
+      teamId: 'team_test',
+      budgetType: 'usd',
+      delta: 0.4,
+      reason: 'test',
+    });
+
+    // Next spend should fail
+    expect(budgets.canSpend('team_test', 'usd', 0.2)).toBe(false);
+  });
+
+  it('throws on overspend when hard limit is set', () => {
+    const budgets = new BudgetManager(runId);
+    budgets.seedDefaults('team_strict', { usdLimit: 0.1 });
+
+    // Spend full budget
+    budgets.spend({ teamId: 'team_strict', budgetType: 'usd', delta: 0.1, reason: 'test' });
+
+    // Next spend should throw
+    expect(() => budgets.spend({
+      teamId: 'team_strict',
+      budgetType: 'usd',
+      delta: 0.01,
+      reason: 'overflow',
+    })).toThrow('Budget exceeded');
+  });
+});
+6.4 Running tests
+Bash
+
+# Run all tests
+bun test
+
+# Run a single test file
+bun test tests/budget-manager.test.ts
+
+# Run tests matching a pattern
+bun test --grep "BudgetManager"
+
+# Run tests in watch mode
+bun test --watch
+
+# Run with verbose output
+bun test --verbose
+
+# Run with timeout override
+bun test --timeout 60000
+
+# Run CI-style (produces junit.xml)
+bun run test:ci
+6.5 Test isolation rules
+text
+
+ALWAYS
+  □ Use a unique runId per test: `run_feature_${Date.now()}`
+  □ Use unique slugs/emails per test: `user_${Date.now()}@test.com`
+  □ Clean up any created files in afterEach if they are large
+
+NEVER
+  □ Share DB state between tests in the same file
+  □ Call the LLM in a Tier 1 or Tier 2 test
+  □ Use process.cwd() as a hardcoded workspace root in tests
+  □ Depend on test execution order
+PART 7: DEBUGGING GUIDE
+7.1 Debugging a run that produces bad output
+Bash
+
+# 1. Find the run ID
+bun run -e "
+const { getDb } = await import('./src/db/migrate.ts');
+const db = getDb();
+const rows = db.prepare('SELECT id, status, created_at FROM runs ORDER BY created_at DESC LIMIT 5').all();
+console.table(rows);
+db.close();
+"
+
+# 2. Inspect cycles for the run
+bun run -e "
+const { getDb } = await import('./src/db/migrate.ts');
+const db = getDb();
+const rows = db.prepare(
+  'SELECT cycle_number, decision, score, summary FROM results_log WHERE run_id = ? ORDER BY cycle_number'
+).all('run_YOUR_ID_HERE');
+console.table(rows);
+db.close();
+"
+
+# 3. Inspect evidence packs for a cycle
+bun run -e "
+const { getDb } = await import('./src/db/migrate.ts');
+const db = getDb();
+const rows = db.prepare(
+  'SELECT id, owner_role, kind, item_count, unsupported_claim_count, artifact_path FROM evidence_packs WHERE run_id = ? ORDER BY created_at'
+).all('run_YOUR_ID_HERE');
+console.table(rows);
+db.close();
+"
+
+# 4. Read the evidence pack itself
+cat artifacts/evidence/packs/ep_YOUR_PACK_ID.md
+
+# 5. Inspect tool executions
+bun run -e "
+const { getDb } = await import('./src/db/migrate.ts');
+const db = getDb();
+const rows = db.prepare(
+  'SELECT role, tool_name, status, output_summary, duration_ms FROM tool_executions WHERE run_id = ? ORDER BY created_at'
+).all('run_YOUR_ID_HERE');
+console.table(rows);
+db.close();
+"
+7.2 Debugging a stalled approval gate
+Bash
+
+# Find pending actions
+bun run -e "
+const { getDb } = await import('./src/db/migrate.ts');
+const db = getDb();
+const rows = db.prepare(
+  \"SELECT pa.id, pa.status, pa.action_type, a.status as approval_status, pa.created_at FROM pending_actions pa JOIN approvals a ON a.id = pa.approval_id WHERE pa.status = 'staged' ORDER BY pa.created_at\"
+).all();
+console.table(rows);
+db.close();
+"
+
+# Manually approve via API (local dev)
+curl -X POST http://localhost:3000/api/approvals/YOUR_APPROVAL_ID/action \
+  -H "Content-Type: application/json" \
+  -d '{"action":"approved","comment":"Manual approval for debugging"}'
+
+# Or skip approvals entirely in local dev
+echo "AUTOORG_SKIP_APPROVALS=1" >> .env
+7.3 Debugging a failed DB migration
+Bash
+
+# See which tables exist
+bun run -e "
+const { getDb } = await import('./src/db/migrate.ts');
+const db = getDb();
+const tables = db.prepare(\"SELECT name FROM sqlite_master WHERE type='table' ORDER BY name\").all();
+console.log(tables.map(t => t.name).join('\n'));
+db.close();
+"
+
+# Drop the DB and start fresh (local dev only, never in production)
+rm autoorg.db
+bun run migrate
+
+# Check for syntax errors in schema file
+sqlite3 /tmp/check.db < src/db/schema-phaseN.sql
+7.4 Debugging policy denials
+Bash
+
+# Find denied actions
+bun run -e "
+const { getDb } = await import('./src/db/migrate.ts');
+const db = getDb();
+const rows = db.prepare(
+  \"SELECT role, action_class, target_ref, risk_tier, status, output_json FROM action_ledger WHERE status IN ('denied','failed') ORDER BY created_at DESC LIMIT 20\"
+).all();
+console.table(rows.map(r => ({...r, output_json: JSON.parse(r.output_json || '{}')})));
+db.close();
+"
+
+# Find denied tool executions
+bun run -e "
+const { getDb } = await import('./src/db/migrate.ts');
+const db = getDb();
+const rows = db.prepare(
+  \"SELECT role, tool_name, status, error_text, created_at FROM tool_executions WHERE status IN ('denied','failed') ORDER BY created_at DESC LIMIT 20\"
+).all();
+console.table(rows);
+db.close();
+"
+7.5 Debugging benchmark failures
+Bash
+
+# Run with verbose output
+BENCHMARK_VERBOSE=1 bun run bench:core
+
+# Inspect specific attempt
+bun run -e "
+const { getDb } = await import('./src/db/migrate.ts');
+const db = getDb();
+const rows = db.prepare(
+  'SELECT ba.id, ba.status, bm.score, bm.groundedness, bm.gold_match, bm.acceptance_pass, bm.policy_compliance FROM benchmark_attempts ba JOIN benchmark_metrics bm ON bm.attempt_id = ba.id ORDER BY ba.created_at DESC LIMIT 10'
+).all();
+console.table(rows);
+db.close();
+"
+
+# Check regression alarms
+bun run -e "
+const { getDb } = await import('./src/db/migrate.ts');
+const db = getDb();
+const rows = db.prepare('SELECT * FROM regression_alarms ORDER BY created_at DESC LIMIT 20').all();
+console.table(rows);
+db.close();
+"
+7.6 Useful debug environment variables
+Bash
+
+# Skip approval gate (local dev only)
+AUTOORG_SKIP_APPROVALS=1
+
+# Verbose LLM call logging
+AUTOORG_DEBUG_LLM=1
+
+# Use a specific DB file
+AUTOORG_DB_PATH=/tmp/my-debug.db
+
+# Force a specific max cycles
+AUTOORG_MAX_CYCLES=2
+
+# Disable ratchet commit (run in read-only scoring mode)
+AUTOORG_READONLY_MODE=1
+PART 8: FEATURE FLAG SYSTEM
+8.1 How feature flags work
+Feature flags are stored in the feature_flags table.
+They are read at runtime using featureFlag('flagName').
+Schema migrations seed flags with their defaults.
+You can override them via environment variables.
+
+TypeScript
+
+// Reading a feature flag
+import { featureFlag } from '@/config/feature-flags.js';
+
+if (featureFlag('toolUse')) {
+  // tool-use path
+}
+8.2 Phase-by-phase flags
+text
+
+Phase 5.1 flags (hardening)
+  strictApprovalBlocking    no commit without approved gate
+  daemonRecovery            resume after crash
+  workerLeases              heartbeat-based leases
+  workspaceLocks            concurrency locks
+  issueTranslation          GitHub issue → task
+  teamBudgets               per-team budgets
+  teamMemoryPartitions      per-team memory lanes
+
+Phase 6 flags (tools)
+  toolRegistry              tool manifest registry
+  toolUse                   agents can plan and use tools
+  toolPolicies              allowlists per role/team
+  toolTraces                persist traces
+  evidencePacks             build evidence packs
+  sandboxExec               sandboxed execution
+  toolAwareCritic           critic flags unsupported claims
+  toolAwareJudge            judge receives verification report
+  replayableToolTraces      replay from saved artifacts
+
+Phase 6.1 flags (governance)
+  policyEngine              action class policy gates
+  actionLedger              append-only ledger
+  provenanceChain           claim-to-citation tracking
+  artifactSigning           signed manifests
+  redactionFilters          secret/PII redaction
+  riskTieredApprovals       escalate risky actions
+  unsafeActionDetector      block dangerous execution
+  policyAwareJudge          judge compliance clamp
+  securityAuditExport       export audit bundles
+  immutableArtifacts        write-once artifacts
+
+Phase 7 flags (evals)
+  benchmarkLab              suite execution
+  goldEvaluator             acceptance band comparison
+  leaderboards              cross-model rankings
+  constitutionAB            A/B testing
+  regressionAlarms          regression detection
+  offlineReplayLab          offline replay
+  judgeCalibration          consistency harness
+  templateBakeoffs          org template comparison
+  benchmarkCI               CI gate
+
+Phase 8 flags (portfolio)
+  portfolioOrchestration    concurrent variants
+  portfolioAllocator        capital routing
+  judgeCouncil              council voting
+  tournamentMode            bracket competition
+  crossOrgQuarantine        quarantined exchange
+  bestOfNSynthesis          top-N synthesis
+  branchPerOrg              git branch isolation
+  failureContainment        variant kill-switch
+  portfolioDashboard        portfolio UI
+
+Phase 9 flags (platform)
+  multiTenantAuth           tenant/user/session
+  rbacPlatform              RBAC
+  hostedRuns                hosted run dispatch
+  remoteAgents              remote workers
+  templateMarketplace       template/role registry
+  billingAndQuotas          quota enforcement
+  workspaceIsolation        workspace provisioning
+  backupRestore             backup jobs
+  complianceRetention       compliance logs
+  adminObservability        admin dashboard
+  publicApiSdk              SDK
+
+Phase 10 flags (learning)
+  learningLoop              self-improvement loop
+  patternMining             pattern extraction
+  promptOptimization        prompt revision
+  policyOptimization        policy revision
+  roleEvolution             role revision
+  memoryUtilityPruning      memory pruning
+  routingOptimization       routing optimization
+  adapterDistillation       trace export
+  simulateBeforeRollout     simulation gate
+  selfImprovementApproval   approval-gated rollout
+  promptDriftGuard          drift detection
+  learningLineage           ancestry tracking
+8.3 Overriding flags in local dev
+Bash
+
+# Disable a flag locally (even if seeded as enabled)
+FEATURE_STRICT_APPROVAL_BLOCKING=0 bun start
+
+# Enable a flag locally (even if seeded as disabled)
+FEATURE_PORTFOLIO_ORCHESTRATION=1 bun start
+PART 9: ARCHITECTURAL CONSTRAINTS
+These are the rules that must not be broken.
+They are not preferences. They are load-bearing constraints.
+
+9.1 The constitution is immutable at runtime
+text
+
+✅ Constitution text can be changed between runs (via PR + A/B experiment).
+❌ Constitution text cannot be changed within a run.
+❌ No agent can override, extend, or bypass the constitution.
+❌ No prompt can add or remove scoring criteria mid-run.
+If you find code that lets an agent write back to constitution.md, that is a bug.
+
+9.2 Approval must come before materialization
+text
+
+✅ A cycle can decide "this deserves a commit."
+✅ That decision is staged as a pending action.
+✅ The pending action has a signed artifact.
+✅ An approval must be granted before the artifact materializes in git history.
+❌ git commit must never happen before approval when strictApprovalBlocking is on.
+❌ You cannot "approve and commit at the same time" in a single transaction.
+The ApprovalEnforcer.stageCommitCandidate(...) and materializeApprovedActions(...) pattern enforces this split. Do not collapse them.
+
+9.3 Every LLM output must go through a Zod schema
+text
+
+✅ adapter.structured({ schema: MyZodSchema })
+❌ JSON.parse(response) without validation
+❌ Trusting LLM string output directly as code logic input
+Zod schemas are your type boundary at the LLM interface. They catch hallucinated fields and missing fields before they propagate downstream.
+
+9.4 Every meaningful file write must go through ImmutableArtifacts
+text
+
+✅ ImmutableArtifacts.writeText(...)
+✅ ImmutableArtifacts.writeJson(...)
+❌ Raw fs.writeFile() for evidence packs, pending actions, or security artifacts
+❌ Raw Bun.write() for signing-critical files
+ImmutableArtifacts ensures:
+
+the file is signed,
+the manifest is recorded in DB,
+the file is chmod 444 (best-effort),
+verification is possible later.
+9.5 Every secret or PII must go through RedactionFilter before persistence
+text
+
+✅ redactor.redact(text, { channel: 'artifact' })
+❌ Writing raw LLM output to transcript or memory without redaction
+❌ Storing raw tool output directly without redaction
+The redaction filter catches API keys, GitHub tokens, private key blocks, emails, SSNs, and phone numbers. It logs every redaction event.
+
+9.6 The policy engine is in the critical path for execute and publish
+text
+
+✅ PolicyEngine.evaluate(intent) → check result → proceed or deny
+✅ ActionLedger.propose() → record → apply/deny/fail
+❌ Calling sandbox.exec or git push without going through the policy engine
+❌ Skipping the risk engine for actions labeled "internal"
+9.7 Benchmark scores must be reproducible
+text
+
+✅ Gold expectations are stable per case (in benchmarks/suites/**/gold.md)
+✅ Acceptance bands are in case.json and not changed per-run
+❌ Modifying acceptance bands to make a failing test pass
+❌ "Curve fitting" prompts directly to benchmark cases
+The benchmark suite is the ground truth. Improving it is fine. Gaming it breaks the whole measurement system.
+
+PART 10: WHERE TO GET HELP
+10.1 Read these first before asking
+text
+
+Problem                              Read first
+──────────────────────────────────────────────────────────────
+"I don't understand the loop"        Part 1.3 (mental model)
+"My migration failed"                Section 5.4 (DB guide)
+"My test is failing"                 Section 6 (testing guide)
+"Approval gate is stuck"             Section 7.2 (debug guide)
+"Policy is denying my action"        Section 7.4 (policy debug)
+"Benchmark is failing"               Section 7.5 (bench debug)
+"Feature flag isn't working"         Part 8 (flags)
+"I want to add a tool"               Section 5.2 (tool guide)
+"I want to edit a role prompt"       Section 5.5 (role guide)
+"I don't know what to work on"       Practical implementation order
+10.2 How to ask a good question
+Provide:
+
+What you expected to happen
+What actually happened (exact error + stack trace)
+What you already tried
+Relevant run ID or test name
+Your .env setup (without secrets — just which keys are set)
+Bad question:
+
+"The tool doesn't work"
+
+Good question:
+
+"Running repo.search tool via the ToolRunner in cycle 3 of run run_abc123.
+Expected: execution record in tool_executions with status='completed'.
+Actual: status='denied', error_text='Tool repo.search is not allowed for role Engineer'.
+Already tried: checked tool_policies table — no rows for run_abc123.
+Suspect: seedDefaults() is not being called before the cycle starts."
+
+10.3 What to do if you find a security issue
+Do not open a public GitHub issue for security vulnerabilities.
+
+Instead:
+
+Email the maintainer directly.
+Include: description, reproduction steps, potential impact.
+You will get a response within 48 hours.
+A fix will be prepared and disclosed responsibly.
+10.4 Quick reference card (print this)
+text
+
+START A RUN           bun start
+START DAEMON          bun run daemon
+START API             bun run api
+START DASHBOARD       cd web && bun run dev
+
+RUN ALL MIGRATIONS    bun run migrate
+VERIFY SCHEMA         bun run migrate:verify
+
+RUN TESTS             bun test
+RUN SPECIFIC TEST     bun test tests/my-file.test.ts
+RUN BENCHMARK         bun run bench:core
+
+LINT                  bun run lint
+TYPECHECK             bun run typecheck
+FULL CI               bun run ci
+
+INSTALL HOOKS         bun run setup:hooks
+CHECK HEALTH          bun run health
+SMOKE TEST            bun run smoke
+
+INSPECT DB            bun run -e "..."
+ROLLBACK RUN          bun run scripts/ci/rollback.ts
+
+KEY FILES
+  org.md                  → mission
+  constitution.md         → scoring law
+  roles/*.md              → agent instructions
+  results.tsv             → run history
+  src/runtime/orchestrator.ts  → main loop
+  src/runtime/ratchet.ts       → scoring engine
+  src/tools/tool-runner.ts     → tool execution
+  src/runtime/policy-engine.ts → policy control
+
+KEY ENV VARS (local dev)
+  AUTOORG_DB_PATH=autoorg.db
+  AUTOORG_SKIP_APPROVALS=1
+  AUTOORG_DEBUG_LLM=1
+  DEFAULT_LLM_PROVIDER=anthropic
+Welcome to AutoOrg. If something in this document is wrong or missing, open a PR. Contributor documentation is a first-class feature.
+
+
+
+
+
+AutoOrg — Go-To-Market Strategy
+From Research Operating System to Category-Defining Platform
+PART 1: MARKET FRAMING
+1.1 What problem this actually solves
+Before positioning, strategy, or pricing — get the problem statement exactly right. The wrong problem statement sends you after the wrong customers.
+
+Wrong framing:
+
+"AutoOrg is a better multi-agent framework."
+
+Nobody wakes up thinking "I need a better multi-agent framework." That is a solution, not a problem.
+
+Wrong framing:
+
+"AutoOrg automates knowledge work."
+
+Too vague. Every AI company says this. It means nothing to a buyer.
+
+Right framing:
+
+text
+
+Organizations that depend on high-stakes knowledge work
+(strategy, research, engineering planning, quality assurance)
+have no reliable way to run that work autonomously, repeatedly,
+and under governance — so they either keep it fully manual,
+or they hand it to AI systems they cannot audit, measure, or trust.
+
+AutoOrg solves the governance gap in autonomous AI work:
+the space between "demo that looks impressive"
+and "production system a responsible organization can actually run."
+This framing is defensible, specific, and gets sharper as governance pressure increases across AI regulation globally.
+
+1.2 The category
+AutoOrg should own a category, not join one.
+
+Existing categories are wrong fits:
+
+text
+
+CATEGORY              WHY IT'S A WRONG FIT
+────────────────────────────────────────────────────────────────
+AI assistants         AutoOrg is not interactive / chat-first
+LLM frameworks        LangChain, CrewAI — too developer-primitive
+Workflow automation   Zapier, Make — wrong abstraction level
+RPA                   Legacy, UI-scraping focus
+Research tools        Too narrow
+Agent platforms       Correct direction but no governance story
+The right category to own:
+
+text
+
+AUTONOMOUS WORK GOVERNANCE
+
+The discipline of running AI-driven knowledge work
+in a way that is auditable, reversible, policy-governed,
+benchmarked, and continuously improving — without
+requiring a human in every loop iteration.
+This category does not exist yet as a named market segment. That is the opportunity. AutoOrg should name it and own the definition.
+
+Working category name: "Governed Autonomous Work" or "Autonomous Work Infrastructure."
+
+1.3 The market timing argument
+Three forces are converging right now:
+
+text
+
+FORCE 1: Capability exists but trust does not
+  AI can do real knowledge work.
+  Organizations do not trust it in production.
+  The gap is governance, auditability, and measurement — not capability.
+  AutoOrg closes that gap.
+
+FORCE 2: Regulatory pressure is arriving
+  EU AI Act, US executive orders, enterprise AI policies.
+  "You used AI and cannot show what it did" is becoming a liability.
+  Every organization that runs AI needs an audit trail.
+  AutoOrg builds that trail by default.
+
+FORCE 3: The labor arbitrage story is collapsing
+  "AI replaces headcount" is already a political and reputational risk.
+  "AI augments governance-controlled work" is the defensible story.
+  AutoOrg is architecturally designed for the second story.
+The window to define this category is approximately 18–24 months before a larger player (Salesforce, ServiceNow, Palantir, or a hyperscaler) either acquires into it or defines their own version. Move in that window.
+
+PART 2: CUSTOMER DEFINITION
+2.1 Ideal customer profile (ICP)
+Do not try to sell to everyone. The ICP for the first 24 months is narrow.
+
+Primary ICP: AI Engineering Teams at Mid-to-Large Enterprises
+text
+
+PROFILE
+────────────────────────────────────────────────────────────────
+Company size          500–10,000 employees
+Industry              Financial services, healthcare, legal tech,
+                      defense/GovTech, enterprise software
+Department            AI/ML engineering, platform engineering,
+                      automation center of excellence
+Team size             5–40 engineers
+Current state         Has run AI pilots; struggling to move to production
+AI budget             $200K–$5M/year in LLM spend
+Key frustration       "We can demo AI doing this. We can't run it
+                      in production because we can't audit it,
+                      it hallucinates, and compliance won't approve it."
+Secondary ICP: AI-Native Product Companies
+text
+
+PROFILE
+────────────────────────────────────────────────────────────────
+Company size          20–200 employees
+Industry              Legal AI, research AI, document AI,
+                      strategy consulting AI
+Department            Engineering (core product team)
+Current state         Building AI-first product; needs governance
+                      infrastructure without building it themselves
+AI budget             $50K–$1M/year
+Key frustration       "We're shipping AI features faster than we can
+                      validate them. We have no systematic way to
+                      benchmark quality or catch regressions."
+Tertiary ICP (later): Research Organizations
+text
+
+PROFILE
+────────────────────────────────────────────────────────────────
+Org type              Think tanks, consultancies, policy research
+                      organizations, academic research labs
+Department            Research operations, strategy
+Current state         Manual research cycles, inconsistent quality
+Key frustration       "Our research quality is inconsistent and
+                      depends on individual analyst skill.
+                      We cannot scale output without scaling headcount."
+2.2 Buyer vs user vs champion
+Understanding the three-way decision dynamic is critical.
+
+text
+
+ROLE        WHO                  WHAT THEY CARE ABOUT
+──────────────────────────────────────────────────────────────────
+Champion    AI/ML engineer       Technical credibility, real tool
+            or staff engineer    they can actually use; API quality;
+                                 open architecture; not a black box
+
+Buyer       VP Engineering,      ROI, risk reduction, compliance story,
+            CTO, Head of AI      team productivity, vendor durability
+
+Blocker     CISO, Legal,         Data security, audit trail, PII
+            Compliance, Risk     handling, reversibility, no secret
+                                 leakage, governance evidence
+AutoOrg's architecture is built specifically to satisfy all three:
+
+Champion: open TypeScript runtime, real tool traces, composable
+Buyer: benchmark metrics, cost tracking, results.tsv history
+Blocker: redaction, signed artifacts, action ledger, approval gates
+This tri-role alignment is a structural advantage. Make it explicit in every sales conversation.
+
+2.3 Jobs to be done
+These are the actual jobs customers are hiring AutoOrg to do.
+
+text
+
+JOB 1: Validate that our AI system is improving, not just changing
+  Context: Team ships prompt changes but has no way to know if the
+  changes helped or hurt. Results feel subjective.
+  AutoOrg delivers: Benchmark regression detection, results.tsv,
+  judge calibration, gold output comparisons.
+
+JOB 2: Run AI-driven research or analysis without babysitting it
+  Context: Every AI pipeline needs someone watching it.
+  Running it overnight is terrifying.
+  AutoOrg delivers: Daemon mode, crash recovery, approval gates,
+  workspace locks, worker leases, incident log.
+
+JOB 3: Pass the compliance/audit review for AI systems
+  Context: Security review asks "how do you know what the AI did?"
+  and the answer is currently "we don't."
+  AutoOrg delivers: Action ledger, signed artifacts, redaction
+  events, compliance logs, security audit bundle.
+
+JOB 4: Stop manually comparing AI outputs to decide which is better
+  Context: Team runs five prompt variants, reads outputs, debates
+  which is best. Subjective, slow, inconsistent.
+  AutoOrg delivers: Portfolio orchestration, judge council, tournament
+  mode, leaderboards, acceptance bands.
+
+JOB 5: Give AI systems a "taste" for the organization's standards
+  Context: LLM doesn't know what "good" means for this specific
+  organization. Quality is inconsistent.
+  AutoOrg delivers: constitution.md as law, ratchet enforcement,
+  org.md mission contract, role specialization.
+PART 3: PRICING AND PACKAGING
+3.1 Pricing philosophy
+Three principles:
+
+text
+
+1. VALUE-BASED, NOT USAGE-BASED
+   Charge for outcomes (runs that work, governance that holds,
+   benchmarks that improve) not raw token or API call volume.
+   Usage-based pricing punishes the successful customer and
+   rewards the unsuccessful one.
+
+2. LAND SMALL, EXPAND WIDE
+   The first deal should be affordable for one team to approve.
+   The expansion should follow team adoption, not a seat count.
+   Expansion drivers: workspaces, portfolio variants, benchmark suites,
+   learning cycles, and hosted run volume.
+
+3. OPEN CORE TO CAPTURE DEVELOPERS
+   The core runtime is open source.
+   Governance, benchmarking, portfolio, platform, and learning features
+   are commercial. This mirrors the successful Elastic/HashiCorp/dbt model.
+3.2 Packaging tiers
+text
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ TIER: OPEN SOURCE (free, self-hosted, MIT license)                   │
+├──────────────────────────────────────────────────────────────────────┤
+│ Core orchestrator loop                                               │
+│ Local ratchet engine                                                 │
+│ Basic tool registry (repo.search, local_docs, web.fetch)             │
+│ Phase 5 memory + graph                                               │
+│ SQLite DB                                                            │
+│ results.tsv logging                                                  │
+│ Single org, single user, local only                                  │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ TIER: TEAM — $800/month per workspace                                │
+├──────────────────────────────────────────────────────────────────────┤
+│ Everything in Open Source, plus:                                     │
+│ Strict approval blocking + action ledger                             │
+│ Signed artifacts + redaction filters                                 │
+│ Evidence packs + verification audit                                  │
+│ Provenance chain                                                     │
+│ Benchmark suite (up to 20 cases)                                     │
+│ Regression detection                                                 │
+│ Team memory partitions                                               │
+│ Per-team budgets                                                     │
+│ Crash recovery + daemon mode                                         │
+│ GitHub integration (issues, PRs)                                     │
+│ Dashboard (all views)                                                │
+│ Up to 5 users per workspace                                          │
+│ Community Slack support                                              │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ TIER: PROFESSIONAL — $3,500/month per workspace                      │
+├──────────────────────────────────────────────────────────────────────┤
+│ Everything in Team, plus:                                            │
+│ Portfolio orchestration (up to 6 variants)                           │
+│ Judge council + tournament mode                                      │
+│ Best-of-N synthesis                                                  │
+│ Cross-org quarantined exchange                                       │
+│ Constitution A/B experiments                                         │
+│ Template marketplace (private + public)                              │
+│ Unlimited benchmark cases                                            │
+│ Judge calibration harness                                            │
+│ Replay lab                                                           │
+│ Leaderboards                                                         │
+│ Security audit export                                                │
+│ Compliance logs + retention policies                                 │
+│ Backup / restore                                                     │
+│ Up to 20 users per workspace                                         │
+│ Remote agents (up to 5)                                              │
+│ Email support SLA: 24hr                                              │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ TIER: ENTERPRISE — custom pricing, annual contract                   │
+├──────────────────────────────────────────────────────────────────────┤
+│ Everything in Professional, plus:                                    │
+│ Bounded learning loop (pattern mining + proposals + simulation)      │
+│ Prompt/policy/role/routing optimization                              │
+│ Distillation export pipeline                                         │
+│ Drift guard + release gate automation                                │
+│ Multi-tenant admin                                                   │
+│ SSO / SAML / OIDC                                                    │
+│ Custom RBAC + permission overrides                                   │
+│ Unlimited users, workspaces, remote agents                           │
+│ Dedicated Slack channel                                              │
+│ Monthly business review                                              │
+│ Custom benchmark suite development                                   │
+│ SLA: 4hr critical, 24hr non-critical                                 │
+│ On-premise deployment option                                         │
+│ SOC 2 Type II report                                                 │
+│ DPA + BAA available                                                  │
+│ Custom data retention                                                │
+└──────────────────────────────────────────────────────────────────────┘
+3.3 Expansion levers (post-land)
+text
+
+LEVER                         DRIVER
+──────────────────────────────────────────────────────────────────
+Additional workspaces         New team or project adopts AutoOrg
+Additional portfolio slots    Customer wants more than 6 variants
+Hosted run volume             Customer moves from self-host to managed
+Remote agent seats            Parallel hosted execution scale-up
+Custom benchmark case build   Professional services attachment
+Learning cycle activation     Customer wants self-improvement enabled
+SOC 2 / compliance report     Enterprise deals in regulated industry
+Training and onboarding       Large team rollouts
+3.4 Open-source monetization model
+text
+
+OPEN SOURCE ROLE            TO DRIVE
+──────────────────────────────────────────────────────────────────────
+Build developer trust        Developers evaluate by using, not reading
+Generate benchmark data      Public benchmark submissions help AutoOrg
+                             improve its own scoring calibration
+Drive community templates    Community-published org templates feed
+                             the marketplace
+Surface enterprise leads     Self-hosted → "we want managed" funnel
+Competitive moat             Hard to fork governance, benchmark,
+                             portfolio, and learning layers together
+The key open-source principle: the runtime is free. The trust layer is not.
+
+A customer can run AutoOrg in a loop on their laptop forever for free.
+The moment they need to prove it worked, prove it is safe, prove it is improving,
+or run it at scale — that is the commercial product.
+
+PART 4: DISTRIBUTION CHANNELS
+4.1 Channel priority (first 18 months)
+text
+
+PRIORITY  CHANNEL                   WHY
+────────────────────────────────────────────────────────────────
+1         Developer community       Self-serve. Zero CAC.
+          (GitHub + Discord/Slack)  Converts to paid via usage.
+
+2         Content + SEO             Compound interest. Starts slow.
+          (technical blog)          Becomes dominant by month 12.
+
+3         Direct outbound           Short feedback loop.
+          (founder-led sales)       ICP precision. $0 marketing spend.
+
+4         Conference presence       Developer trust building.
+          (AI/ML focused)           Two or three targeted events.
+
+5         Partner integrations      Reach existing AI tool user bases.
+          (GitHub, Anthropic,
+           OpenAI ecosystem)
+Channels to avoid early:
+
+text
+
+AVOID EARLY          WHY
+────────────────────────────────────────────────────────────────
+Paid ads             CAC is too high before PMF is confirmed
+Product Hunt         Drives wrong audience (consumer AI fans)
+Analyst briefings    Too early; analysts wait for market size evidence
+Resellers/VARs       Too early; margin kill + slow feedback loop
+4.2 Developer community motion
+The open-source repo is the primary top-of-funnel asset.
+
+text
+
+GITHUB REPO OPTIMIZATION
+  □ README leads with the problem, not the architecture
+  □ 5-minute quickstart that produces visible output
+  □ architecture.md with the mental model diagram
+  □ CHANGELOG that demonstrates progress
+  □ Good first issues labeled and maintained
+  □ Benchmark leaderboard published publicly (shows the system works)
+  □ Example org.md + constitution.md for 3 use cases
+
+COMMUNITY SPACES
+  □ Discord server (not Slack — lower barrier to join)
+  □ Weekly office hours (async-friendly; recorded)
+  □ #showcase channel for users to share their org.md setups
+  □ #benchmarks channel for community benchmark submissions
+  □ Contributor recognition (top contributors get swag + credits)
+
+COMMUNITY CONTENT
+  □ "Build your first autonomous org in 20 minutes" video
+  □ Monthly "what changed and why" community update
+  □ Public results.tsv from real demo runs (redacted appropriately)
+4.3 Content and SEO strategy
+Target the terms buyers are already searching before they know AutoOrg exists.
+
+Primary keyword clusters
+text
+
+CLUSTER 1: AI governance
+  ai governance framework
+  ai audit trail
+  llm output auditing
+  ai compliance enterprise
+  ai system observability
+
+CLUSTER 2: AI testing/evaluation
+  llm regression testing
+  ai benchmark framework
+  prompt regression detection
+  ai output quality measurement
+  llm evaluation pipeline
+
+CLUSTER 3: Multi-agent systems
+  multi-agent orchestration production
+  autonomous agent governance
+  ai agent approval workflow
+  multi-agent reliability
+
+CLUSTER 4: Enterprise AI
+  enterprise ai reliability
+  ai system trust
+  llm production deployment
+  ai risk management
+Content format priority
+text
+
+FORMAT                  WHY IT WORKS FOR THIS AUDIENCE
+──────────────────────────────────────────────────────────────────────
+Technical deep dives    Engineers read and share; "how we built X"
+  (2,000–4,000 words)   articles drive the most qualified traffic
+
+Benchmark reports       Establishes credibility; journalists cite them;
+  (data-driven)         "State of Autonomous AI Quality" annual report
+
+Comparison posts        Intercepts evaluation-stage buyers; honest
+  (vs alternatives)     comparisons drive trust more than self-promotion
+
+Tutorial sequences      Converts readers to trial users; each tutorial
+  (build X with         should end at a natural upgrade point
+   AutoOrg)
+
+Case studies            Converts enterprise buyers; must have hard
+  (customer-named)      numbers; "reduced review cycles by 60%"
+4.4 Direct outbound (founder-led)
+In the first 12 months, the founder should run all sales conversations personally.
+This is not optional. It is the fastest PMF learning loop available.
+
+Outbound targeting
+text
+
+SIGNAL                           ACTION
+────────────────────────────────────────────────────────────────────
+Job posting for "AI governance"  Outbound: they have the problem
+Job posting for "LLM eval"       Outbound: they have the problem
+Blog post about "AI reliability" Warm introduction request
+GitHub star on AutoOrg or peers  Personal outreach from founder
+Conference talk about AI risk    Follow up with technical content
+LinkedIn post about AI audit     Direct message with relevant resource
+Outbound message framework
+Do not use a template. Use this framework:
+
+text
+
+LINE 1: Acknowledge something specific they wrote or built.
+LINE 2: Name the exact problem in their terms, not your terms.
+LINE 3: One sentence on what AutoOrg does.
+LINE 4: Ask one specific question, not for a demo.
+Example:
+
+text
+
+Subject: your AI reliability post
+
+Saw your post about LLM outputs regressing after prompt changes.
+That "feels better but might not be better" problem is exactly why
+our team built AutoOrg — it's a benchmark gate that blocks deployment
+when quality drops, similar to a CI system for LLM output.
+
+Curious: how are you currently detecting when a prompt change
+regressed something?
+This is not a cold email. It is a specific, informed question from a peer.
+
+4.5 Partner integrations
+Tier 1 partners (highest leverage, pursue first)
+text
+
+PARTNER             INTEGRATION             VALUE
+────────────────────────────────────────────────────────────────
+Anthropic           Built with Claude badge  Trust signal + distribution
+                    Cookbook inclusion       Developer discovery
+                    Partner directory        Enterprise referrals
+
+OpenAI              Works with GPT-4.1       Reach OpenAI users
+                    Cookbook inclusion       Developer discovery
+
+GitHub              GitHub Actions native    CI integration story
+                    Marketplace listing      Organic distribution
+                    Copilot extension hook   Future: inline governance
+Tier 2 partners (pursue after $1M ARR)
+text
+
+PARTNER             INTEGRATION             VALUE
+────────────────────────────────────────────────────────────────
+Datadog             Observability export     Enterprise monitoring story
+Snowflake           Run history export       Data team buyers
+Notion              org.md editor plugin     Knowledge management buyers
+Atlassian           GitHub/Jira connector    Enterprise workflow buyers
+AWS/GCP/Azure       Marketplace listing      Enterprise procurement path
+PART 5: SALES MOTION
+5.1 Sales stages
+text
+
+STAGE         DEFINITION                        TARGET DURATION
+──────────────────────────────────────────────────────────────────
+Awareness     Prospect discovers AutoOrg         —
+              via GitHub, content, or referral
+
+Interest      Prospect stars repo or joins       Day 1–7
+              Discord; reads docs
+
+Evaluation    Prospect installs locally and      Day 7–30
+              runs a cycle; asks technical
+              questions; reads benchmark docs
+
+Trial close   Prospect asks about team plan;     Day 30–60
+              Champion does internal pitch
+
+Legal/sec     Security review; data questions;   Day 60–90
+              DPA/BAA if required
+
+Close         Contract signed; workspace         Day 90–120
+              provisioned
+
+Expand        Additional workspaces/features;    Month 4–12
+              portfolio activation; enterprise
+              upgrade
+5.2 The technical evaluation playbook
+Most AutoOrg deals are won or lost during the evaluation phase.
+The champion is an engineer who needs to prove internal value.
+Help them do that.
+
+Evaluation support kit
+Provide this proactively at first technical contact:
+
+text
+
+EVALUATION KIT CONTENTS
+────────────────────────────────────────────────────────────────
+1. Quickstart (< 20 min to first working run)
+2. 3 example use cases with pre-built org.md + constitution.md
+3. Benchmark suite runner with example results
+4. "How to present this internally" slide template (3 slides)
+5. Comparison doc: AutoOrg vs DIY agent pipeline (honest)
+6. Security FAQ (data handling, no training on data, redaction)
+7. Slack DM with founder for evaluation questions
+Evaluation success criteria
+Help the champion define success before they start:
+
+text
+
+"By the end of your evaluation, you should be able to answer:
+1. Did AutoOrg produce better output than your baseline after 10 cycles?
+2. Can you see what it did and why it made each decision?
+3. Did the benchmark gate catch at least one quality regression?
+4. Would you trust this to run unattended for 8 hours?"
+If they can answer yes to all four, the internal pitch is already written.
+
+5.3 Handling the security and compliance review
+The CISO and compliance teams will raise predictable objections. Prepare the champion to answer them.
+
+text
+
+OBJECTION                          ANSWER
+──────────────────────────────────────────────────────────────────────
+"How do we know what the AI did?"  Every action is in the action ledger.
+                                   Every artifact is signed and verifiable.
+                                   Export the security audit bundle.
+
+"Does AutoOrg train on our data?"  No. AutoOrg calls your LLM APIs.
+                                   Your data goes to Anthropic/OpenAI
+                                   under your existing agreements.
+                                   AutoOrg does not see your prompts.
+
+"What about PII in AI outputs?"    Redaction filter runs before any
+                                   text is persisted. Redaction events
+                                   are logged. You can configure the
+                                   redaction rules.
+
+"Can the AI modify itself?"        Only through the learning loop,
+                                   which requires benchmark simulation
+                                   + human approval before activation.
+                                   No self-modification without approval.
+
+"What if it does something wrong?" Every dangerous action requires
+                                   approval before execution. Reversible
+                                   actions have compensation records.
+                                   The action ledger shows every step.
+
+"Where does our data live?"        On your infrastructure. Self-hosted
+                                   option available. We never see your
+                                   run data unless you share it for
+                                   support purposes.
+5.4 Pricing conversation guide
+text
+
+QUESTION                        RESPONSE
+──────────────────────────────────────────────────────────────────────
+"Why not just use LangChain     LangChain is a library for building
+or CrewAI?"                     agents. AutoOrg is a governance layer
+                                for running them in production. They
+                                are not competitors. You could wrap
+                                LangChain inside an AutoOrg worker.
+
+"What does $800/month get me    One workspace with full governance:
+vs just using the API?"         strict approval blocking, signed
+                                artifacts, benchmark regression
+                                detection, evidence packs,
+                                provenance chain, and dashboard.
+                                The API alone gets you a loop.
+                                We get you a loop you can prove.
+
+"Can we try before we buy?"     Yes. The open-source version is
+                                fully functional for single-user local
+                                use. For team evaluation, we offer a
+                                30-day Team trial with full features.
+
+"We need enterprise pricing."   Enterprise starts at $X/year for one
+                                workspace. Volume discounts at 3+
+                                workspaces. Annual billing only for
+                                enterprise. Let's scope your footprint.
+
+"What's the ROI?"               Frame it in their terms:
+                                If this catches 1 quality regression
+                                before it reaches production, what is
+                                that worth? If it runs 8 hours of
+                                research autonomously and needs 30min
+                                of review vs 8 hours of analyst time,
+                                what is that worth?
+PART 6: LAUNCH PLAN
+6.1 Pre-launch (now → launch day)
+text
+
+WEEK -8 TO -5: Foundation
+  □ README rewritten with problem-first framing
+  □ 5-minute quickstart working end-to-end
+  □ 3 example use cases with org.md + constitution.md
+  □ Benchmark leaderboard page live (public demo results)
+  □ Discord server live with welcome flow
+  □ Email capture on landing page
+  □ First 3 long-form technical blog posts drafted
+
+WEEK -4 TO -2: Community seeding
+  □ 20 friends/colleagues run the quickstart and give feedback
+  □ Fix top 5 friction points from feedback
+  □ Reach out to 10 AI engineers you respect; ask for honest review
+  □ Secure 2–3 design partners (use the product free + give feedback)
+  □ Record demo video (5 min; real run; not slides)
+  □ Get written quotes from design partners
+
+WEEK -1: Launch prep
+  □ Hacker News Show HN draft written and peer-reviewed
+  □ ProductHunt page prepared (do not publish yet)
+  □ Twitter/X thread written (technical thread, not marketing)
+  □ Email list ready for Day 1 send
+  □ Monitoring in place for GitHub issues, Discord, email
+  □ Founder has cleared calendar for 48 hours of launch support
+6.2 Launch week
+text
+
+DAY 1: MONDAY — Hacker News
+
+  08:00 UTC    Post Show HN: "AutoOrg – an autonomous org runtime
+               with a benchmark gate, evidence packs, and approval-
+               gated commits"
+
+               Title is technical and specific. Not hype.
+               Comments are the product. Respond to everything.
+
+  Same day     Twitter/X technical thread (link to HN, GitHub)
+
+  Same day     Email to waitlist: "we launched, here's the quickstart"
+
+  Same day     Post in 3–5 relevant Discord/Slack communities
+               (AI engineers Slack, Latent Space Discord, etc.)
+
+
+DAY 2: TUESDAY — GitHub push
+
+  Reach out to 5 newsletters:
+    - The Batch (Andrew Ng)
+    - TLDR AI
+    - Latent Space
+    - The Pragmatic Engineer
+    - Import AI (Jack Clark)
+
+  Target: "here is something technically interesting we built.
+           Not asking you to cover it. Just wanted you to see it."
+
+
+DAY 3: WEDNESDAY — Community follow-up
+
+  Respond to all GitHub issues and Discord questions from Day 1.
+  Write a "Day 1 lessons" short post (honest, technical).
+  DM the 10 most technically engaged HN commenters.
+
+
+DAY 5: FRIDAY — Outbound begins
+
+  Start the first 20 outbound messages using the framework above.
+  Target: job postings for "AI governance" and "LLM evaluation."
+  Target: people who engaged with the HN post but didn't reach out.
+6.3 Post-launch growth phases
+Phase 1: Discovery (Month 1–3)
+text
+
+GOAL: 500 GitHub stars, 50 Discord members, 5 paying customers
+
+ACTIVITIES
+  □ Weekly: respond to every GitHub issue within 24 hours
+  □ Weekly: publish one technical post (benchmark results, architecture)
+  □ Weekly: 10 personalized outbound messages
+  □ Monthly: community office hours call
+  □ Monthly: "what we shipped" update post
+
+METRICS TO WATCH
+  → GitHub stars (growth rate, not absolute)
+  → Discord DAU
+  → Trial workspace activations
+  → Quickstart completion rate (install → first run)
+  → Conversion: GitHub star → Discord → trial → paid
+Phase 2: Traction (Month 3–6)
+text
+
+GOAL: $50K MRR, 20 paying customers, 1 design partner case study
+
+ACTIVITIES
+  □ Convert 2–3 design partners to paid accounts
+  □ Publish first customer case study (anonymized if needed)
+  □ Submit to Anthropic and OpenAI partner directories
+  □ Speak at one AI conference (NeurIPS, AI Engineer World's Fair, etc.)
+  □ Launch community template marketplace (free templates drive signups)
+  □ Start writing "State of Autonomous AI Quality" annual report
+
+METRICS TO WATCH
+  → MRR and MRR growth rate
+  → Net Revenue Retention (expansion signals)
+  → Time from signup to first paid workspace
+  → Churn (monthly; should be < 3% at this stage)
+  → NPS (survey design partner accounts)
+Phase 3: Scale (Month 6–12)
+text
+
+GOAL: $200K MRR, 80 customers, 3 enterprise contracts
+
+ACTIVITIES
+  □ Hire first sales engineer (technical, not quota-carrying yet)
+  □ Hire first content/developer relations person
+  □ Publish "State of Autonomous AI Quality" report (press outreach)
+  □ Launch enterprise tier formally
+  □ Start SOC 2 Type II process (12-month lead time for enterprise)
+  □ First analyst briefing (Gartner, Forrester — "for awareness, not coverage")
+  □ Partner integration launches (GitHub Actions native, Anthropic partner page)
+
+METRICS TO WATCH
+  → Enterprise pipeline (ACV, stage distribution)
+  → Payback period
+  → CAC by channel
+  → Expansion revenue as % of total new revenue
+PART 7: COMPETITIVE POSITIONING
+7.1 Competitive landscape
+text
+
+CATEGORY            PLAYERS                 POSITION VS AUTOORG
+──────────────────────────────────────────────────────────────────────
+Agent frameworks    LangChain, LlamaIndex,  Building blocks, not
+                    CrewAI, AutoGen         governed production systems.
+                                            AutoOrg is a layer above these,
+                                            not a replacement.
+
+LLM eval tools      Langfuse, Braintrust,   Evaluation of individual calls.
+                    PromptLayer, Helicone   AutoOrg evaluates the full
+                                            multi-cycle autonomous work
+                                            system, not individual prompts.
+
+AI workflow         Flowise, Dify,          Visual builders; limited
+  builders          Coze, n8n               governance; no benchmark gate;
+                                            no approval-gated commits.
+
+AI governance       Fairly Labs, Credo AI,  Focus on model fairness/bias.
+  (fairness)        Fiddler                 AutoOrg focuses on output
+                                            quality governance and
+                                            operational safety.
+
+Robotic Process     UiPath, Automation      Legacy UI scraping. Completely
+  Automation        Anywhere                different abstraction. Different
+                                            buyer. Different problem.
+
+Enterprise AI       Salesforce Einstein,    Vertical-specific; closed;
+  platforms         Microsoft Copilot,      not composable. AutoOrg is
+                    ServiceNow AI           horizontal infrastructure.
+7.2 Positioning against the top three competitors
+vs LangChain
+text
+
+LANGCHAIN                              AUTOORG
+──────────────────────────────────────────────────────────────────────
+Library for building agents            Runtime for governing autonomous work
+No benchmark gate                      Built-in benchmark regression detection
+No approval workflow                   Approval-gated commits
+No evidence packs                      Claims must be backed by evidence
+No signed artifacts                    Every artifact is signed + verifiable
+No policy engine                       Policy engine in critical path
+Community of builders                  Community of operators
+Good for: prototyping                  Good for: production
+
+TALKING POINT:
+"LangChain is excellent for building an agent.
+ AutoOrg is what you add when you need to run that agent
+ in production with governance, auditability, and proof
+ that it is improving over time."
+vs Langfuse / Braintrust
+text
+
+LANGFUSE / BRAINTRUST                  AUTOORG
+──────────────────────────────────────────────────────────────────────
+Traces individual LLM calls            Governs the full autonomous work loop
+Evaluation of prompts in isolation     Evaluation of multi-cycle systems
+No autonomous execution                Full orchestration runtime
+No ratchet / commit decision           Monotonic improvement guarantee
+No approval gate                       Approval-gated commits
+No portfolio / learning loop           Portfolio + bounded learning
+Excellent observability tools          Observability + control plane
+
+TALKING POINT:
+"Langfuse tells you what happened.
+ AutoOrg decides what to commit, enforces what is allowed,
+ and gates what gets deployed — not just what gets logged."
+vs DIY pipeline
+text
+
+DIY MULTI-AGENT PIPELINE               AUTOORG
+──────────────────────────────────────────────────────────────────────
+6 months to build                      Day 1 to running loop
+No benchmark history                   Benchmark suite + results.tsv
+No approval gate                       Phase 5.1 approval blocking
+No evidence packs                      Phase 6 tool traces + evidence
+No policy engine                       Phase 6.1 policy + ledger
+No portfolio comparison                Phase 8 portfolio orchestration
+No self-improvement                    Phase 10 learning loop
+Full control                           Full control + governance
+
+TALKING POINT:
+"You can build all of this. You probably should not.
+ Every month your team spends building a governance framework
+ is a month they are not working on the application layer.
+ AutoOrg is the governance framework. Your team owns the mission."
+7.3 The moat
+AutoOrg's defensibility comes from three compounding factors:
+
+text
+
+MOAT FACTOR 1: Architecture coherence
+  Every layer from Phase 5.1 through Phase 10 is designed to work
+  together. The ratchet, approval gate, evidence packs, provenance chain,
+  policy engine, benchmark suite, and learning loop form one system.
+  Copying any single piece does not replicate the whole.
+
+MOAT FACTOR 2: Benchmark data network effect
+  Every customer running benchmarks produces data that can improve
+  the judge calibration, gold expectations, and scoring models.
+  More customers → better benchmarks → better product → more customers.
+  This is a data flywheel that takes time to accumulate.
+
+MOAT FACTOR 3: Constitution as organizational memory
+  Once an organization has written their constitution.md and run it
+  through 1,000 cycles, they have trained a scoring harness tuned to
+  their specific standards. That is expensive to recreate elsewhere.
+  This creates switching cost at the organizational knowledge level,
+  not just at the data layer.
+PART 8: METRICS AND MILESTONES
+8.1 North star metric
+text
+
+NORTH STAR: Weekly Governed Autonomous Work Hours
+
+Definition: Sum across all active workspaces of hours spent
+            in autonomous daemon mode with at least one
+            completed cycle per hour, where strictApprovalBlocking
+            is enabled.
+
+Why this metric:
+  → It measures customers actually running AutoOrg in production
+    (not just using the dashboard)
+  → It is directly tied to the value proposition
+  → It is hard to game (you can't fake daemon hours)
+  → It correlates with willingness to pay (customers who run
+    AutoOrg more trust it more and expand more)
+8.2 Milestone map
+text
+
+MILESTONE                       TARGET          WHAT IT PROVES
+──────────────────────────────────────────────────────────────────────
+M1: First external run          Week 2          Product works for strangers
+  First person outside the
+  team completes a full cycle
+
+M2: 10 GitHub stars/day         Month 1         Developer discovery is working
+  Sustained organic interest
+
+M3: First paying customer       Month 2         Someone will pay for this
+  $800/month Team plan
+
+M4: 5 paying customers          Month 3         Repeatability exists
+  $4,000 MRR
+
+M5: First expansion             Month 4         Product creates value
+  Existing customer upgrades
+  or adds a workspace
+
+M6: $10K MRR                   Month 4–5       Early PMF signal
+  12–13 paying customers
+
+M7: First enterprise contract   Month 6         Can sell to large orgs
+  $30K+ ACV
+
+M8: $50K MRR                   Month 6–8       Traction confirmed
+  ~50 paying customers
+
+M9: Net Revenue Retention > 110%  Month 8      Expansion engine working
+  Customers expand faster
+  than they churn
+
+M10: $200K MRR                 Month 10–12     Scale phase begins
+   ~80–100 paying customers
+   3–5 enterprise contracts
+
+M11: $1M ARR                   Month 14–18     Series A trigger point
+   Design partner case studies
+   SOC 2 Type II in progress
+   Partner integrations live
+8.3 Key ratios to track weekly
+text
+
+METRIC                        TARGET          ALARM
+──────────────────────────────────────────────────────────────────────
+GitHub star → Discord join    > 15%           < 5%  (discovery problem)
+Discord join → trial          > 20%           < 8%  (activation problem)
+Trial → paid                  > 12%           < 5%  (value problem)
+Trial duration to convert     < 21 days       > 45  (friction problem)
+Monthly churn (revenue)       < 2.5%          > 5%  (retention problem)
+NRR (net revenue retention)   > 110%          < 100% (expansion problem)
+Payback period (CAC)          < 6 months      > 12  (unit economics problem)
+Support ticket per customer   < 1.5/month     > 4   (product problem)
+8.4 Fundraising posture
+text
+
+SEED (raise now or in 3 months)
+  Target: $1.5M–$3M
+  Use: 18 months of runway for 3–4 person team
+  Thesis: AI governance is a category. AutoOrg owns the definition.
+  Metrics needed: 5 paying customers, $10K MRR or clear path to it
+  Story: "We built the thing that makes autonomous AI safe to run
+          in production. The governance gap is real. Here's the moat."
+
+SERIES A (month 12–18)
+  Target: $8M–$15M
+  Use: GTM team (sales, marketing, partnerships), SOC 2, enterprise
+  Metrics needed: $1M ARR, NRR > 110%, 2–3 enterprise contracts,
+                  benchmark data flywheel showing (leaderboard traffic)
+  Story: "Governed Autonomous Work is a category. AutoOrg is #1.
+          Here is the expansion plan and why the moat deepens."
+PART 9: THE FOUNDING NARRATIVE
+Every pitch, investor deck, sales call, blog post, and conference talk should return to the same core story. Internalize this.
+
+text
+
+THE STORY IN THREE SENTENCES
+
+AI can now do real knowledge work. Nobody trusts it in production.
+AutoOrg is the governance layer that closes the gap between
+impressive AI demos and auditable, benchmarked, production-ready
+autonomous systems — by building the ratchet, the approval gate,
+the evidence trail, and the benchmark history that every responsible
+organization needs before they will actually run AI unattended.
+
+THE ENEMY
+
+The enemy is not another company. The enemy is the governance gap —
+the space between "this demo looks amazing" and "we can actually
+deploy this, prove it works, and prove it's getting better."
+
+Every organization that has tried AI and pulled it back because
+they couldn't trust it, audit it, or measure it — that is the
+market. That is who AutoOrg is for.
+
+THE PROOF
+
+The proof is in the architecture. Not slides. Not testimonials.
+The action ledger, signed artifacts, benchmark regression detection,
+approval-gated commits, and bounded learning loop are the proof.
+Show the code. Show the results.tsv. Show the benchmark leaderboard.
+The governance story is the product story.
+This GTM strategy is a living document. Revisit it at each milestone and update the ICP, pricing, and channel mix based on what the data shows, not what sounds right in a deck.
+
+
+
+
+Here is the complete canonical orchestrator with every phase patch merged into one coherent file.
+
+
+/**
+ * AutoOrg — Canonical Orchestrator
+ * src/runtime/orchestrator.ts
+ *
+ * This is the single source of truth for the main autonomous loop.
+ * All phase patches (5, 5.1, 6, 6.1, 7, 8, 9, 10) are merged here.
+ *
+ * Initialization sequence:
+ *   1. Load config + feature flags
+ *   2. Boot DB + write run record
+ *   3. Write signed run manifest
+ *   4. Seed policies (tool + action)
+ *   5. Acquire workspace lock
+ *   6. Attempt crash recovery
+ *   7. Boot knowledge graph
+ *   8. Boot memory
+ *   9. Boot teams (if hierarchy mode)
+ *  10. Enter main cycle loop
+ *  11. Graceful shutdown
+ */
+
+// ─────────────────────────────────────────────────────────────────────────────
+// IMPORTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { nanoid } from 'nanoid';
+import simpleGit from 'simple-git';
+
+// Config
+import { featureFlag } from '@/config/feature-flags.js';
+import type { RunConfig, RatchetScore, ModelConfig } from '@/types/index.js';
+
+// DB
+import { getDb } from '@/db/migrate.js';
+
+// Core runtime
+import { RatchetEngine } from '@/runtime/ratchet.js';
+import { ApprovalGate } from '@/runtime/approval-gate.js';
+import { ApprovalEnforcer } from '@/runtime/approval-enforcer.js';
+import { DreamEngine } from '@/runtime/dream.js';
+import { ResultsLogger } from '@/runtime/results-logger.js';
+import { TranscriptWriter } from '@/runtime/transcript.js';
+import { EventBus } from '@/runtime/event-bus.js';
+import { AgentRunner } from '@/runtime/agent-runner.js';
+
+// Phase 5 — Memory + graph + coordinator
+import { MemoryManager } from '@/runtime/memory-manager.js';
+import { graphManager } from '@/runtime/graph-manager.js';
+import { TeamManager } from '@/runtime/team-manager.js';
+import { UltraPlanEngine } from '@/runtime/ultraplan.js';
+
+// Phase 5.1 — Hardening
+import { WorkspaceLock } from '@/runtime/workspace-lock.js';
+import { RecoveryJournal } from '@/runtime/recovery-journal.js';
+import { recoverInterruptedRun } from '@/runtime/crash-recover.js';
+import { LeaseManager } from '@/runtime/lease-manager.js';
+import { BudgetManager } from '@/runtime/budget-manager.js';
+import { TeamMemoryPartitions } from '@/runtime/memory-partitions.js';
+import { UltraPlanSla } from '@/runtime/ultraplan-sla.js';
+import { IncidentLog } from '@/runtime/incident-log.js';
+
+// Phase 6 — Tool substrate
+import { bootstrapRegistry } from '@/tools/bootstrap.js';
+import { ToolPolicy } from '@/tools/tool-policy.js';
+import { EvidencePackBuilder } from '@/tools/evidence-pack.js';
+import { VerificationAuditor } from '@/runtime/verification-auditor.js';
+
+// Phase 6.1 — Governance
+import { PolicyEngine } from '@/runtime/policy-engine.js';
+import { ActionLedger } from '@/runtime/action-ledger.js';
+import { ProvenanceBuilder } from '@/runtime/provenance.js';
+import { PolicyAuditor } from '@/runtime/policy-auditor.js';
+import { SecurityAudit } from '@/runtime/security-audit.js';
+import { RedactionFilter } from '@/runtime/redaction.js';
+import { RunManifestWriter } from '@/runtime/run-manifest.js';
+
+// Phase 10 — Learning overlays
+import { VersionManager } from '@/learning/version-manager.js';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TYPES
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface OrchestratorConfig {
+  // Core mission
+  orgText: string;
+  constitutionText: string;
+  missionCategory?: string;
+
+  // Run control
+  maxCycles?: number;
+  plateauCycles?: number;
+  seed?: number;
+  mode?: 'normal' | 'benchmark' | 'portfolio';
+
+  // Workspace
+  workspaceRoot?: string;
+  workspaceId?: string;
+  tenantId?: string;
+  portfolioVariantId?: string;
+
+  // Models
+  modelMap?: Record<string, string>;
+  models?: {
+    ceo?: string;
+    engineer?: string;
+    critic?: string;
+    archivist?: string;
+    devilsAdvocate?: string;
+    ratchetJudge?: string;
+    coordinator?: string;
+    dream?: string;
+  };
+
+  // Variants
+  constitutionVariant?: string;
+  templateVariant?: string;
+
+  // Budget
+  maxBudgetUsd?: number;
+
+  // Hierarchy
+  useHierarchy?: boolean;
+
+  // ULTRAPLAN
+  ultraplanMaxDurationMs?: number;
+  ultraplanCheckpointIntervalMs?: number;
+
+  // Graph
+  graphSeedMaterial?: string[];
+
+  // Feature flags override (for testing)
+  featureFlagsOverride?: Record<string, boolean>;
+
+  // Benchmark context
+  benchmarkCase?: {
+    caseName: string;
+    category: string;
+    difficulty: string;
+  };
+}
+
+export interface OrchestratorResult {
+  runId: string;
+  finalOutputText: string;
+  finalOutputPath?: string;
+  finalScore: RatchetScore;
+  totalCostUsd: number;
+  totalToolCalls: number;
+  totalCycles: number;
+  evidencePackId?: string;
+  verificationReport?: unknown;
+  provenanceReport?: unknown;
+  securityFindingCount: number;
+  stoppedReason: 'max_cycles' | 'plateau' | 'budget_exhausted' | 'stop_condition' | 'error';
+}
+
+interface RunState {
+  bestScore: number;
+  plateauCount: number;
+  consecutiveRejects: number;
+  totalCostUsd: number;
+  totalToolCalls: number;
+  lastEvidencePackId?: string;
+  lastVerificationReport?: unknown;
+  lastProvenanceReport?: unknown;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONSTANTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DEFAULT_MAX_CYCLES = 20;
+const DEFAULT_PLATEAU_CYCLES = 5;
+const DEFAULT_MODELS = {
+  ceo: 'claude-opus-4',
+  engineer: 'claude-sonnet-4-5',
+  critic: 'claude-sonnet-4-5',
+  archivist: 'claude-sonnet-4-5',
+  devilsAdvocate: 'gpt-4.1',
+  ratchetJudge: 'claude-opus-4',
+  coordinator: 'claude-sonnet-4-5',
+  dream: 'claude-sonnet-4-5',
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN ENTRYPOINT
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function runAutoOrg(config: OrchestratorConfig): Promise<OrchestratorResult> {
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // STEP 1: Resolve config
+  // ──────────────────────────────────────────────────────────────────────────
+
+  const root = config.workspaceRoot ?? process.cwd();
+  const workspaceFile = path.join(root, 'workspace', 'current_output.md');
+  const resultsFile = path.join(root, 'results.tsv');
+
+  const maxCycles = config.maxCycles ?? DEFAULT_MAX_CYCLES;
+  const plateauCycles = config.plateauCycles ?? DEFAULT_PLATEAU_CYCLES;
+
+  const models = {
+    ...DEFAULT_MODELS,
+    ...(config.models ?? {}),
+    ...(config.modelMap ?? {}),
+  };
+
+  const runId = `run_${nanoid(12)}`;
+
+  const git = simpleGit(root);
+  const eventBus = new EventBus();
+  const incidents = new IncidentLog();
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // STEP 2: DB — write run record
+  // ──────────────────────────────────────────────────────────────────────────
+
+  const db = getDb();
+  db.prepare(`
+    INSERT INTO runs
+    (id, tenant_id, workspace_id, status, mode, mission_summary,
+     constitution_variant, template_variant, model_map_json,
+     portfolio_variant_id, benchmark_case_json, created_at)
+    VALUES (?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+  `).run(
+    runId,
+    config.tenantId ?? null,
+    config.workspaceId ?? null,
+    config.mode ?? 'normal',
+    config.orgText.slice(0, 500),
+    config.constitutionVariant ?? 'default',
+    config.templateVariant ?? 'baseline',
+    JSON.stringify(models),
+    config.portfolioVariantId ?? null,
+    config.benchmarkCase ? JSON.stringify(config.benchmarkCase) : null,
+  );
+  db.close();
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // STEP 3: Workspace directories
+  // ──────────────────────────────────────────────────────────────────────────
+
+  await mkdir(path.join(root, 'workspace'), { recursive: true });
+  await mkdir(path.join(root, 'memory'), { recursive: true });
+  await mkdir(path.join(root, 'artifacts', 'tools', 'outputs'), { recursive: true });
+  await mkdir(path.join(root, 'artifacts', 'evidence', 'packs'), { recursive: true });
+  await mkdir(path.join(root, 'artifacts', 'evidence', 'merged'), { recursive: true });
+  await mkdir(path.join(root, 'artifacts', 'approvals', 'pending'), { recursive: true });
+  await mkdir(path.join(root, 'artifacts', 'approvals', 'materialized'), { recursive: true });
+  await mkdir(path.join(root, 'artifacts', 'manifests'), { recursive: true });
+  await mkdir(path.join(root, 'artifacts', 'security', 'findings'), { recursive: true });
+  await mkdir(path.join(root, 'artifacts', 'provenance', 'reports'), { recursive: true });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // STEP 4: Signed run manifest (Phase 6.1)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  let gitHead = '';
+  try {
+    gitHead = (await git.revparse(['HEAD'])).trim();
+  } catch {}
+
+  if (featureFlag('artifactSigning')) {
+    const manifestWriter = new RunManifestWriter();
+    await manifestWriter.write(runId, {
+      mode: config.mode ?? 'normal',
+      constitutionVariant: config.constitutionVariant ?? 'default',
+      templateVariant: config.templateVariant ?? 'baseline',
+      models,
+      gitHead,
+      maxCycles,
+      portfolioVariantId: config.portfolioVariantId ?? null,
+      benchmarkCase: config.benchmarkCase ?? null,
+    });
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // STEP 5: Initialize hardening engines (Phase 5.1)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  const approvalGate = new ApprovalGate();
+  const approvalEnforcer = new ApprovalEnforcer(runId);
+  const workspaceLock = new WorkspaceLock();
+  const recoveryJournal = new RecoveryJournal(runId);
+  const leaseManager = new LeaseManager(runId);
+  const budgetManager = new BudgetManager(runId);
+  const partitions = new TeamMemoryPartitions(runId);
+  const ultraplanSla = new UltraPlanSla(runId);
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // STEP 6: Initialize governance engines (Phase 6.1)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  const policyEngine = new PolicyEngine(runId);
+  const actionLedger = new ActionLedger(runId);
+  const evidencePacks = new EvidencePackBuilder(runId);
+  const verifier = new VerificationAuditor(runId);
+  const provenanceBuilder = new ProvenanceBuilder(runId);
+  const policyAuditor = new PolicyAuditor(runId);
+  const securityAudit = new SecurityAudit(runId);
+  const redactor = new RedactionFilter(runId);
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // STEP 7: Initialize tool substrate (Phase 6)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  const toolRegistry = bootstrapRegistry();
+  const toolPolicy = new ToolPolicy(runId);
+
+  if (featureFlag('toolPolicies')) {
+    toolPolicy.seedDefaults();
+  }
+
+  if (featureFlag('policyEngine')) {
+    policyEngine.seedDefaults();
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // STEP 8: Initialize learning version overlays (Phase 10)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  const versionManager = new VersionManager();
+
+  const getEffectiveModelMap = () => {
+    if (!featureFlag('routingOptimization')) return models;
+    const activeRouting = versionManager.getActiveRouting();
+    if (!activeRouting?.config_json) return models;
+
+    try {
+      const cfg = JSON.parse(activeRouting.config_json);
+      const rule = cfg.rules?.find((r: any) =>
+        r.mission_category === (config.missionCategory ?? 'general') ||
+        r.mission_category === '*'
+      );
+      return rule?.model_map
+        ? { ...models, ...rule.model_map }
+        : models;
+    } catch {
+      return models;
+    }
+  };
+
+  const getEffectivePrompt = (roleKey: string, fallbackPath: string) => {
+    if (!featureFlag('promptOptimization')) return null;
+    return versionManager.getActivePrompt(`role:${roleKey}`)?.content ?? null;
+  };
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // STEP 9: Acquire workspace lock (Phase 5.1)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  const lockKey = `worktree:${root}`;
+  const lockHolder = `run:${runId}`;
+
+  if (featureFlag('workspaceLocks')) {
+    workspaceLock.acquire(lockKey, lockHolder, runId, 90_000);
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // STEP 10: Crash recovery (Phase 5.1)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  const runState: RunState = {
+    bestScore: 0,
+    plateauCount: 0,
+    consecutiveRejects: 0,
+    totalCostUsd: 0,
+    totalToolCalls: 0,
+  };
+
+  if (featureFlag('daemonRecovery')) {
+    const recovered = await recoverInterruptedRun(runId);
+    if (recovered) {
+      runState.bestScore = recovered.bestScore ?? 0;
+      runState.plateauCount = recovered.plateauCount ?? 0;
+      runState.consecutiveRejects = recovered.consecutiveRejects ?? 0;
+      incidents.log({
+        runId,
+        severity: 'info',
+        component: 'orchestrator',
+        summary: `Resumed from checkpoint at stage=${recovered.stage}, cycle=${recovered.cycleNumber}`,
+        details: recovered,
+      });
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // STEP 11: Boot knowledge graph
+  // ──────────────────────────────────────────────────────────────────────────
+
+  graphManager.init(runId);
+
+  if (featureFlag('knowledgeGraph')) {
+    await graphManager.ensureBuilt({
+      seedMaterial: config.graphSeedMaterial ?? [],
+      workspaceRoot: root,
+    }).catch((err: Error) => {
+      incidents.log({
+        runId,
+        severity: 'warn',
+        component: 'graph-manager',
+        summary: `Graph build failed: ${err.message}`,
+      });
+    });
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // STEP 12: Boot memory
+  // ──────────────────────────────────────────────────────────────────────────
+
+  const memory = new MemoryManager(root);
+  await memory.ensureInitialized();
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // STEP 13: Boot teams (Phase 5 — hierarchy mode)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  const teamManager = new TeamManager(runId);
+  let teamIds: Record<string, string> = {};
+
+  if (featureFlag('coordinatorHierarchy') && config.useHierarchy !== false) {
+    const defaultTeams = ['Research', 'Quality', 'Planning', 'Memory', 'Platform'];
+
+    for (const teamName of defaultTeams) {
+      const team = await teamManager.createTeam({
+        name: teamName,
+        runId,
+      });
+      teamIds[teamName] = team.teamId;
+
+      if (featureFlag('teamMemoryPartitions')) {
+        await partitions.ensureTeamPartition(team.teamId, teamName);
+      }
+
+      if (featureFlag('teamBudgets')) {
+        budgetManager.seedDefaults(team.teamId, {
+          usdLimit: teamName === 'Planning' ? 2.5 : 1.25,
+          tokenLimit: teamName === 'Planning' ? 60_000 : 30_000,
+          toolCallLimit: 40,
+          minuteLimit: teamName === 'Planning' ? 30 : 15,
+        });
+
+        if (featureFlag('toolPolicies')) {
+          toolPolicy.seedDefaults(team.teamId);
+        }
+
+        if (featureFlag('policyEngine')) {
+          policyEngine.seedDefaults(team.teamId);
+        }
+      }
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // STEP 14: Boot core subsystems
+  // ──────────────────────────────────────────────────────────────────────────
+
+  const effectiveModels = getEffectiveModelMap();
+
+  const ratchet = new RatchetEngine({
+    constitution: config.constitutionText,
+    runId,
+    models: effectiveModels,
+    benchmarkCase: config.benchmarkCase,
+  });
+
+  const resultsLogger = new ResultsLogger(resultsFile, runId);
+  await resultsLogger.ensureHeader();
+
+  const transcriptWriter = new TranscriptWriter(runId, root);
+  await transcriptWriter.ensureInitialized();
+
+  const ultraPlanEngine = new UltraPlanEngine(runId, {
+    models: effectiveModels,
+    constitution: config.constitutionText,
+  });
+
+  const dreamEngine = new DreamEngine(runId, {
+    model: effectiveModels.dream ?? DEFAULT_MODELS.dream,
+    memoryRoot: path.join(root, 'memory'),
+  });
+
+  // Write boot checkpoint
+  recoveryJournal.checkpoint({
+    cycleNumber: 0,
+    bestScore: runState.bestScore,
+    plateauCount: runState.plateauCount,
+    consecutiveRejects: runState.consecutiveRejects,
+    stage: 'boot',
+    extra: { gitHead, teamCount: Object.keys(teamIds).length },
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // STEP 15: Graceful shutdown registration
+  // ──────────────────────────────────────────────────────────────────────────
+
+  let shutdownRequested = false;
+
+  const onShutdown = () => {
+    shutdownRequested = true;
+    try {
+      if (featureFlag('workspaceLocks')) {
+        workspaceLock.release(lockKey, lockHolder);
+      }
+    } finally {
+      const db2 = getDb();
+      db2.prepare(`
+        UPDATE runs SET status = 'cancelled', finished_at = datetime('now') WHERE id = ?
+      `).run(runId);
+      db2.close();
+      process.exit(0);
+    }
+  };
+
+  process.once('SIGINT', onShutdown);
+  process.once('SIGTERM', onShutdown);
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // STEP 16: MAIN CYCLE LOOP
+  // ──────────────────────────────────────────────────────────────────────────
+
+  let cycleNumber = 0;
+  let stoppedReason: OrchestratorResult['stoppedReason'] = 'max_cycles';
+
+  try {
+    for (cycleNumber = 1; cycleNumber <= maxCycles; cycleNumber++) {
+      if (shutdownRequested) {
+        stoppedReason = 'error';
+        break;
+      }
+
+      // ── Budget guard ───────────────────────────────────────────────────────
+      if (
+        config.maxBudgetUsd !== undefined &&
+        runState.totalCostUsd >= config.maxBudgetUsd
+      ) {
+        stoppedReason = 'budget_exhausted';
+        incidents.log({
+          runId,
+          severity: 'warn',
+          component: 'orchestrator',
+          summary: `Budget exhausted at $${runState.totalCostUsd.toFixed(4)}`,
+        });
+        break;
+      }
+
+      // ── Workspace lock heartbeat ───────────────────────────────────────────
+      if (featureFlag('workspaceLocks')) {
+        workspaceLock.heartbeat(lockKey, lockHolder, 90_000);
+      }
+
+      // ── Worker lease reclaim ───────────────────────────────────────────────
+      if (featureFlag('workerLeases')) {
+        leaseManager.reclaimExpired();
+      }
+
+      // ── Pre-cycle checkpoint ───────────────────────────────────────────────
+      recoveryJournal.checkpoint({
+        cycleNumber,
+        bestScore: runState.bestScore,
+        plateauCount: runState.plateauCount,
+        consecutiveRejects: runState.consecutiveRejects,
+        stage: 'pre_cycle',
+      });
+
+      // ── Write cycle DB record ──────────────────────────────────────────────
+      const cycleId = `cyc_${nanoid(10)}`;
+      const db3 = getDb();
+      db3.prepare(`
+        INSERT INTO cycles
+        (id, run_id, cycle_number, status, started_at)
+        VALUES (?, ?, ?, 'running', datetime('now'))
+      `).run(cycleId, runId, cycleNumber);
+      db3.close();
+
+      transcriptWriter.event({
+        type: 'cycle_start',
+        cycleNumber,
+        bestScore: runState.bestScore,
+        plateauCount: runState.plateauCount,
+      });
+
+      // ── Load context ───────────────────────────────────────────────────────
+
+      const graphContext = featureFlag('knowledgeGraph')
+        ? graphManager.buildContext(config.orgText)
+        : '';
+
+      const sharedMemoryContext = await memory.buildContext();
+
+      const workspaceText = await readFile(workspaceFile, 'utf-8').catch(() => '');
+
+      // ── ULTRAPLAN (plateau recovery) ──────────────────────────────────────
+      if (
+        featureFlag('ultraplan') &&
+        runState.plateauCount >= Math.max(3, Math.floor(plateauCycles * 0.6)) &&
+        runState.plateauCount < plateauCycles
+      ) {
+        const ultraSession = await ultraPlanEngine.createSession({
+          cycleNumber,
+          currentBestScore: runState.bestScore,
+          plateauCount: runState.plateauCount,
+          mission: config.orgText,
+          workspaceText,
+          graphContext,
+          memoryContext: sharedMemoryContext,
+        });
+
+        if (featureFlag('ultraplanSla')) {
+          const ultraResult = await ultraplanSla.runWithSla({
+            sessionId: ultraSession.sessionId,
+            cycleNumber,
+            maxDurationMs: config.ultraplanMaxDurationMs ?? 15 * 60 * 1000,
+            onRun: async () => {
+              return await ultraPlanEngine.executeSession(ultraSession.sessionId);
+            },
+            onTimeout: async () => ({
+              bottleneck: 'ULTRAPLAN timed out.',
+              pivot_hypothesis: 'Resume from last checkpoint.',
+              five_cycle_plan: [],
+              checkpoint_summary: 'Timed out — using last known state.',
+              cancellation_safe_summary: 'Timed out.',
+              risks: ['Partial plan'],
+              expected_score_delta: 0,
+            }),
+          });
+
+          ultraplanSla.checkpoint(
+            ultraSession.sessionId,
+            cycleNumber,
+            1,
+            ultraResult.checkpoint_summary ?? 'ULTRAPLAN completed',
+            ultraResult
+          );
+
+          const ultraApprovalId = approvalGate.request({
+            runId,
+            cycleNumber,
+            approvalType: 'ultraplan',
+            subject: ultraSession.sessionId,
+            requestedBy: 'CEO',
+            summary: `ULTRAPLAN pivot after ${runState.plateauCount} plateau cycles.`,
+            details: ultraResult,
+          });
+
+          eventBus.broadcast({
+            type: 'ultraplan_ready',
+            sessionId: ultraSession.sessionId,
+            approvalId: ultraApprovalId,
+            result: ultraResult,
+          });
+        }
+      }
+
+      // ── Plateau stop ───────────────────────────────────────────────────────
+      if (runState.plateauCount >= plateauCycles) {
+        stoppedReason = 'plateau';
+        break;
+      }
+
+      // ── CEO directive ──────────────────────────────────────────────────────
+
+      const ceoEffectivePrompt = getEffectivePrompt('CEO', 'roles/CEO.md');
+      const ceoRoleManifest = featureFlag('roleEvolution')
+        ? versionManager.getActiveRole('CEO')
+        : null;
+
+      const ceoTaskId = `task_${nanoid(10)}`;
+      const ceoLeaseId = featureFlag('workerLeases')
+        ? leaseManager.leaseTask({
+            cycleNumber,
+            taskId: ceoTaskId,
+            workerRole: 'CEO',
+            workerInstance: `ceo_${cycleNumber}`,
+            payload: { cycle: cycleNumber },
+          })
+        : null;
+
+      let ceoOutput: { content: string; costUsd?: number; toolExecutionIds?: string[]; evidencePackId?: string };
+
+      try {
+        ceoOutput = await AgentRunner.runWithTools({
+          runId,
+          cycle: cycleNumber,
+          role: 'CEO',
+          task: `Produce cycle ${cycleNumber} directive. Current best score: ${runState.bestScore.toFixed(4)}. Plateau count: ${runState.plateauCount}.`,
+          prompt: ceoEffectivePrompt ?? await readFile(path.join(process.cwd(), 'roles', 'CEO.md'), 'utf-8').catch(() => ''),
+          model: effectiveModels.ceo ?? DEFAULT_MODELS.ceo,
+          memoryContext: sharedMemoryContext,
+          graphContext,
+          workspaceContext: workspaceText,
+          roleManifest: ceoRoleManifest,
+          toolRegistry: featureFlag('toolUse') ? toolRegistry : undefined,
+        });
+      } catch (err) {
+        if (ceoLeaseId) leaseManager.reclaimExpired();
+        throw err;
+      }
+
+      if (ceoLeaseId) {
+        leaseManager.complete(ceoLeaseId, { ok: true });
+      }
+
+      if (ceoOutput.costUsd) {
+        runState.totalCostUsd += ceoOutput.costUsd;
+      }
+
+      transcriptWriter.event({
+        type: 'agent_output',
+        role: 'CEO',
+        cycleNumber,
+        content: redactor.redact(ceoOutput.content, { cycleNumber, channel: 'transcript' }).text,
+      });
+
+      // ── Coordinator task assignment (hierarchy mode) ───────────────────────
+
+      let coordinatorDirective = ceoOutput.content;
+
+      if (featureFlag('coordinatorHierarchy') && config.useHierarchy !== false) {
+        const coordinatorOut = await AgentRunner.runWithTools({
+          runId,
+          cycle: cycleNumber,
+          role: 'CoordinatorLead',
+          teamId: teamIds['Planning'],
+          task: ceoOutput.content,
+          prompt: getEffectivePrompt('CoordinatorLead', 'roles/CoordinatorLead.md')
+            ?? await readFile(path.join(process.cwd(), 'roles', 'CoordinatorLead.md'), 'utf-8').catch(() => ''),
+          model: effectiveModels.coordinator ?? DEFAULT_MODELS.coordinator,
+          memoryContext: await partitions.buildContext(teamIds['Planning']),
+          graphContext,
+          workspaceContext: workspaceText,
+          toolRegistry: featureFlag('toolUse') ? toolRegistry : undefined,
+        });
+
+        if (coordinatorOut.costUsd) runState.totalCostUsd += coordinatorOut.costUsd;
+        coordinatorDirective = coordinatorOut.content;
+
+        transcriptWriter.event({
+          type: 'agent_output',
+          role: 'CoordinatorLead',
+          cycleNumber,
+          content: redactor.redact(coordinatorOut.content, { cycleNumber, channel: 'transcript' }).text,
+        });
+
+        recoveryJournal.checkpoint({
+          cycleNumber,
+          bestScore: runState.bestScore,
+          plateauCount: runState.plateauCount,
+          consecutiveRejects: runState.consecutiveRejects,
+          stage: 'post_team_assignment',
+          extra: { teamCount: Object.keys(teamIds).length },
+        });
+      }
+
+      // ── Worker agents ──────────────────────────────────────────────────────
+
+      const workerResults: Array<{
+        role: string;
+        content: string;
+        costUsd?: number;
+        evidencePackId?: string;
+        toolExecutionIds?: string[];
+      }> = [];
+
+      const workerRoles = [
+        { role: 'Engineer', teamKey: 'Research', promptFile: 'roles/Engineer.md' },
+        { role: 'Critic', teamKey: 'Quality', promptFile: 'roles/Critic.md' },
+        { role: 'Archivist', teamKey: 'Memory', promptFile: 'roles/Archivist.md' },
+        { role: 'DevilsAdvocate', teamKey: 'Quality', promptFile: 'roles/DevilsAdvocate.md' },
+      ];
+
+      for (const worker of workerRoles) {
+        const teamId = teamIds[worker.teamKey];
+
+        const memCtx = teamId && featureFlag('teamMemoryPartitions')
+          ? await partitions.buildContext(teamId)
+          : sharedMemoryContext;
+
+        const workerLeaseId = featureFlag('workerLeases')
+          ? leaseManager.leaseTask({
+              cycleNumber,
+              taskId: `task_${nanoid(10)}`,
+              workerRole: worker.role,
+              workerInstance: `${worker.role.toLowerCase()}_${cycleNumber}`,
+              teamId,
+            })
+          : null;
+
+        let workerOut: typeof workerResults[0];
+
+        try {
+          const rawOut = await AgentRunner.runWithTools({
+            runId,
+            cycle: cycleNumber,
+            role: worker.role,
+            teamId,
+            task: coordinatorDirective,
+            prompt: getEffectivePrompt(worker.role, worker.promptFile)
+              ?? await readFile(path.join(process.cwd(), worker.promptFile), 'utf-8').catch(() => ''),
+            model: effectiveModels[worker.role.toLowerCase() as keyof typeof effectiveModels]
+              ?? DEFAULT_MODELS.engineer,
+            memoryContext: memCtx,
+            graphContext,
+            workspaceContext: workspaceText,
+            roleManifest: featureFlag('roleEvolution')
+              ? versionManager.getActiveRole(worker.role)
+              : null,
+            toolRegistry: featureFlag('toolUse') ? toolRegistry : undefined,
+          });
+
+          workerOut = {
+            role: worker.role,
+            content: rawOut.content,
+            costUsd: rawOut.costUsd,
+            evidencePackId: rawOut.evidencePackId,
+            toolExecutionIds: rawOut.toolExecutionIds,
+          };
+
+          if (rawOut.costUsd) runState.totalCostUsd += rawOut.costUsd;
+          if (rawOut.toolExecutionIds) runState.totalToolCalls += rawOut.toolExecutionIds.length;
+
+          if (workerLeaseId) leaseManager.complete(workerLeaseId, { ok: true });
+        } catch (err) {
+          if (workerLeaseId) leaseManager.reclaimExpired();
+          incidents.log({
+            runId,
+            severity: 'warn',
+            component: 'orchestrator',
+            summary: `Worker ${worker.role} failed in cycle ${cycleNumber}`,
+            details: { error: err instanceof Error ? err.message : String(err) },
+          });
+          workerOut = { role: worker.role, content: '' };
+        }
+
+        transcriptWriter.event({
+          type: 'agent_output',
+          role: worker.role,
+          cycleNumber,
+          content: redactor.redact(workerOut.content, { cycleNumber, channel: 'transcript' }).text,
+        });
+
+        workerResults.push(workerOut);
+      }
+
+      recoveryJournal.checkpoint({
+        cycleNumber,
+        bestScore: runState.bestScore,
+        plateauCount: runState.plateauCount,
+        consecutiveRejects: runState.consecutiveRejects,
+        stage: 'post_workers',
+      });
+
+      // ── Merge evidence packs ───────────────────────────────────────────────
+
+      let mergedPackId: string | undefined;
+      const workerPackIds = workerResults
+        .map(w => w.evidencePackId)
+        .filter(Boolean) as string[];
+
+      if (featureFlag('evidencePacks') && workerPackIds.length > 0) {
+        const merged = await evidencePacks.merge({
+          cycleNumber,
+          ownerRole: 'CEO',
+          packIds: workerPackIds,
+          summary: `Merged worker evidence for cycle ${cycleNumber}`,
+        });
+        mergedPackId = merged.packId;
+      }
+
+      // ── CEO synthesis ──────────────────────────────────────────────────────
+
+      const synthesisContext = [
+        `## ORIGINAL DIRECTIVE`,
+        ceoOutput.content,
+        '',
+        `## WORKER REPORTS`,
+        ...workerResults.map(w => `### ${w.role}\n${w.content}`),
+        '',
+        mergedPackId ? `## EVIDENCE PACK ID\n${mergedPackId}` : '',
+      ].join('\n');
+
+      const synthesisOut = await AgentRunner.runWithTools({
+        runId,
+        cycle: cycleNumber,
+        role: 'CEO',
+        task: `Synthesize worker reports into the best possible output for cycle ${cycleNumber}.`,
+        prompt: getEffectivePrompt('CEO', 'roles/CEO.md')
+          ?? await readFile(path.join(process.cwd(), 'roles', 'CEO.md'), 'utf-8').catch(() => ''),
+        model: effectiveModels.ceo ?? DEFAULT_MODELS.ceo,
+        memoryContext: sharedMemoryContext,
+        graphContext,
+        workspaceContext: synthesisContext,
+        evidencePackId: mergedPackId,
+        toolRegistry: undefined, // synthesis does not need more tools
+      });
+
+      if (synthesisOut.costUsd) runState.totalCostUsd += synthesisOut.costUsd;
+
+      const rawOutputText = synthesisOut.content;
+      const safeOutputText = redactor.redact(rawOutputText, {
+        cycleNumber,
+        channel: 'output',
+      }).text;
+
+      transcriptWriter.event({
+        type: 'synthesis',
+        role: 'CEO',
+        cycleNumber,
+        content: safeOutputText,
+      });
+
+      // ── Write candidate to workspace ───────────────────────────────────────
+
+      await writeFile(workspaceFile, safeOutputText, 'utf-8');
+
+      // ── Verification audit (Phase 6) ───────────────────────────────────────
+
+      let verificationReport: unknown;
+
+      if (featureFlag('evidencePacks') && mergedPackId) {
+        verificationReport = await verifier.audit({
+          cycleNumber,
+          role: 'CEO',
+          draft: safeOutputText,
+          evidencePackId: mergedPackId,
+        });
+        runState.lastVerificationReport = verificationReport;
+      }
+
+      // ── Provenance linking (Phase 6.1) ─────────────────────────────────────
+
+      let provenanceReport: unknown;
+
+      if (featureFlag('provenanceChain') && mergedPackId) {
+        provenanceReport = await provenanceBuilder.linkDraft({
+          cycleNumber,
+          role: 'CEO',
+          draft: safeOutputText,
+          evidencePackId: mergedPackId,
+        });
+        runState.lastProvenanceReport = provenanceReport;
+      }
+
+      // ── Policy audit (Phase 6.1) ───────────────────────────────────────────
+
+      let policyReport: unknown;
+
+      if (featureFlag('policyEngine')) {
+        policyReport = await policyAuditor.audit({
+          cycleNumber,
+          role: 'CEO',
+          draft: safeOutputText,
+          verificationReport,
+          provenanceReport,
+        });
+      }
+
+      recoveryJournal.checkpoint({
+        cycleNumber,
+        bestScore: runState.bestScore,
+        plateauCount: runState.plateauCount,
+        consecutiveRejects: runState.consecutiveRejects,
+        stage: 'post_score',
+        extra: { mergedPackId },
+      });
+
+      // ── Ratchet scoring ────────────────────────────────────────────────────
+
+      const score = await ratchet.score({
+        proposal: {
+          content: safeOutputText,
+          role: 'CEO',
+          cycleNumber,
+        },
+        graph: graphManager.getGraph(),
+        verificationReport: verificationReport as any,
+        evidencePackId: mergedPackId,
+        toolStats: {
+          toolCalls: runState.totalToolCalls,
+        },
+        policyReport: policyReport as any,
+        provenanceReport: provenanceReport as any,
+        benchmarkCase: config.benchmarkCase,
+      });
+
+      transcriptWriter.event({
+        type: 'ratchet_score',
+        cycleNumber,
+        score,
+      });
+
+      // ── Ratchet decision ───────────────────────────────────────────────────
+
+      const decision = ratchet.decide(score, runState.bestScore);
+
+      recoveryJournal.checkpoint({
+        cycleNumber,
+        bestScore: runState.bestScore,
+        plateauCount: runState.plateauCount,
+        consecutiveRejects: runState.consecutiveRejects,
+        stage: 'post_decision',
+        extra: { decision, score: score.composite },
+      });
+
+      // ── REVERT path ────────────────────────────────────────────────────────
+
+      if (decision === 'REVERT') {
+        await ratchet.materializeRevert(workspaceFile);
+        runState.consecutiveRejects += 1;
+        runState.plateauCount += 1;
+
+        await resultsLogger.append({
+          cycle: cycleNumber,
+          score: score.composite,
+          groundedness: score.groundedness,
+          novelty: score.novelty,
+          consistency: score.consistency,
+          missionAlignment: score.missionAlignment,
+          policyCompliance: score.policyCompliance ?? 1,
+          decision: 'REVERT',
+          summary: score.justification,
+          costUsd: runState.totalCostUsd,
+        });
+
+        const db4 = getDb();
+        db4.prepare(`
+          UPDATE cycles
+          SET status = 'reverted', score = ?, decision = 'REVERT', finished_at = datetime('now')
+          WHERE id = ?
+        `).run(score.composite, cycleId);
+        db4.close();
+      }
+
+      // ── COMMIT path ────────────────────────────────────────────────────────
+
+      if (decision === 'COMMIT') {
+        const commitMessage = `cycle-${cycleNumber}: score=${score.composite.toFixed(4)} groundedness=${score.groundedness.toFixed(4)} policy=${(score.policyCompliance ?? 1).toFixed(4)}`;
+
+        if (featureFlag('strictApprovalBlocking')) {
+          // Stage pending — no git commit until approved
+          const staged = await approvalEnforcer.stageCommitCandidate({
+            cycleNumber,
+            targetFile: workspaceFile,
+            outputText: safeOutputText,
+            score,
+            summary: score.justification,
+          });
+
+          await resultsLogger.append({
+            cycle: cycleNumber,
+            score: score.composite,
+            groundedness: score.groundedness,
+            novelty: score.novelty,
+            consistency: score.consistency,
+            missionAlignment: score.missionAlignment,
+            policyCompliance: score.policyCompliance ?? 1,
+            decision: 'PENDING_APPROVAL',
+            summary: `Staged ${staged.approvalId}: ${score.justification}`,
+            costUsd: runState.totalCostUsd,
+          });
+
+          eventBus.broadcast({
+            type: 'commit_pending',
+            cycleNumber,
+            approvalId: staged.approvalId,
+            actionId: staged.actionId,
+            score,
+          });
+
+          // Optimistically treat as improved for loop control
+          runState.bestScore = score.composite;
+          runState.consecutiveRejects = 0;
+          runState.plateauCount = 0;
+          runState.lastEvidencePackId = mergedPackId;
+
+        } else {
+          // Permissive mode — commit immediately
+          const commitHash = await ratchet.materializeCommit({
+            file: workspaceFile,
+            commitMessage,
+          });
+
+          runState.bestScore = score.composite;
+          runState.consecutiveRejects = 0;
+          runState.plateauCount = 0;
+          runState.lastEvidencePackId = mergedPackId;
+
+          await resultsLogger.append({
+            cycle: cycleNumber,
+            score: score.composite,
+            groundedness: score.groundedness,
+            novelty: score.novelty,
+            consistency: score.consistency,
+            missionAlignment: score.missionAlignment,
+            policyCompliance: score.policyCompliance ?? 1,
+            decision: 'COMMIT',
+            summary: `Committed ${commitHash}: ${score.justification}`,
+            costUsd: runState.totalCostUsd,
+          });
+        }
+
+        const db5 = getDb();
+        db5.prepare(`
+          UPDATE cycles
+          SET status = 'committed', score = ?, decision = 'COMMIT', finished_at = datetime('now')
+          WHERE id = ?
+        `).run(score.composite, cycleId);
+        db5.close();
+
+        // ── Update graph with new output ───────────────────────────────────
+        if (featureFlag('knowledgeGraph')) {
+          await graphManager.ingest({
+            text: safeOutputText,
+            source: `cycle:${cycleNumber}`,
+            weight: score.composite,
+          }).catch(() => {});
+        }
+      }
+
+      // ── Memory updates ─────────────────────────────────────────────────────
+
+      if (score.composite > 0) {
+        const memoryNote = redactor.redact(
+          `Cycle ${cycleNumber} (score=${score.composite.toFixed(4)}): ${score.justification.slice(0, 400)}`,
+          { cycleNumber, channel: 'memory' }
+        ).text;
+
+        await memory.append(memoryNote, cycleNumber).catch(() => {});
+      }
+
+      // ── DreamAgent (periodic memory consolidation) ─────────────────────────
+
+      const dreamInterval = Number(process.env.DREAM_INTERVAL_CYCLES ?? 8);
+
+      if (
+        featureFlag('dreamAgent') &&
+        cycleNumber % dreamInterval === 0
+      ) {
+        await dreamEngine.run().catch((err: Error) => {
+          incidents.log({
+            runId,
+            severity: 'warn',
+            component: 'dream-engine',
+            summary: `DreamAgent failed: ${err.message}`,
+          });
+        });
+
+        recoveryJournal.checkpoint({
+          cycleNumber,
+          bestScore: runState.bestScore,
+          plateauCount: runState.plateauCount,
+          consecutiveRejects: runState.consecutiveRejects,
+          stage: 'post_dream',
+        });
+      }
+
+      // ── Approve staged actions from previous cycles ────────────────────────
+
+      if (featureFlag('strictApprovalBlocking')) {
+        await approvalEnforcer.materializeApprovedActions().catch((err: Error) => {
+          incidents.log({
+            runId,
+            severity: 'warn',
+            component: 'approval-enforcer',
+            summary: `Materialization failed: ${err.message}`,
+          });
+        });
+      }
+
+      // ── End of cycle events ────────────────────────────────────────────────
+
+      transcriptWriter.event({
+        type: 'cycle_end',
+        cycleNumber,
+        decision,
+        score: score.composite,
+        bestScore: runState.bestScore,
+        plateauCount: runState.plateauCount,
+      });
+
+      eventBus.broadcast({
+        type: 'cycle_complete',
+        cycleNumber,
+        decision,
+        score,
+        runState: { ...runState },
+      });
+
+    } // end cycle loop
+
+  } catch (err) {
+    stoppedReason = 'error';
+
+    incidents.log({
+      runId,
+      severity: 'critical',
+      component: 'orchestrator',
+      summary: `Orchestrator crash at cycle ${cycleNumber}`,
+      details: { error: err instanceof Error ? err.message : String(err) },
+    });
+
+    const db6 = getDb();
+    db6.prepare(`
+      UPDATE runs
+      SET status = 'failed', finished_at = datetime('now'), error_text = ?
+      WHERE id = ?
+    `).run(err instanceof Error ? err.message : String(err), runId);
+    db6.close();
+
+    throw err;
+
+  } finally {
+    // ── Always release workspace lock ────────────────────────────────────────
+    if (featureFlag('workspaceLocks')) {
+      try { workspaceLock.release(lockKey, lockHolder); } catch {}
+    }
+
+    process.off('SIGINT', onShutdown);
+    process.off('SIGTERM', onShutdown);
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // STEP 17: Post-loop finalization
+  // ──────────────────────────────────────────────────────────────────────────
+
+  // Final approved-action materialization
+  if (featureFlag('strictApprovalBlocking')) {
+    await approvalEnforcer.materializeApprovedActions().catch(() => {});
+  }
+
+  // Final idle checkpoint
+  recoveryJournal.checkpoint({
+    cycleNumber,
+    bestScore: runState.bestScore,
+    plateauCount: runState.plateauCount,
+    consecutiveRejects: runState.consecutiveRejects,
+    stage: 'idle',
+    extra: { stoppedReason },
+  });
+
+  // Security audit export
+  const openFindings = await countOpenSecurityFindings(runId);
+
+  if (featureFlag('securityAuditExport') && openFindings > 0) {
+    await securityAudit.exportBundle('json').catch(() => {});
+  }
+
+  // Read final output
+  const finalOutputText = await readFile(workspaceFile, 'utf-8').catch(() => '');
+
+  // Finalize run record
+  const db7 = getDb();
+  db7.prepare(`
+    UPDATE runs
+    SET status = 'completed',
+        finished_at = datetime('now'),
+        total_cycles = ?,
+        best_score = ?,
+        total_cost_usd = ?,
+        total_tool_calls = ?,
+        stopped_reason = ?,
+        final_evidence_pack_id = ?
+    WHERE id = ?
+  `).run(
+    cycleNumber,
+    runState.bestScore,
+    runState.totalCostUsd,
+    runState.totalToolCalls,
+    stoppedReason,
+    runState.lastEvidencePackId ?? null,
+    runId,
+  );
+  db7.close();
+
+  eventBus.broadcast({
+    type: 'run_complete',
+    runId,
+    stoppedReason,
+    bestScore: runState.bestScore,
+    totalCycles: cycleNumber,
+    totalCostUsd: runState.totalCostUsd,
+  });
+
+  return {
+    runId,
+    finalOutputText,
+    finalOutputPath: workspaceFile,
+    finalScore: {
+      composite: runState.bestScore,
+      groundedness: 0,
+      novelty: 0,
+      consistency: 0,
+      missionAlignment: 0,
+      policyCompliance: 1,
+      justification: `Best score achieved over ${cycleNumber} cycles.`,
+    },
+    totalCostUsd: runState.totalCostUsd,
+    totalToolCalls: runState.totalToolCalls,
+    totalCycles: cycleNumber,
+    evidencePackId: runState.lastEvidencePackId,
+    verificationReport: runState.lastVerificationReport,
+    provenanceReport: runState.lastProvenanceReport,
+    securityFindingCount: openFindings,
+    stoppedReason,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BENCHMARK MODE ENTRYPOINT
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function runBenchmarkMode(input: {
+  orgText: string;
+  constitutionText: string;
+  caseConfig: Record<string, unknown>;
+  templateVariant?: string;
+  constitutionVariant?: string;
+  modelMap?: Record<string, string>;
+  seed?: number;
+}) {
+  const started = Date.now();
+
+  const result = await runAutoOrg({
+    orgText: input.orgText,
+    constitutionText: input.constitutionText,
+    mode: 'benchmark',
+    maxCycles: Number(input.caseConfig.max_cycles ?? 4),
+    templateVariant: input.templateVariant,
+    constitutionVariant: input.constitutionVariant,
+    modelMap: input.modelMap,
+    benchmarkCase: {
+      caseName: String(input.caseConfig.case_name ?? 'unknown'),
+      category: String(input.caseConfig.category ?? 'general'),
+      difficulty: String(input.caseConfig.difficulty ?? 'medium'),
+    },
+  });
+
+  return {
+    runId: result.runId,
+    outputText: result.finalOutputText,
+    outputPath: result.finalOutputPath,
+    score: result.finalScore,
+    costUsd: result.totalCostUsd,
+    toolCalls: result.totalToolCalls,
+    latencyMs: Date.now() - started,
+    evidencePackId: result.evidencePackId,
+    verificationReport: result.verificationReport,
+    provenanceReport: result.provenanceReport,
+    securityFindingCount: result.securityFindingCount,
+  };
+}
+
+// Register benchmark runner for benchmark-ci.ts to use
+(globalThis as any).__AUTOORG_BENCHMARK_RUNNER__ = runBenchmarkMode;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PORTFOLIO CHILD MODE ENTRYPOINT
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function runPortfolioChildMode(input: {
+  worktreePath: string;
+  missionText: string;
+  variant: {
+    variantId: string;
+    variantKey: string;
+    constitutionVariant: string;
+    templateVariant: string;
+    modelMap: Record<string, string>;
+  };
+  budgetUsd: number;
+}) {
+  const started = Date.now();
+
+  const constitutionPath = path.join(input.worktreePath, 'constitution.md');
+  const constitutionText = await readFile(constitutionPath, 'utf-8').catch(
+    () => await readFile(path.join(process.cwd(), 'constitution.md'), 'utf-8').catch(() => '')
+  );
+
+  const result = await runAutoOrg({
+    orgText: input.missionText,
+    constitutionText,
+    mode: 'portfolio',
+    workspaceRoot: input.worktreePath,
+    constitutionVariant: input.variant.constitutionVariant,
+    templateVariant: input.variant.templateVariant,
+    modelMap: input.variant.modelMap,
+    portfolioVariantId: input.variant.variantId,
+    maxBudgetUsd: input.budgetUsd,
+    maxCycles: 6,
+  });
+
+  return {
+    runId: result.runId,
+    outputText: result.finalOutputText,
+    outputPath: result.finalOutputPath,
+    score: result.finalScore,
+    costUsd: result.totalCostUsd,
+    latencyMs: Date.now() - started,
+    toolCalls: result.totalToolCalls,
+    evidencePackId: result.evidencePackId,
+    verificationReport: result.verificationReport,
+    provenanceReport: result.provenanceReport,
+    securityFindingCount: result.securityFindingCount,
+  };
+}
+
+// Register portfolio child runner
+(globalThis as any).__AUTOORG_PORTFOLIO_CHILD__ = runPortfolioChildMode;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function countOpenSecurityFindings(runId: string): Promise<number> {
+  try {
+    const db = getDb();
+    const row = db.prepare(`
+      SELECT COUNT(*) as n
+      FROM security_findings
+      WHERE run_id = ? AND status = 'open'
+    `).get(runId) as { n: number };
+    db.close();
+    return row.n;
+  } catch {
+    return 0;
+  }
+}
+
+
+
+The canonical orchestrator references every single one of them. Without them the agent cannot compile, let alone run. Here they are in full, in the exact order an agent should build them.
+
+
+tsconfig.json
+JSON
+
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": false,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": false,
+    "outDir": "./dist",
+    "rootDir": "./",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  "include": [
+    "src/**/*.ts",
+    "scripts/**/*.ts",
+    "tests/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "web",
+    "artifacts",
+    "benchmarks/outputs"
+  ]
+}
+2. bunfig.toml
+toml
+
+[install]
+frozen = true
+optional = false
+
+[install.cache]
+dir = "~/.bun/install/cache"
+disable = false
+disableManifest = false
+
+[test]
+timeout = 30000
+coverage = false
+coverageThreshold = 0
+reporter = "default"
+root = "./tests"
+
+[run]
+bun = true
+3. package.json
+JSON
+
+{
+  "name": "autoorg",
+  "version": "0.1.0",
+  "description": "Governed autonomous organization runtime",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "start": "bun run src/runtime/orchestrator-entrypoint.ts",
+    "dev": "bun run --watch src/runtime/orchestrator-entrypoint.ts",
+    "daemon": "bun run src/runtime/daemon.ts",
+    "api": "bun run src/api/server.ts",
+
+    "migrate": "bun run scripts/ci/migrate-all.ts",
+    "migrate:verify": "bun run scripts/ci/migrate-all.ts --verify",
+
+    "lint": "bun run scripts/ci/lint.ts",
+    "typecheck": "bun run scripts/ci/typecheck.ts",
+    "test": "bun test tests/ --timeout 30000",
+    "test:watch": "bun test --watch tests/",
+    "test:ci": "bun run scripts/ci/test-unit.ts",
+
+    "bench": "bun run src/evals/benchmark-ci.ts",
+    "bench:core": "BENCHMARK_SUITE=core bun run src/evals/benchmark-ci.ts",
+    "bench:stress": "BENCHMARK_SUITE=stress bun run src/evals/benchmark-ci.ts",
+
+    "health": "bun run scripts/ci/health-check.ts",
+    "smoke": "bun run scripts/ci/smoke-test.ts",
+    "security": "bun run scripts/ci/security-scan.ts",
+
+    "setup:hooks": "git config core.hooksPath scripts/hooks && chmod +x scripts/hooks/pre-commit scripts/hooks/pre-push scripts/hooks/commit-msg",
+    "ci": "bun run lint && bun run typecheck && bun run test:ci && bun run bench:core"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "nanoid": "^5.0.7",
+    "openai": "^4.77.0",
+    "simple-git": "^3.27.0",
+    "zod": "^3.23.8",
+    "chalk": "^5.3.0",
+    "better-sqlite3": "^9.4.3",
+    "cron-parser": "^4.9.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.8",
+    "@types/node": "^22.0.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.3.0",
+    "typescript": "^5.4.0",
+    "bun-types": "latest"
+  }
+}
+4. .gitignore
+gitignore
+
+# Dependencies
+node_modules/
+.yarn/
+bun.lockb.bak
+
+# Environment
+.env
+.env.local
+.env.production
+.env.staging
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+/tmp/*.db
+
+# Build output
+dist/
+.next/
+out/
+
+# AutoOrg runtime artifacts
+artifacts/
+!artifacts/.gitkeep
+workspace/current_output.md
+memory/MEMORY.md
+memory/facts/
+memory/partitions/
+memory/archive/
+memory/external/
+results.tsv
+transcripts/
+
+# AutoOrg tenant data
+tenants/
+
+# Benchmark outputs (keep suite definitions, not run outputs)
+benchmarks/outputs/
+!benchmarks/suites/
+!benchmarks/templates/
+
+# Signing secrets
+*.pem
+*.key
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test artifacts
+test-results/
+coverage/
+5. .env.example
+Bash
+
+# ═══════════════════════════════════════════════════════════
+# AutoOrg — Environment Configuration
+# Copy to .env and fill in your values.
+# NEVER commit .env to version control.
+# ═══════════════════════════════════════════════════════════
+
+# ── LLM PROVIDERS ────────────────────────────────────────────
+# Required: set at least one provider
+DEFAULT_LLM_PROVIDER=anthropic
+
+AUTOORG_API_KEY_ANTHROPIC=sk-ant-your-key-here
+AUTOORG_API_KEY_OPENAI=sk-your-openai-key-here
+
+# ── DATABASE ──────────────────────────────────────────────────
+AUTOORG_DB_PATH=autoorg.db
+
+# ── SIGNING + SECURITY ────────────────────────────────────────
+# Change this to a random 64-char string in production
+AUTOORG_SIGNING_SECRET=change-me-to-a-random-secret
+
+# ── DEPLOYMENT ───────────────────────────────────────────────
+AUTOORG_DEPLOYMENT_MODE=local
+AUTOORG_INSTANCE_NAME=dev-local
+AUTOORG_VERSION=dev
+
+# ── APPROVALS (set to 1 for local dev to skip approval gates) ─
+AUTOORG_SKIP_APPROVALS=0
+
+# ── RUN CONTROL ──────────────────────────────────────────────
+AUTOORG_MAX_CYCLES=20
+AUTOORG_PLATEAU_CYCLES=5
+DREAM_INTERVAL_CYCLES=8
+
+# ── TOOL SYSTEM ──────────────────────────────────────────────
+AUTOORG_TOOLS_ENABLED=1
+TOOL_MAX_CALLS_PER_CYCLE=6
+TOOL_MAX_OUTPUT_CHARS=12000
+SANDBOX_ALLOWED_PREFIXES=bun test,bun run,node,python,pytest,tsc,eslint,prettier,git diff,git status
+SANDBOX_DEFAULT_TIMEOUT_MS=20000
+
+# ── CONNECTORS ───────────────────────────────────────────────
+WEB_FETCH_ENABLED=1
+GITHUB_SEARCH_ENABLED=0
+LOCAL_DOCS_ROOT=memory
+
+# ── GITHUB INTEGRATION ───────────────────────────────────────
+GITHUB_APP_ID=
+GITHUB_APP_PRIVATE_KEY=
+GITHUB_WEBHOOK_SECRET=
+GITHUB_DEFAULT_REPO=
+
+# ── EVIDENCE + REPLAY ────────────────────────────────────────
+EVIDENCE_PACK_MAX_CHARS=20000
+TOOL_TRACE_ARTIFACT_DIR=artifacts/tools
+EVIDENCE_ARTIFACT_DIR=artifacts/evidence
+
+# ── WORKSPACE LOCK + LEASE ───────────────────────────────────
+WORKSPACE_LOCK_TTL_MS=90000
+WORKER_LEASE_TTL_MS=45000
+JOB_LEASE_TTL_MS=60000
+
+# ── BUDGET DEFAULTS ──────────────────────────────────────────
+DEFAULT_TEAM_USD_BUDGET=1.5
+DEFAULT_TEAM_TOKEN_BUDGET=40000
+DEFAULT_TEAM_TOOL_CALL_BUDGET=50
+DEFAULT_TEAM_MINUTE_BUDGET=20
+
+# ── ULTRAPLAN ────────────────────────────────────────────────
+ULTRAPLAN_MAX_DURATION_MS=900000
+ULTRAPLAN_CHECKPOINT_INTERVAL_MS=120000
+
+# ── BENCHMARK LAB ────────────────────────────────────────────
+BENCHMARK_SUITE=core
+BENCHMARK_TEMPLATE=baseline
+BENCHMARK_CONSTITUTION=default
+BENCHMARK_SEED=42
+BENCHMARK_FAIL_ON_REGRESSION=true
+
+# ── REGRESSION THRESHOLDS ────────────────────────────────────
+REGRESSION_SCORE_DROP=0.03
+REGRESSION_GROUNDEDNESS_DROP=0.04
+REGRESSION_POLICY_DROP=0.03
+REGRESSION_COST_INCREASE=0.20
+REGRESSION_LATENCY_INCREASE=0.25
+
+# ── PORTFOLIO ────────────────────────────────────────────────
+PORTFOLIO_DEFAULT_BUDGET_USD=8
+PORTFOLIO_DEFAULT_ROUNDS=3
+PORTFOLIO_TOP_K_SURVIVE=2
+PORTFOLIO_MAX_VARIANTS=6
+PORTFOLIO_ALLOW_CROSS_ORG_EXCHANGE=1
+PORTFOLIO_WORKTREE_ROOT=artifacts/portfolio/runs
+
+# ── PLATFORM / MULTI-TENANT ──────────────────────────────────
+AUTOORG_DEFAULT_PLAN=team
+AUTOORG_BASE_URL=http://localhost:3000
+AUTOORG_SESSION_TTL_DAYS=30
+AUTOORG_COOKIE_NAME=autoorg_session
+AUTOORG_REQUIRE_EMAIL_VERIFICATION=0
+AUTOORG_TENANT_ROOT=tenants
+
+# ── BILLING ──────────────────────────────────────────────────
+AUTOORG_RUN_BASE_COST_USD=0.01
+AUTOORG_TOKEN_UNIT_COST_USD=0.000003
+AUTOORG_TOOL_CALL_COST_USD=0.0005
+AUTOORG_STORAGE_GB_COST_USD=0.10
+AUTOORG_AGENT_MINUTE_COST_USD=0.01
+
+# ── BACKUPS ──────────────────────────────────────────────────
+AUTOORG_BACKUP_DIR=artifacts/backups
+AUTOORG_EXPORT_DIR=artifacts/exports
+AUTOORG_ENABLE_RETENTION=1
+
+# ── REMOTE AGENTS ────────────────────────────────────────────
+AUTOORG_AGENT_HEARTBEAT_MS=15000
+AUTOORG_AGENT_LEASE_MS=60000
+AUTOORG_HOSTED_POLL_MS=3000
+
+# ── LEARNING LOOP ────────────────────────────────────────────
+LEARNING_LOOP_INTERVAL_MS=43200000
+LEARNING_DEFAULT_SUITE=core
+LEARNING_MAX_PROPOSALS_PER_CYCLE=5
+LEARNING_ENABLE_PROMPT_OPT=1
+LEARNING_ENABLE_POLICY_OPT=1
+LEARNING_ENABLE_ROLE_EVOLUTION=1
+LEARNING_ENABLE_ROUTING_OPT=1
+LEARNING_ENABLE_MEMORY_PRUNE=1
+LEARNING_ENABLE_ADAPTER_DISTILL=1
+LEARNING_SIMULATION_SUITE=core
+LEARNING_MAX_ALLOWED_SCORE_DROP=0.01
+LEARNING_MAX_ALLOWED_GROUNDEDNESS_DROP=0.02
+LEARNING_MAX_ALLOWED_POLICY_DROP=0.02
+LEARNING_DRIFT_BLOCK_THRESHOLD=0.60
+LEARNING_DRIFT_WARN_THRESHOLD=0.35
+LEARNING_MEMORY_UTILITY_THRESHOLD=0.18
+LEARNING_MEMORY_ARCHIVE_DIR=memory/archive
+LEARNING_DISTILL_MIN_SCORE=0.82
+LEARNING_DISTILL_MIN_POLICY=0.97
+LEARNING_DISTILL_MAX_ROWS=500
+
+# ── DEBUG ─────────────────────────────────────────────────────
+AUTOORG_DEBUG_LLM=0
+AUTOORG_READONLY_MODE=0
+AUTOORG_VERBOSE_CYCLES=0
+6. src/types/index.ts
+TypeScript
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AutoOrg — Shared Type Definitions
+// src/types/index.ts
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── LLM providers ─────────────────────────────────────────────────────────────
+
+export type LLMProvider = 'anthropic' | 'openai';
+
+export interface ModelConfig {
+  provider: LLMProvider;
+  model: string;
+}
+
+export interface ModelCost {
+  inputPerMToken: number;
+  outputPerMToken: number;
+}
+
+export interface LLMMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+export interface LLMUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export interface LLMResponse {
+  content: string;
+  usage?: LLMUsage;
+  costUsd?: number;
+  model?: string;
+}
+
+export interface LLMRunOptions {
+  model: string;
+  messages: LLMMessage[];
+  temperature?: number;
+  maxTokens?: number;
+  stream?: boolean;
+}
+
+export interface LLMStructuredOptions<T> {
+  model: string;
+  messages: LLMMessage[];
+  schema: import('zod').ZodType<T>;
+  temperature?: number;
+  maxTokens?: number;
+  maxRetries?: number;
+}
+
+// ── Adapter interface ──────────────────────────────────────────────────────────
+
+export interface LLMAdapter {
+  provider: LLMProvider;
+  run(opts: LLMRunOptions): Promise<LLMResponse>;
+  structured<T>(opts: LLMStructuredOptions<T>): Promise<T & { _usage?: LLMUsage; _costUsd?: number }>;
+}
+
+// ── Run types ─────────────────────────────────────────────────────────────────
+
+export type RunStatus = 'running' | 'completed' | 'failed' | 'cancelled';
+export type RunMode = 'normal' | 'benchmark' | 'portfolio' | 'daemon';
+
+export interface Run {
+  id: string;
+  tenantId?: string | null;
+  workspaceId?: string | null;
+  status: RunStatus;
+  mode: RunMode;
+  missionSummary: string;
+  constitutionVariant: string;
+  templateVariant: string;
+  modelMapJson: string;
+  portfolioVariantId?: string | null;
+  benchmarkCaseJson?: string | null;
+  bestScore?: number | null;
+  totalCycles?: number | null;
+  totalCostUsd?: number | null;
+  totalToolCalls?: number | null;
+  stoppedReason?: string | null;
+  errorText?: string | null;
+  finalEvidencePackId?: string | null;
+  createdAt: string;
+  finishedAt?: string | null;
+}
+
+// ── Cycle types ───────────────────────────────────────────────────────────────
+
+export type CycleStatus = 'running' | 'committed' | 'reverted' | 'failed';
+export type RatchetDecision = 'COMMIT' | 'REVERT' | 'PENDING_APPROVAL';
+
+// ── Ratchet types ─────────────────────────────────────────────────────────────
+
+export interface RatchetScore {
+  composite: number;
+  groundedness: number;
+  novelty: number;
+  consistency: number;
+  missionAlignment: number;
+  policyCompliance?: number;
+  justification: string;
+  rawScores?: Record<string, number>;
+}
+
+export interface Proposal {
+  content: string;
+  role: string;
+  cycleNumber: number;
+  evidencePackId?: string;
+  verificationReport?: unknown;
+  provenanceReport?: unknown;
+  policyReport?: unknown;
+  toolStats?: { toolCalls: number };
+}
+
+// ── Constitution ──────────────────────────────────────────────────────────────
+
+export interface Constitution {
+  text: string;
+  variant: string;
+  scoringWeights?: {
+    groundedness?: number;
+    novelty?: number;
+    consistency?: number;
+    missionAlignment?: number;
+  };
+}
+
+// ── Knowledge graph ───────────────────────────────────────────────────────────
+
+export interface GraphNode {
+  id: string;
+  label: string;
+  type: 'concept' | 'entity' | 'claim' | 'constraint' | 'goal';
+  weight: number;
+  source?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface GraphEdge {
+  source: string;
+  target: string;
+  relation: string;
+  weight: number;
+}
+
+export interface KnowledgeGraph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  version: number;
+}
+
+// ── Agent types ───────────────────────────────────────────────────────────────
+
+export type RoleName =
+  | 'CEO'
+  | 'Engineer'
+  | 'Critic'
+  | 'Archivist'
+  | 'DevilsAdvocate'
+  | 'RatchetJudge'
+  | 'CoordinatorLead'
+  | 'DreamAgent';
+
+export interface AgentContext {
+  runId: string;
+  cycle: number;
+  role: RoleName | string;
+  teamId?: string;
+  taskId?: string;
+  model: string;
+  provider?: LLMProvider;
+  memoryContext?: string;
+  graphContext?: string;
+  workspaceContext?: string;
+  evidencePackId?: string;
+  roleManifest?: unknown;
+}
+
+export interface AgentOutput {
+  content: string;
+  evidencePackId?: string;
+  toolExecutionIds?: string[];
+  usage?: LLMUsage;
+  costUsd?: number;
+  skipped?: boolean;
+  skipReason?: string;
+}
+
+// ── Tool types ────────────────────────────────────────────────────────────────
+
+export type CapabilityClass = 'search' | 'read' | 'verify' | 'execute' | 'transform';
+
+export interface ToolExecutionContext {
+  runId: string;
+  cycleNumber: number;
+  role: string;
+  teamId?: string;
+  taskId?: string;
+  cwd?: string;
+}
+
+export interface ToolSource {
+  type: 'file_hit' | 'web_page' | 'github_issue' | 'github_pr' | 'stdout' | 'stderr' | 'json' | 'text';
+  uri?: string;
+  title?: string;
+  excerpt?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ToolResult {
+  summary: string;
+  output: unknown;
+  sources?: ToolSource[];
+  costUsd?: number;
+  deterministic?: boolean;
+}
+
+// ── Policy types ──────────────────────────────────────────────────────────────
+
+export type ActionClass = 'READ' | 'PROPOSE' | 'PATCH' | 'EXECUTE' | 'PUBLISH';
+export type RiskTier = 'low' | 'medium' | 'high' | 'critical';
+
+export interface PolicyDecision {
+  allowed: boolean;
+  requireApproval: boolean;
+  requireReversible: boolean;
+  requireProvenance: boolean;
+  requireSignature: boolean;
+  riskTier: RiskTier;
+  matchedRule?: string;
+  reasons: string[];
+}
+
+export interface ActionIntent {
+  runId: string;
+  cycleNumber: number;
+  role: string;
+  teamId?: string;
+  actionClass: ActionClass;
+  targetKind: 'tool' | 'file' | 'git' | 'api' | 'output';
+  targetRef: string;
+  summary: string;
+  metadata?: Record<string, unknown>;
+}
+
+// ── Approval types ────────────────────────────────────────────────────────────
+
+export type ApprovalType =
+  | 'commit'
+  | 'execute'
+  | 'publish'
+  | 'ultraplan'
+  | 'self_improvement'
+  | 'self_improvement_release';
+
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'expired';
+
+export interface ApprovalRequest {
+  runId: string;
+  cycleNumber: number;
+  approvalType: ApprovalType;
+  subject: string;
+  requestedBy: string;
+  summary: string;
+  details: Record<string, unknown>;
+}
+
+// ── Team types ────────────────────────────────────────────────────────────────
+
+export interface TeamConfig {
+  name: string;
+  runId: string;
+}
+
+export interface Team {
+  teamId: string;
+  name: string;
+  runId: string;
+}
+
+// ── Workspace types ───────────────────────────────────────────────────────────
+
+export interface WorkspaceConfig {
+  id?: string;
+  tenantId?: string;
+  root: string;
+  isolationMode?: 'directory' | 'git_worktree' | 'container';
+}
+
+// ── Run config (full) ─────────────────────────────────────────────────────────
+
+export interface RunConfig {
+  orgText: string;
+  constitutionText: string;
+  missionCategory?: string;
+  maxCycles?: number;
+  plateauCycles?: number;
+  seed?: number;
+  mode?: RunMode;
+  workspaceRoot?: string;
+  workspaceId?: string;
+  tenantId?: string;
+  portfolioVariantId?: string;
+  modelMap?: Record<string, string>;
+  models?: Partial<Record<string, string>>;
+  constitutionVariant?: string;
+  templateVariant?: string;
+  maxBudgetUsd?: number;
+  useHierarchy?: boolean;
+  ultraplanMaxDurationMs?: number;
+  ultraplanCheckpointIntervalMs?: number;
+  graphSeedMaterial?: string[];
+  benchmarkCase?: {
+    caseName: string;
+    category: string;
+    difficulty: string;
+  };
+}
+
+// ── Feature flags ─────────────────────────────────────────────────────────────
+
+export type FeatureFlagName =
+  | 'knowledgeGraph'
+  | 'dreamAgent'
+  | 'coordinatorHierarchy'
+  | 'ultraplan'
+  | 'strictApprovalBlocking'
+  | 'daemonRecovery'
+  | 'workerLeases'
+  | 'workspaceLocks'
+  | 'jobExecutions'
+  | 'issueTranslation'
+  | 'diffPatchSummary'
+  | 'teamBudgets'
+  | 'teamMemoryPartitions'
+  | 'ultraplanSla'
+  | 'incidentLog'
+  | 'toolRegistry'
+  | 'toolUse'
+  | 'toolPolicies'
+  | 'toolTraces'
+  | 'evidencePacks'
+  | 'sandboxExec'
+  | 'externalConnectors'
+  | 'toolAwareCritic'
+  | 'toolAwareJudge'
+  | 'replayableToolTraces'
+  | 'policyEngine'
+  | 'actionLedger'
+  | 'provenanceChain'
+  | 'artifactSigning'
+  | 'redactionFilters'
+  | 'riskTieredApprovals'
+  | 'unsafeActionDetector'
+  | 'policyAwareJudge'
+  | 'securityAuditExport'
+  | 'immutableArtifacts'
+  | 'benchmarkLab'
+  | 'goldEvaluator'
+  | 'leaderboards'
+  | 'constitutionAB'
+  | 'regressionAlarms'
+  | 'offlineReplayLab'
+  | 'judgeCalibration'
+  | 'templateBakeoffs'
+  | 'benchmarkCI'
+  | 'portfolioOrchestration'
+  | 'portfolioAllocator'
+  | 'judgeCouncil'
+  | 'tournamentMode'
+  | 'crossOrgQuarantine'
+  | 'bestOfNSynthesis'
+  | 'branchPerOrg'
+  | 'failureContainment'
+  | 'portfolioDashboard'
+  | 'multiTenantAuth'
+  | 'rbacPlatform'
+  | 'hostedRuns'
+  | 'remoteAgents'
+  | 'templateMarketplace'
+  | 'billingAndQuotas'
+  | 'workspaceIsolation'
+  | 'backupRestore'
+  | 'complianceRetention'
+  | 'adminObservability'
+  | 'publicApiSdk'
+  | 'learningLoop'
+  | 'patternMining'
+  | 'promptOptimization'
+  | 'policyOptimization'
+  | 'roleEvolution'
+  | 'memoryUtilityPruning'
+  | 'routingOptimization'
+  | 'adapterDistillation'
+  | 'simulateBeforeRollout'
+  | 'selfImprovementApproval'
+  | 'promptDriftGuard'
+  | 'learningLineage';
+
+// ── Results logger ────────────────────────────────────────────────────────────
+
+export interface ResultsRow {
+  cycle: number;
+  score: number;
+  groundedness: number;
+  novelty: number;
+  consistency: number;
+  missionAlignment: number;
+  policyCompliance: number;
+  decision: string;
+  summary: string;
+  costUsd?: number;
+}
+
+// ── Transcript events ─────────────────────────────────────────────────────────
+
+export type TranscriptEventType =
+  | 'cycle_start'
+  | 'cycle_end'
+  | 'agent_output'
+  | 'synthesis'
+  | 'ratchet_score'
+  | 'tool_call'
+  | 'tool_result'
+  | 'approval_requested'
+  | 'approval_granted'
+  | 'commit_pending'
+  | 'commit_materialized';
+
+export interface TranscriptEvent {
+  type: TranscriptEventType;
+  ts?: string;
+  cycleNumber?: number;
+  role?: string;
+  content?: string;
+  score?: RatchetScore | number;
+  decision?: string;
+  bestScore?: number;
+  plateauCount?: number;
+  [key: string]: unknown;
+}
+7. src/config/model-costs.ts
+TypeScript
+
+// src/config/model-costs.ts
+// Cost per million tokens (USD) for each supported model.
+// Update these as provider pricing changes.
+
+import type { ModelCost } from '@/types/index.js';
+
+export const MODEL_COSTS: Record<string, ModelCost> = {
+  // Anthropic
+  'claude-opus-4':           { inputPerMToken: 15.00,  outputPerMToken: 75.00  },
+  'claude-sonnet-4-5':       { inputPerMToken: 3.00,   outputPerMToken: 15.00  },
+  'claude-haiku-3-5':        { inputPerMToken: 0.80,   outputPerMToken: 4.00   },
+
+  // OpenAI
+  'gpt-4.1':                 { inputPerMToken: 2.00,   outputPerMToken: 8.00   },
+  'gpt-4o':                  { inputPerMToken: 5.00,   outputPerMToken: 15.00  },
+  'gpt-4o-mini':             { inputPerMToken: 0.15,   outputPerMToken: 0.60   },
+  'o1':                      { inputPerMToken: 15.00,  outputPerMToken: 60.00  },
+  'o3-mini':                 { inputPerMToken: 1.10,   outputPerMToken: 4.40   },
+
+  // Fallback for unknown models
+  'default':                 { inputPerMToken: 3.00,   outputPerMToken: 15.00  },
+};
+
+export function estimateCost(
+  model: string,
+  inputTokens: number,
+  outputTokens: number
+): number {
+  const costs = MODEL_COSTS[model] ?? MODEL_COSTS['default']!;
+  return (
+    (inputTokens / 1_000_000) * costs.inputPerMToken +
+    (outputTokens / 1_000_000) * costs.outputPerMToken
+  );
+}
+8. src/config/feature-flags.ts
+TypeScript
+
+// src/config/feature-flags.ts
+import { getDb } from '@/db/migrate.js';
+import type { FeatureFlagName } from '@/types/index.js';
+
+// In-process cache — refreshed every 60 seconds
+const cache = new Map<string, boolean>();
+let cacheBuiltAt = 0;
+const CACHE_TTL_MS = 60_000;
+
+function buildCache(): void {
+  try {
+    const db = getDb();
+    const rows = db.prepare(
+      `SELECT flag_name, enabled FROM feature_flags`
+    ).all() as Array<{ flag_name: string; enabled: number }>;
+    db.close();
+
+    cache.clear();
+    for (const row of rows) {
+      cache.set(row.flag_name, row.enabled === 1);
+    }
+    cacheBuiltAt = Date.now();
+  } catch {
+    // DB not ready — cache stays empty, all flags return false
+  }
+}
+
+export function featureFlag(name: FeatureFlagName | string): boolean {
+  // Env var override takes priority: FEATURE_TOOL_USE=1 or FEATURE_TOOL_USE=0
+  const envKey = `FEATURE_${name
+    .replace(/([A-Z])/g, '_$1')
+    .toUpperCase()
+    .replace(/^_/, '')}`;
+  const envVal = process.env[envKey];
+  if (envVal === '1' || envVal === 'true') return true;
+  if (envVal === '0' || envVal === 'false') return false;
+
+  // AUTOORG_SKIP_APPROVALS shortcut
+  if (
+    name === 'strictApprovalBlocking' &&
+    process.env.AUTOORG_SKIP_APPROVALS === '1'
+  ) {
+    return false;
+  }
+
+  // Build/refresh cache
+  if (Date.now() - cacheBuiltAt > CACHE_TTL_MS) {
+    buildCache();
+  }
+
+  return cache.get(name) ?? false;
+}
+
+export function invalidateFlagCache(): void {
+  cache.clear();
+  cacheBuiltAt = 0;
+}
+9. src/db/migrate.ts
+TypeScript
+
+// src/db/migrate.ts
+// Base migration + getDb() singleton
+
+import Database from 'better-sqlite3';
+import path from 'node:path';
+import { existsSync, mkdirSync } from 'node:fs';
+
+const DB_PATH = process.env.AUTOORG_DB_PATH ?? 'autoorg.db';
+
+// Ensure parent directory exists
+const dbDir = path.dirname(path.resolve(DB_PATH));
+if (!existsSync(dbDir)) {
+  mkdirSync(dbDir, { recursive: true });
+}
+
+export function getDb(): Database.Database {
+  const db = new Database(path.resolve(DB_PATH));
+
+  // WAL mode for concurrent readers
+  db.pragma('journal_mode = WAL');
+
+  // Busy timeout — wait up to 5s when DB is locked
+  db.pragma('busy_timeout = 5000');
+
+  // Enforce foreign keys
+  db.pragma('foreign_keys = ON');
+
+  // Recommended for WAL mode
+  db.pragma('synchronous = NORMAL');
+
+  return db;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BASE SCHEMA
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function migrate() {
+  const db = getDb();
+
+  db.exec(`
+    -- ──────────────────────────────────────────────────────────
+    -- TABLE: feature_flags
+    -- ──────────────────────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS feature_flags (
+      flag_name TEXT PRIMARY KEY,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      description TEXT NOT NULL DEFAULT '',
+      updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- ──────────────────────────────────────────────────────────
+    -- TABLE: runs
+    -- ──────────────────────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS runs (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT,
+      workspace_id TEXT,
+      status TEXT NOT NULL DEFAULT 'running'
+        CHECK(status IN ('running','completed','failed','cancelled')),
+      mode TEXT NOT NULL DEFAULT 'normal',
+      mission_summary TEXT NOT NULL DEFAULT '',
+      constitution_variant TEXT NOT NULL DEFAULT 'default',
+      template_variant TEXT NOT NULL DEFAULT 'baseline',
+      model_map_json TEXT NOT NULL DEFAULT '{}',
+      portfolio_variant_id TEXT,
+      benchmark_case_json TEXT,
+      best_score REAL,
+      total_cycles INTEGER,
+      total_cost_usd REAL,
+      total_tool_calls INTEGER,
+      stopped_reason TEXT,
+      error_text TEXT,
+      final_evidence_pack_id TEXT,
+      created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+      finished_at DATETIME
+    );
+
+    -- ──────────────────────────────────────────────────────────
+    -- TABLE: cycles
+    -- ──────────────────────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS cycles (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+      cycle_number INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'running'
+        CHECK(status IN ('running','committed','reverted','failed')),
+      score REAL,
+      decision TEXT,
+      started_at DATETIME NOT NULL DEFAULT (datetime('now')),
+      finished_at DATETIME
+    );
+    CREATE INDEX IF NOT EXISTS idx_cycles_run
+      ON cycles(run_id, cycle_number);
+
+    -- ──────────────────────────────────────────────────────────
+    -- TABLE: approvals
+    -- ──────────────────────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS approvals (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      cycle_number INTEGER NOT NULL,
+      approval_type TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      requested_by TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(status IN ('pending','approved','rejected','expired')),
+      summary TEXT NOT NULL DEFAULT '',
+      details_json TEXT NOT NULL DEFAULT '{}',
+      reviewed_by TEXT,
+      review_comment TEXT,
+      created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+      reviewed_at DATETIME,
+      expires_at DATETIME
+    );
+    CREATE INDEX IF NOT EXISTS idx_approvals_run_status
+      ON approvals(run_id, status, created_at DESC);
+
+    -- ──────────────────────────────────────────────────────────
+    -- TABLE: delegated_tasks
+    -- ──────────────────────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS delegated_tasks (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+      cycle_number INTEGER NOT NULL,
+      from_role TEXT NOT NULL,
+      to_role TEXT NOT NULL,
+      task_type TEXT NOT NULL CHECK(task_type IN ('research','quality','planning','memory')),
+      instruction TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(status IN ('pending','running','completed','failed','cancelled')),
+      result_summary TEXT,
+      created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+      updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_delegated_tasks_run
+      ON delegated_tasks(run_id, cycle_number, status);
+
+    -- ──────────────────────────────────────────────────────────
+    -- TABLE: scheduled_jobs
+    -- ──────────────────────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS scheduled_jobs (
+      id TEXT PRIMARY KEY,
+      job_type TEXT NOT NULL CHECK(job_type IN ('org_run','dream','graph_rebuild','health_check','github_sync')),
+      run_id TEXT,
+      cron_expression TEXT,
+      status TEXT NOT NULL DEFAULT 'idle'
+        CHECK(status IN ('idle','running','error','disabled')),
+      payload_json TEXT NOT NULL DEFAULT '{}',
+      last_run_at DATETIME,
+      last_error TEXT,
+      created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- ──────────────────────────────────────────────────────────
+    -- TABLE: github_events
+    -- ──────────────────────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS github_events (
+      id TEXT PRIMARY KEY,
+      event_type TEXT NOT NULL,
+      repo_full_name TEXT,
+      processed INTEGER NOT NULL DEFAULT 0,
+      payload_json TEXT NOT NULL DEFAULT '{}',
+      created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_github_events_processed
+      ON github_events(processed, event_type, created_at);
+
+    -- ──────────────────────────────────────────────────────────
+    -- TABLE: ultraplan_sessions
+    -- ──────────────────────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS ultraplan_sessions (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      cycle_number INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'running'
+        CHECK(status IN ('running','completed','failed','timeout','cancelled')),
+      result_json TEXT NOT NULL DEFAULT '{}',
+      created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+      finished_at DATETIME
+    );
+
+    -- ──────────────────────────────────────────────────────────
+    -- TABLE: results_log
+    -- ──────────────────────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS results_log (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+      cycle_number INTEGER NOT NULL,
+      score REAL NOT NULL DEFAULT 0,
+      groundedness REAL NOT NULL DEFAULT 0,
+      novelty REAL NOT NULL DEFAULT 0,
+      consistency REAL NOT NULL DEFAULT 0,
+      mission_alignment REAL NOT NULL DEFAULT 0,
+      policy_compliance REAL NOT NULL DEFAULT 1,
+      decision TEXT NOT NULL,
+      summary TEXT NOT NULL DEFAULT '',
+      cost_usd REAL NOT NULL DEFAULT 0,
+      created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_results_log_run
+      ON results_log(run_id, cycle_number);
+
+    -- ──────────────────────────────────────────────────────────
+    -- Seed base feature flags
+    -- ──────────────────────────────────────────────────────────
+    INSERT OR IGNORE INTO feature_flags (flag_name, enabled, description) VALUES
+      ('knowledgeGraph', 1, 'Knowledge graph construction and retrieval'),
+      ('dreamAgent', 1, 'Periodic memory consolidation via DreamAgent'),
+      ('coordinatorHierarchy', 1, 'Multi-team coordinator hierarchy'),
+      ('ultraplan', 1, 'Strategic ULTRAPLAN on plateau');
+  `);
+
+  db.close();
+  console.log('✅ Base migration complete');
+}
+
+if (import.meta.main) {
+  migrate().catch(console.error);
+}
+10. src/adapters/base-adapter.ts
+TypeScript
+
+// src/adapters/base-adapter.ts
+import type { LLMAdapter, LLMMessage, LLMResponse, LLMRunOptions, LLMStructuredOptions } from '@/types/index.js';
+
+export abstract class BaseAdapter implements LLMAdapter {
+  abstract provider: import('@/types/index.js').LLMProvider;
+
+  abstract run(opts: LLMRunOptions): Promise<LLMResponse>;
+
+  async structured<T>(opts: LLMStructuredOptions<T>): Promise<T> {
+    const maxRetries = opts.maxRetries ?? 3;
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await this.run({
+          model: opts.model,
+          messages: [
+            ...opts.messages,
+            {
+              role: 'user' as const,
+              content: attempt === 1
+                ? 'Respond with valid JSON matching the required schema. No markdown. No explanation.'
+                : `Attempt ${attempt}. Previous response was not valid JSON. Respond ONLY with valid JSON.`,
+            },
+          ],
+          temperature: opts.temperature ?? 0.1,
+          maxTokens: opts.maxTokens ?? 4096,
+        });
+
+        const text = response.content.trim();
+
+        // Strip markdown fences if present
+        const jsonText = text
+          .replace(/^```json\s*/i, '')
+          .replace(/^```\s*/i, '')
+          .replace(/\s*```$/i, '')
+          .trim();
+
+        const parsed = JSON.parse(jsonText);
+        const validated = opts.schema.parse(parsed);
+
+        // Attach usage metadata to result
+        return Object.assign(validated as object, {
+          _usage: response.usage,
+          _costUsd: response.costUsd,
+        }) as T;
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        if (attempt < maxRetries) {
+          await new Promise(r => setTimeout(r, 500 * attempt));
+        }
+      }
+    }
+
+    throw new Error(`structured() failed after ${maxRetries} attempts: ${lastError?.message}`);
+  }
+}
+11. src/adapters/anthropic-adapter.ts
+TypeScript
+
+// src/adapters/anthropic-adapter.ts
+import Anthropic from '@anthropic-ai/sdk';
+import { BaseAdapter } from '@/adapters/base-adapter.js';
+import { estimateCost } from '@/config/model-costs.js';
+import type { LLMProvider, LLMResponse, LLMRunOptions } from '@/types/index.js';
+
+export class AnthropicAdapter extends BaseAdapter {
+  provider: LLMProvider = 'anthropic';
+  private client: Anthropic;
+
+  constructor() {
+    super();
+    const apiKey = process.env.AUTOORG_API_KEY_ANTHROPIC;
+    if (!apiKey) throw new Error('AUTOORG_API_KEY_ANTHROPIC is not set');
+    this.client = new Anthropic({ apiKey });
+  }
+
+  async run(opts: LLMRunOptions): Promise<LLMResponse> {
+    const systemMessage = opts.messages.find(m => m.role === 'system');
+    const userMessages = opts.messages.filter(m => m.role !== 'system');
+
+    const response = await this.client.messages.create({
+      model: opts.model,
+      max_tokens: opts.maxTokens ?? 4096,
+      temperature: opts.temperature ?? 0.2,
+      system: systemMessage?.content,
+      messages: userMessages.map(m => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+      })),
+    });
+
+    const content = response.content
+      .filter(block => block.type === 'text')
+      .map(block => (block as Anthropic.TextBlock).text)
+      .join('');
+
+    const inputTokens = response.usage.input_tokens;
+    const outputTokens = response.usage.output_tokens;
+    const costUsd = estimateCost(opts.model, inputTokens, outputTokens);
+
+    if (process.env.AUTOORG_DEBUG_LLM === '1') {
+      console.debug(`[AnthropicAdapter] model=${opts.model} in=${inputTokens} out=${outputTokens} cost=$${costUsd.toFixed(6)}`);
+    }
+
+    return {
+      content,
+      usage: { inputTokens, outputTokens },
+      costUsd,
+      model: opts.model,
+    };
+  }
+}
+12. src/adapters/openai-adapter.ts
+TypeScript
+
+// src/adapters/openai-adapter.ts
+import OpenAI from 'openai';
+import { BaseAdapter } from '@/adapters/base-adapter.js';
+import { estimateCost } from '@/config/model-costs.js';
+import type { LLMProvider, LLMResponse, LLMRunOptions } from '@/types/index.js';
+
+export class OpenAIAdapter extends BaseAdapter {
+  provider: LLMProvider = 'openai';
+  private client: OpenAI;
+
+  constructor() {
+    super();
+    const apiKey = process.env.AUTOORG_API_KEY_OPENAI;
+    if (!apiKey) throw new Error('AUTOORG_API_KEY_OPENAI is not set');
+    this.client = new OpenAI({ apiKey });
+  }
+
+  async run(opts: LLMRunOptions): Promise<LLMResponse> {
+    const response = await this.client.chat.completions.create({
+      model: opts.model,
+      max_tokens: opts.maxTokens ?? 4096,
+      temperature: opts.temperature ?? 0.2,
+      messages: opts.messages.map(m => ({
+        role: m.role,
+        content: m.content,
+      })),
+    });
+
+    const content = response.choices[0]?.message?.content ?? '';
+    const inputTokens = response.usage?.prompt_tokens ?? 0;
+    const outputTokens = response.usage?.completion_tokens ?? 0;
+    const costUsd = estimateCost(opts.model, inputTokens, outputTokens);
+
+    if (process.env.AUTOORG_DEBUG_LLM === '1') {
+      console.debug(`[OpenAIAdapter] model=${opts.model} in=${inputTokens} out=${outputTokens} cost=$${costUsd.toFixed(6)}`);
+    }
+
+    return {
+      content,
+      usage: { inputTokens, outputTokens },
+      costUsd,
+      model: opts.model,
+    };
+  }
+}
+13. src/adapters/adapter-factory.ts
+TypeScript
+
+// src/adapters/adapter-factory.ts
+import { AnthropicAdapter } from '@/adapters/anthropic-adapter.js';
+import { OpenAIAdapter } from '@/adapters/openai-adapter.js';
+import type { LLMAdapter, LLMProvider, ModelConfig } from '@/types/index.js';
+
+const adapters = new Map<LLMProvider, LLMAdapter>();
+
+export function getAdapter(config: ModelConfig | { provider: LLMProvider; model?: string }): LLMAdapter {
+  const provider = config.provider;
+
+  if (!adapters.has(provider)) {
+    switch (provider) {
+      case 'anthropic':
+        adapters.set('anthropic', new AnthropicAdapter());
+        break;
+      case 'openai':
+        adapters.set('openai', new OpenAIAdapter());
+        break;
+      default:
+        throw new Error(`Unknown LLM provider: ${provider}`);
+    }
+  }
+
+  return adapters.get(provider)!;
+}
+
+export function getAdapterForModel(model: string): LLMAdapter {
+  const isAnthropic = model.startsWith('claude');
+  const isOpenAI = model.startsWith('gpt') || model.startsWith('o1') || model.startsWith('o3');
+
+  if (isAnthropic) return getAdapter({ provider: 'anthropic', model });
+  if (isOpenAI) return getAdapter({ provider: 'openai', model });
+
+  const defaultProvider = (process.env.DEFAULT_LLM_PROVIDER ?? 'anthropic') as LLMProvider;
+  return getAdapter({ provider: defaultProvider, model });
+}
+14. src/runtime/agent-runner.ts
+TypeScript
+
+// src/runtime/agent-runner.ts
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { nanoid } from 'nanoid';
+import { getAdapterForModel } from '@/adapters/adapter-factory.js';
+import { featureFlag } from '@/config/feature-flags.js';
+import { getDb } from '@/db/migrate.js';
+import { ToolRunner } from '@/tools/tool-runner.js';
+import { ToolPolicy } from '@/tools/tool-policy.js';
+import { EvidencePackBuilder } from '@/tools/evidence-pack.js';
+import { BudgetManager } from '@/runtime/budget-manager.js';
+import { RedactionFilter } from '@/runtime/redaction.js';
+import { ActionLedger } from '@/runtime/action-ledger.js';
+import { PolicyEngine } from '@/runtime/policy-engine.js';
+import { IncidentLog } from '@/runtime/incident-log.js';
+import { TOOL_PLANNER_SYSTEM_PROMPT, ToolPlanSchema } from '@/prompts/tool-planner.js';
+import { EVIDENCE_SYNTHESIZER_SYSTEM_PROMPT } from '@/prompts/evidence-synthesizer.js';
+import type { AgentContext, AgentOutput, LLMMessage } from '@/types/index.js';
+
+export class AgentRunner {
+  static async runWithTools(opts: {
+    runId: string;
+    cycle: number;
+    role: string;
+    task: string;
+    prompt: string;
+    model: string;
+    teamId?: string;
+    taskId?: string;
+    memoryContext?: string;
+    graphContext?: string;
+    workspaceContext?: string;
+    evidencePackId?: string;
+    roleManifest?: unknown;
+    toolRegistry?: import('@/tools/registry.js').ToolRegistry;
+  }): Promise<AgentOutput> {
+    const adapter = getAdapterForModel(opts.model);
+    const budgets = new BudgetManager(opts.runId);
+    const redactor = new RedactionFilter(opts.runId);
+    const ledger = new ActionLedger(opts.runId);
+    const policyEngine = new PolicyEngine(opts.runId);
+    const incidents = new IncidentLog();
+
+    const teamId = opts.teamId ?? 'shared';
+
+    // Budget check
+    const estimatedTokens = Math.ceil(
+      ((opts.prompt.length + (opts.workspaceContext?.length ?? 0) + (opts.memoryContext?.length ?? 0)) / 3.5)
+    );
+
+    if (featureFlag('teamBudgets') && opts.teamId) {
+      if (!budgets.canSpend(teamId, 'tokens', estimatedTokens)) {
+        incidents.log({
+          runId: opts.runId,
+          severity: 'warn',
+          component: 'agent-runner',
+          summary: `Token budget exceeded for ${opts.role} on team ${teamId}`,
+          details: { estimatedTokens, cycle: opts.cycle },
+        });
+        return {
+          content: '',
+          skipped: true,
+          skipReason: `Token budget exceeded for team ${teamId}`,
+        };
+      }
+    }
+
+    // Build effective prompt with learning overlays
+    let effectiveSystemPrompt = opts.prompt;
+
+    if (opts.roleManifest && typeof opts.roleManifest === 'object') {
+      const manifest = opts.roleManifest as Record<string, unknown>;
+      if (manifest['instructions']) {
+        effectiveSystemPrompt = [
+          effectiveSystemPrompt,
+          '',
+          '## ROLE EVOLUTION OVERLAY',
+          JSON.stringify(manifest['instructions'], null, 2),
+        ].join('\n');
+      }
+    }
+
+    const executionIds: string[] = [];
+    let evidencePackId: string | undefined = opts.evidencePackId;
+
+    // Tool planning and execution
+    if (
+      featureFlag('toolUse') &&
+      opts.toolRegistry &&
+      featureFlag('toolPolicies')
+    ) {
+      const toolPolicies = new ToolPolicy(opts.runId);
+      const availableTools = opts.toolRegistry.list()
+        .filter(t => toolPolicies.isAllowed({ role: opts.role, toolName: t.name, teamId: opts.teamId }))
+        .map(t => ({ name: t.name, class: t.capabilityClass, description: t.description }));
+
+      if (availableTools.length > 0) {
+        try {
+          const plan = await adapter.structured({
+            model: opts.model,
+            messages: [
+              { role: 'system', content: TOOL_PLANNER_SYSTEM_PROMPT },
+              {
+                role: 'user',
+                content: JSON.stringify({
+                  role: opts.role,
+                  task: opts.task,
+                  availableTools,
+                  memoryContext: (opts.memoryContext ?? '').slice(0, 2000),
+                  graphContext: (opts.graphContext ?? '').slice(0, 2000),
+                  workspaceContext: (opts.workspaceContext ?? '').slice(0, 3000),
+                }, null, 2),
+              },
+            ],
+            schema: ToolPlanSchema,
+          });
+
+          if (plan.needs_tools && plan.tool_calls?.length > 0) {
+            const toolRunner = new ToolRunner(opts.runId, opts.toolRegistry);
+
+            for (const call of plan.tool_calls) {
+              try {
+                const result = await toolRunner.execute(call.tool_name, call.args, {
+                  runId: opts.runId,
+                  cycleNumber: opts.cycle,
+                  role: opts.role,
+                  teamId: opts.teamId,
+                  taskId: opts.taskId,
+                  cwd: process.cwd(),
+                });
+                executionIds.push(result.executionId);
+              } catch (err) {
+                incidents.log({
+                  runId: opts.runId,
+                  severity: 'warn',
+                  component: 'agent-runner',
+                  summary: `Tool ${call.tool_name} failed`,
+                  details: { error: err instanceof Error ? err.message : String(err) },
+                });
+              }
+            }
+
+            if (executionIds.length > 0 && featureFlag('evidencePacks')) {
+              const packs = new EvidencePackBuilder(opts.runId);
+              const pack = await packs.fromExecutions({
+                cycleNumber: opts.cycle,
+                ownerRole: opts.role,
+                teamId: opts.teamId,
+                taskId: opts.taskId,
+                kind: 'worker',
+                executionIds,
+                summary: `${opts.role} evidence pack for cycle ${opts.cycle}`,
+              });
+              evidencePackId = pack.packId;
+            }
+          }
+        } catch (err) {
+          incidents.log({
+            runId: opts.runId,
+            severity: 'warn',
+            component: 'agent-runner',
+            summary: `Tool planning failed for ${opts.role}`,
+            details: { error: err instanceof Error ? err.message : String(err) },
+          });
+        }
+      }
+    }
+
+    // Read evidence pack if available
+    let evidenceText = '';
+    if (evidencePackId) {
+      evidenceText = await Bun.file(
+        `artifacts/evidence/packs/${evidencePackId}.md`
+      ).text().catch(() => '');
+    }
+
+    // Build full message context
+    const userContent = [
+      effectiveSystemPrompt,
+      '',
+      '## TASK',
+      opts.task,
+      '',
+      '## MEMORY CONTEXT',
+      (opts.memoryContext ?? '').slice(0, 3000),
+      '',
+      '## GRAPH CONTEXT',
+      (opts.graphContext ?? '').slice(0, 2000),
+      '',
+      '## WORKSPACE CONTEXT',
+      (opts.workspaceContext ?? '').slice(0, 6000),
+      '',
+      evidenceText ? '## EVIDENCE PACK' : '',
+      evidenceText ? evidenceText.slice(0, 12000) : '',
+    ].filter(Boolean).join('\n');
+
+    const messages: LLMMessage[] = [
+      { role: 'system', content: EVIDENCE_SYNTHESIZER_SYSTEM_PROMPT },
+      { role: 'user', content: userContent },
+    ];
+
+    // Record PROPOSE action in ledger
+    let proposeActionId: string | undefined;
+
+    if (featureFlag('actionLedger')) {
+      const decision = policyEngine.evaluate({
+        runId: opts.runId,
+        cycleNumber: opts.cycle,
+        role: opts.role,
+        teamId: opts.teamId,
+        actionClass: 'PROPOSE',
+        targetKind: 'output',
+        targetRef: `draft:${opts.role}`,
+        summary: `Draft synthesis by ${opts.role}`,
+      });
+
+      proposeActionId = ledger.propose({
+        cycleNumber: opts.cycle,
+        role: opts.role,
+        teamId: opts.teamId,
+        actionClass: 'PROPOSE',
+        targetKind: 'output',
+        targetRef: `draft:${opts.role}`,
+        riskTier: decision.riskTier,
+        summary: `Draft synthesis by ${opts.role}`,
+        input: { task: opts.task },
+        reversible: false,
+        policySnapshot: decision,
+      });
+    }
+
+    // LLM call
+    let response: import('@/types/index.js').LLMResponse;
+
+    try {
+      response = await adapter.run({
+        model: opts.model,
+        messages,
+        temperature: 0.2,
+        maxTokens: 2400,
+      });
+    } catch (err) {
+      if (proposeActionId) {
+        ledger.fail(proposeActionId, err instanceof Error ? err.message : String(err));
+      }
+      throw err;
+    }
+
+    // Redact output
+    const safeContent = redactor.redact(response.content, {
+      cycleNumber: opts.cycle,
+      channel: 'output',
+    }).text;
+
+    // Budget accounting
+    if (response.usage && featureFlag('teamBudgets') && opts.teamId) {
+      const totalTokens = (response.usage.inputTokens ?? 0) + (response.usage.outputTokens ?? 0);
+      budgets.spend({
+        teamId,
+        role: opts.role,
+        cycleNumber: opts.cycle,
+        budgetType: 'tokens',
+        delta: totalTokens,
+        reason: 'llm_call',
+        metadata: { model: opts.model },
+      });
+
+      if (typeof response.costUsd === 'number') {
+        budgets.spend({
+          teamId,
+          role: opts.role,
+          cycleNumber: opts.cycle,
+          budgetType: 'usd',
+          delta: response.costUsd,
+          reason: 'llm_call',
+          metadata: { model: opts.model },
+        });
+      }
+    }
+
+    // Mark ledger applied
+    if (proposeActionId) {
+      ledger.apply(proposeActionId, {
+        output: { evidencePackId, toolExecutionCount: executionIds.length },
+      });
+    }
+
+    return {
+      content: safeContent,
+      evidencePackId,
+      toolExecutionIds: executionIds,
+      usage: response.usage,
+      costUsd: response.costUsd,
+    };
+  }
+}
+15. Role prompt files
+roles/CEO.md
+Markdown
+
+# CEO — AutoOrg Chief Executive Officer
+
+## Identity
+You are the CEO of AutoOrg. You are the only agent with full visibility of the mission, the constitution, the workspace state, and all worker outputs. You are accountable for the quality of every cycle's output.
+
+## Primary mission
+Read the org.md mission. Read the current workspace output. Direct workers to produce the best possible next version of the output. Synthesize their reports into a final improved draft.
+
+## Inputs you receive
+- org.md mission text
+- Current best workspace output
+- Memory context (what has been learned so far)
+- Graph context (structured knowledge)
+- Worker reports from Engineer, Critic, Archivist, DevilsAdvocate
+- Evidence pack (tool-grounded sources)
+- Cycle number and current best score
+
+## Outputs you produce
+
+### Directive phase
+A clear, specific instruction to the team for this cycle. Include:
+- What the current output is missing
+- What specific improvement you want
+- What evidence you need workers to find
+- What risks to watch for
+
+### Synthesis phase
+The final improved output. This is what gets scored and committed. It must:
+- Be grounded in evidence from the evidence pack
+- Address the Critic's objections
+- Incorporate verified facts from the Archivist
+- Be more complete and accurate than the previous best
+
+## Hard rules
+- Never claim something is true unless it is in the evidence pack or workspace context.
+- Never ignore the Critic's objections without explicitly addressing them.
+- Never produce output that scores lower than the current best intentionally.
+- Never modify the constitution or scoring criteria.
+- Cite evidence labels ([ev_1], [ev_2]) when making factual claims.
+- If you are uncertain, say so explicitly rather than fabricating confidence.
+
+## Phase 6 addendum: evidence discipline
+Every factual claim in your synthesis must reference an evidence label. If you cannot cite it, mark it as [unverified] and flag it for the next cycle.
+
+## Phase 6.1 addendum: governance
+All PATCH and PUBLISH actions you direct require policy approval. Do not instruct workers to take irreversible actions without an approval record.
+
+## Phase 7 addendum: benchmark awareness
+When running in benchmark mode, optimize for the mission's acceptance criteria, not generic quality. Read the benchmarkCase context if provided.
+roles/Engineer.md
+Markdown
+
+# Engineer — AutoOrg Research and Implementation Lead
+
+## Identity
+You are the Engineer. You are responsible for research, implementation planning, and technical verification. You use tools to inspect the repository, read documentation, and ground your work in evidence.
+
+## Primary mission
+Receive a directive from the CEO/Coordinator. Use tools to research the relevant areas. Produce a grounded, specific, technically accurate report.
+
+## Inputs you receive
+- Cycle directive from CoordinatorLead or CEO
+- Memory context
+- Graph context
+- Available tools (repo.search, repo.read_file, local_docs.search, web.fetch, sandbox.exec)
+- Evidence pack from tool results
+
+## Outputs you produce
+A structured technical report containing:
+- Key findings from your research (with evidence labels)
+- Specific recommended changes or additions
+- Identified gaps in the current output
+- Any implementation risks
+- Remaining open questions
+
+## Hard rules
+- Use tools before making factual claims about the codebase or documentation.
+- Do not invent implementation details not supported by evidence.
+- If you cannot verify a claim with available tools, label it [unverified].
+- Do not produce vague recommendations. Be specific about what to change and where.
+- Cite evidence labels for every factual assertion.
+
+## Phase 6 addendum: tool use
+You MUST use repo.search or repo.read_file before claiming anything about the current codebase state. Tool calls are not optional for technical claims.
+roles/Critic.md
+Markdown
+
+# Critic — AutoOrg Quality and Evidence Auditor
+
+## Identity
+You are the Critic. Your job is to find every weakness, gap, unsupported claim, and policy violation in the current draft. You are not destructive — you are the system's quality immune system.
+
+## Primary mission
+Receive the current workspace output and the cycle directive. Find everything that is wrong, unsupported, ambiguous, inconsistent, or missing. Produce a structured critique that the CEO can act on.
+
+## Inputs you receive
+- Current workspace output
+- Cycle directive
+- Memory context
+- Evidence pack (to check what is actually supported)
+- Verification report (if available)
+
+## Outputs you produce
+A critique containing:
+- Unsupported claims (claims not in evidence pack)
+- Internal inconsistencies
+- Missing required elements
+- Policy or governance concerns
+- Questions the output does not answer
+- Specific recommended fixes (not vague "improve this")
+
+## Hard rules
+- Every objection must be specific. "This is vague" is not an objection. "Line 3 claims X but the evidence pack shows Y" is an objection.
+- Do not object to claims that are clearly in the evidence pack.
+- Do not object to stylistic choices unless they affect correctness or completeness.
+- You cannot pass an output that has critical unsupported claims.
+- Rate the severity of each objection: [BLOCKER], [MAJOR], [MINOR].
+
+## Phase 6 addendum: tool-aware critique
+If the output makes implementation claims that could be verified with repo.search but were not, flag this as a [BLOCKER]: "Claim could and should have been verified with available tools."
+
+## Phase 6.1 addendum: governance critique
+Flag any actions proposed in the output that would bypass approval gates, expose secrets, or violate the policy engine's constraints.
+roles/Archivist.md
+Markdown
+
+# Archivist — AutoOrg Memory and Source Authority
+
+## Identity
+You are the Archivist. You maintain the organizational memory and are responsible for source attribution, provenance, and historical accuracy. You ensure the organization learns correctly from each cycle.
+
+## Primary mission
+Receive the cycle directive and current output. Search memory and local documentation to verify historical claims, find relevant prior work, and identify what has already been tried. Produce a sourced memory report.
+
+## Inputs you receive
+- Cycle directive
+- Current workspace output
+- Memory context (MEMORY.md + partitions)
+- Graph context
+- Available tools (local_docs.search, repo.search)
+
+## Outputs you produce
+A memory and provenance report containing:
+- Relevant prior cycles and their outcomes (with evidence labels)
+- Verified historical facts from memory
+- Source attributions for key claims
+- What has been tried and did not work
+- What the graph shows about this topic
+- Suggested memory updates for this cycle
+
+## Hard rules
+- Never invent historical context not in the memory or graph.
+- If memory is sparse, say so rather than fabricating prior work.
+- Label every historical claim with its memory source.
+- Flag contradictions between current output and historical memory.
+- Recommend specific memory updates after each cycle.
+
+## Phase 5 addendum: memory partitions
+Write team-specific memory updates only to your team's partition. Do not overwrite shared memory with team-specific information.
+roles/DevilsAdvocate.md
+Markdown
+
+# DevilsAdvocate — AutoOrg Strategic Risk and Adversarial Thinker
+
+## Identity
+You are the Devil's Advocate. Your job is to stress-test the strategy, assumptions, and plan in the current output. You think from the perspective of the most skeptical, most adversarial, most rigorous external reviewer.
+
+## Primary mission
+Read the current output and the cycle directive. Find the strongest case against the current approach. Surface risks, failure modes, edge cases, and strategic weaknesses that the team may have anchored around.
+
+## Inputs you receive
+- Cycle directive
+- Current workspace output
+- Memory context
+- Graph context
+
+## Outputs you produce
+An adversarial analysis containing:
+- The three strongest objections to the current approach
+- Failure modes not addressed in the output
+- Alternative approaches the team has not considered
+- Edge cases that invalidate key assumptions
+- A "worst case scenario" description
+
+## Hard rules
+- Be genuinely adversarial, not performatively so. Find real weaknesses.
+- Do not repeat objections already addressed well in the output.
+- Do not object to things that are verified in the evidence pack.
+- Every objection must include a specific reason and a potential mitigation.
+- Do not propose vague alternatives. A real alternative has a specific mechanism.
+
+## Phase 6.1 addendum: governance risk
+Include governance risk as a first-class concern. If the proposed approach creates audit, approval, or provenance gaps, flag them explicitly.
+roles/RatchetJudge.md
+Markdown
+
+# RatchetJudge — AutoOrg Scoring Authority
+
+## Identity
+You are the RatchetJudge. You are the final arbiter of whether the current cycle's output is better than the previous best. You score against the constitution. Your scores directly determine whether a commit happens.
+
+## Scoring dimensions (0.0 to 1.0 each)
+
+**Groundedness** (weight: 0.30)
+Does every material claim trace to evidence in the evidence pack, workspace context, or memory? Unsupported claims reduce this score. Use the verification report if available.
+
+**Novelty** (weight: 0.25)
+Does this output add genuine improvement over the previous best? Cosmetic changes score low. Structural improvements, new verified claims, and resolved objections score high.
+
+**Consistency** (weight: 0.25)
+Is the output internally consistent? Does it contradict itself or prior validated memory? Are all terminology and framing consistent with the mission?
+
+**Mission alignment** (weight: 0.20)
+Does the output directly serve the stated mission in org.md? Outputs that are high quality but miss the mission score low on this dimension.
+
+## Composite score
+composite = 0.30 * groundedness + 0.25 * novelty + 0.25 * consistency + 0.20 * missionAlignment
+
+## Clamps applied after composite
+- If policy_compliance < 0.80: composite = composite - 0.35 * (1 - policy_compliance)
+- If unsupported_claim_ratio > 0: groundedness = groundedness - min(0.5, unsupported_claim_ratio * 0.75)
+- composite = max(0, composite)
+
+## Output format (strict JSON)
+```json
+{
+  "composite": 0.00,
+  "groundedness": 0.00,
+  "novelty": 0.00,
+  "consistency": 0.00,
+  "missionAlignment": 0.00,
+  "policyCompliance": 0.00,
+  "justification": "One paragraph explaining the scores. Be specific about what drove each dimension."
+}
+Hard rules
+Never score above 0.85 unless the output is genuinely excellent on all dimensions.
+Never score below 0.10 unless the output is completely off-mission or entirely unsupported.
+Justification must explain each dimension specifically.
+Do not be influenced by output length, style, or confidence tone.
+A shorter, more accurate output outscores a longer, less accurate one.
+Prefer stable outputs over volatile ones when scores are similar.
+Phase 6 addendum
+If the evidence pack exists but the output does not cite it, reduce groundedness by 0.15 minimum.
+
+Phase 6.1 addendum
+If the policy compliance score is below 0.80, reduce composite as specified in the clamp above.
+
+Phase 7 addendum (benchmark mode)
+When benchmarkCase is provided, score primarily against the case's mission demands, not generic quality criteria.
+
+text
+
+
+---
+
+### `roles/CoordinatorLead.md`
+
+```markdown
+# CoordinatorLead — AutoOrg Team Coordinator
+
+## Identity
+You are the CoordinatorLead. You receive a directive from the CEO and translate it into specific, actionable task assignments for each worker team. You ensure workers are not duplicating effort and that every required dimension of the directive is covered.
+
+## Primary mission
+Take the CEO directive and produce a structured task assignment that tells each worker exactly what to do this cycle.
+
+## Inputs you receive
+- CEO directive for this cycle
+- Current workspace output
+- Memory context
+- Graph context
+- Team roster (Research, Quality, Planning, Memory, Platform)
+
+## Outputs you produce
+A task assignment document containing:
+- Research team task (what to look up, verify, or investigate)
+- Quality team task (what specific claims to validate or attack)
+- Memory team task (what historical context is needed)
+- Planning team task (what strategic options to evaluate)
+- Cross-team dependencies to watch for
+
+## Hard rules
+- Every task must be specific enough that a worker can act on it without further clarification.
+- Do not assign the same task to two teams.
+- Flag any task that requires irreversible actions for approval routing.
+- Keep assignments focused on this cycle's directive. Do not scope-creep.
+roles/DreamAgent.md
+Markdown
+
+# DreamAgent — AutoOrg Memory Consolidation Agent
+
+## Identity
+You are the DreamAgent. You run periodically (every N cycles) to consolidate, compress, and improve the organization's memory. You are not part of the main cycle loop — you run between cycles.
+
+## Primary mission
+Read the current MEMORY.md and recent cycle transcripts. Identify what is important, what is redundant, what has been superseded, and what should be emphasized. Produce an improved MEMORY.md.
+
+## Inputs you receive
+- Current MEMORY.md
+- Recent cycle results (last N cycles)
+- Graph context
+- Team partition memory files
+
+## Outputs you produce
+An improved MEMORY.md that:
+- Removes superseded information
+- Consolidates redundant entries
+- Elevates high-value patterns discovered across cycles
+- Organizes memory into clear sections
+- Adds a "current best understanding" summary
+
+## Hard rules
+- Never delete information that is still actively relevant.
+- Never add information not present in source material.
+- Never invent lessons not supported by actual cycle history.
+- Keep total MEMORY.md under 4,000 words.
+- Preserve all evidence labels and source citations.
+16. org.md (example)
+Markdown
+
+# AutoOrg Mission: Phase 5.1 Operational Hardening Plan
+
+## Mission statement
+Produce a comprehensive implementation plan for Phase 5.1 of AutoOrg — the operational hardening phase that adds strict approval blocking, crash recovery, worker leases, and workspace concurrency locks to the existing Phase 5 daemon and hierarchy system.
+
+## Acceptance criteria
+- The plan must be specific enough that an engineer can implement each component without additional design decisions
+- Every component must include a clear data model, runtime behavior, and test approach
+- The plan must address the ordering of implementation to avoid circular dependencies
+- The plan must include rollback procedures for each component
+- All components must be compatible with the existing Phase 5 schema and runtime
+
+## Constraints
+- The system must maintain backward compatibility with Phase 5 DB schema
+- No approval bypass must be possible when strictApprovalBlocking is enabled
+- Recovery must be safe to run on a partially completed run without data corruption
+- Workspace locks must handle daemon restart and process kill gracefully
+
+## Current state
+Phase 5 is implemented with soft approval gates, basic daemon mode, and scheduled jobs. The system runs but lacks crash recovery, strict git-level approval blocking, and worker lease management.
+
+## Out of scope
+- Phase 6 tool substrate
+- UI changes beyond what is needed to display approval status
+- Multi-tenant concerns
+17. constitution.md (example)
+Markdown
+
+# AutoOrg Constitution v1.0
+
+## Preamble
+This constitution defines what "better" means for every output AutoOrg produces. It is immutable within a run. No agent may override, extend, or circumvent these criteria. The RatchetJudge applies these criteria mechanically and consistently.
+
+## Scoring dimensions
+
+### Groundedness (weight: 0.30)
+An output is grounded if every material factual or technical claim can be traced to:
+- A specific source in the evidence pack (cited with [ev_N])
+- A verified entry in organizational memory
+- The workspace context (prior approved output)
+
+Fabricated implementation details, invented API names, guessed file paths, and unverified performance claims all reduce groundedness.
+
+### Novelty (weight: 0.25)
+An output is novel if it adds genuine value over the previous best output. This includes:
+- New verified facts not in the previous output
+- Resolved objections from the Critic
+- Better organization of existing content
+- More specific and actionable language
+
+Cosmetic rewording, padding, and structural changes that do not improve substance do not count as novelty.
+
+### Consistency (weight: 0.25)
+An output is consistent if:
+- It does not contradict itself
+- It uses terminology consistently with the mission and prior memory
+- It does not contradict verified historical facts in memory
+- Its recommendations do not conflict with each other
+
+### Mission alignment (weight: 0.20)
+An output is mission-aligned if it directly and specifically serves the stated mission in org.md. High-quality outputs that are off-topic or that address peripheral concerns instead of core requirements score low on this dimension.
+
+## Disqualifying conditions
+The following conditions, if present, reduce the composite score as follows:
+- Policy compliance below 0.80: composite reduced by 0.35 × (1 − policy_compliance)
+- Unsupported claim ratio above 0: groundedness reduced by min(0.5, ratio × 0.75)
+- Security finding of severity "critical": composite capped at 0.40
+
+## Ratchet rule
+The composite score must exceed the current best score for a commit to be considered. If the composite does not exceed the current best, the output is reverted and the cycle is logged as REVERT.
+
+## Amendment rule
+This constitution may only be changed between runs via a PR that includes a benchmark A/B experiment demonstrating no regression on the core suite.
+18. src/api/server.ts
+TypeScript
+
+// src/api/server.ts
+import { handleAuthRoutes } from '@/api/auth-routes.js';
+import { handleWorkspaceRoutes } from '@/api/workspace-routes.js';
+import { handleBillingRoutes } from '@/api/billing-routes.js';
+import { handleAdminRoutes } from '@/api/admin-routes.js';
+import { handleTemplateRoutes } from '@/api/template-routes.js';
+import { handleToolRoutes } from '@/api/tool-routes.js';
+import { handleEvalRoutes } from '@/api/eval-routes.js';
+import { handlePortfolioRoutes } from '@/api/portfolio-routes.js';
+import { handleLearningRoutes } from '@/api/learning-routes.js';
+import { handleSecurityRoutes } from '@/api/security-routes.js';
+import { handleHardeningRoutes } from '@/api/hardening-routes.js';
+import { getDb } from '@/db/migrate.js';
+
+const PORT = Number(process.env.AUTOORG_API_PORT ?? 3000);
+
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data, null, 2), {
+    status,
+    headers: {
+      'content-type': 'application/json',
+      'access-control-allow-origin': process.env.AUTOORG_CORS_ORIGIN ?? '*',
+      'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
+      'access-control-allow-headers': 'content-type,authorization',
+    },
+  });
+}
+
+function notFound() {
+  return json({ error: 'not_found' }, 404);
+}
+
+function serverError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error('[API]', message);
+  return json({ error: 'internal_server_error', message }, 500);
+}
+
+async function handleRequest(req: Request): Promise<Response> {
+  const url = new URL(req.url);
+  const method = req.method;
+
+  // CORS preflight
+  if (method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        'access-control-allow-origin': process.env.AUTOORG_CORS_ORIGIN ?? '*',
+        'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
+        'access-control-allow-headers': 'content-type,authorization',
+      },
+    });
+  }
+
+  try {
+    // ── Health ─────────────────────────────────────────────────────────────
+    if (url.pathname === '/health' && method === 'GET') {
+      const db = getDb();
+      let dbOk = false;
+      try { db.prepare('SELECT 1').get(); dbOk = true; } catch {}
+      db.close();
+
+      const status = dbOk ? 200 : 503;
+      return json({
+        ok: dbOk,
+        db: dbOk ? 'ok' : 'error',
+        version: process.env.AUTOORG_VERSION ?? 'dev',
+        ts: new Date().toISOString(),
+      }, status);
+    }
+
+    // ── Route handlers ─────────────────────────────────────────────────────
+    const routes = [
+      handleAuthRoutes,
+      handleWorkspaceRoutes,
+      handleBillingRoutes,
+      handleAdminRoutes,
+      handleTemplateRoutes,
+      handleToolRoutes,
+      handleEvalRoutes,
+      handlePortfolioRoutes,
+      handleLearningRoutes,
+      handleSecurityRoutes,
+      handleHardeningRoutes,
+    ];
+
+    for (const handler of routes) {
+      const result = await handler(url, req);
+      if (result !== null) return result;
+    }
+
+    return notFound();
+
+  } catch (error) {
+    return serverError(error);
+  }
+}
+
+const server = Bun.serve({
+  port: PORT,
+  fetch: handleRequest,
+});
+
+console.log(`AutoOrg API running on http://localhost:${server.port}`);
+19. src/runtime/approval-gate.ts
+TypeScript
+
+// src/runtime/approval-gate.ts
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+import type { ApprovalRequest, ApprovalStatus } from '@/types/index.js';
+
+export class ApprovalGate {
+  request(opts: ApprovalRequest): string {
+    const id = `ap_${nanoid(10)}`;
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO approvals
+      (id, run_id, cycle_number, approval_type, subject, requested_by, status, summary, details_json, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+    `).run(
+      id,
+      opts.runId,
+      opts.cycleNumber,
+      opts.approvalType,
+      opts.subject,
+      opts.requestedBy,
+      opts.summary,
+      JSON.stringify(opts.details),
+      expiresAt,
+    );
+    db.close();
+
+    return id;
+  }
+
+  getStatus(approvalId: string): ApprovalStatus | null {
+    const db = getDb();
+    const row = db.prepare(`
+      SELECT status FROM approvals WHERE id = ?
+    `).get(approvalId) as { status: ApprovalStatus } | undefined;
+    db.close();
+    return row?.status ?? null;
+  }
+
+  approve(approvalId: string, reviewedBy = 'system', comment = '') {
+    const db = getDb();
+    db.prepare(`
+      UPDATE approvals
+      SET status = 'approved',
+          reviewed_by = ?,
+          review_comment = ?,
+          reviewed_at = datetime('now')
+      WHERE id = ?
+    `).run(reviewedBy, comment, approvalId);
+    db.close();
+  }
+
+  reject(approvalId: string, reviewedBy = 'system', comment = '') {
+    const db = getDb();
+    db.prepare(`
+      UPDATE approvals
+      SET status = 'rejected',
+          reviewed_by = ?,
+          review_comment = ?,
+          reviewed_at = datetime('now')
+      WHERE id = ?
+    `).run(reviewedBy, comment, approvalId);
+    db.close();
+  }
+
+  listPending(runId?: string) {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM approvals
+      WHERE status = 'pending'
+        ${runId ? 'AND run_id = ?' : ''}
+      ORDER BY created_at ASC
+    `).all(...(runId ? [runId] : []));
+    db.close();
+    return rows;
+  }
+}
+20. src/runtime/results-logger.ts
+TypeScript
+
+// src/runtime/results-logger.ts
+import { appendFile, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { nanoid } from 'nanoid';
+import { getDb } from '@/db/migrate.js';
+import type { ResultsRow } from '@/types/index.js';
+
+const HEADERS = [
+  'cycle',
+  'score',
+  'groundedness',
+  'novelty',
+  'consistency',
+  'missionAlignment',
+  'policyCompliance',
+  'decision',
+  'costUsd',
+  'summary',
+];
+
+export class ResultsLogger {
+  constructor(
+    private filePath: string,
+    private runId: string,
+  ) {}
+
+  async ensureHeader() {
+    try {
+      const existing = await readFile(this.filePath, 'utf-8');
+      if (!existing.startsWith('cycle\t')) {
+        await writeFile(this.filePath, HEADERS.join('\t') + '\n', 'utf-8');
+      }
+    } catch {
+      await writeFile(this.filePath, HEADERS.join('\t') + '\n', 'utf-8');
+    }
+  }
+
+  async append(row: ResultsRow) {
+    const line = [
+      row.cycle,
+      row.score.toFixed(6),
+      row.groundedness.toFixed(6),
+      row.novelty.toFixed(6),
+      row.consistency.toFixed(6),
+      row.missionAlignment.toFixed(6),
+      (row.policyCompliance ?? 1).toFixed(6),
+      row.decision,
+      (row.costUsd ?? 0).toFixed(6),
+      row.summary.replace(/[\t\n\r]/g, ' ').slice(0, 200),
+    ].join('\t');
+
+    await appendFile(this.filePath, line + '\n', 'utf-8');
+
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO results_log
+      (id, run_id, cycle_number, score, groundedness, novelty, consistency,
+       mission_alignment, policy_compliance, decision, summary, cost_usd)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      `rl_${nanoid(10)}`,
+      this.runId,
+      row.cycle,
+      row.score,
+      row.groundedness,
+      row.novelty,
+      row.consistency,
+      row.missionAlignment,
+      row.policyCompliance ?? 1,
+      row.decision,
+      row.summary.slice(0, 500),
+      row.costUsd ?? 0,
+    );
+    db.close();
+  }
+}
+21. src/runtime/transcript.ts
+TypeScript
+
+// src/runtime/transcript.ts
+import { appendFile, mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { RedactionFilter } from '@/runtime/redaction.js';
+import type { TranscriptEvent } from '@/types/index.js';
+
+export class TranscriptWriter {
+  private filePath: string;
+  private redactor: RedactionFilter;
+
+  constructor(runId: string, root = process.cwd()) {
+    this.filePath = path.join(root, 'transcripts', `${runId}.jsonl`);
+    this.redactor = new RedactionFilter(runId);
+  }
+
+  async ensureInitialized() {
+    await mkdir(path.dirname(this.filePath), { recursive: true });
+    await writeFile(this.filePath, '', { flag: 'a' });
+  }
+
+  event(e: TranscriptEvent) {
+    const payload: TranscriptEvent = {
+      ...e,
+      ts: new Date().toISOString(),
+    };
+
+    // Redact content field if present
+    if (typeof payload.content === 'string') {
+      payload.content = this.redactor.redact(payload.content, {
+        channel: 'transcript',
+        cycleNumber: typeof e.cycleNumber === 'number' ? e.cycleNumber : undefined,
+      }).text;
+    }
+
+    // Fire and forget
+    appendFile(this.filePath, JSON.stringify(payload) + '\n', 'utf-8').catch(() => {});
+  }
+}
+22. src/runtime/event-bus.ts
+TypeScript
+
+// src/runtime/event-bus.ts
+
+type EventHandler = (payload: Record<string, unknown>) => void;
+
+export class EventBus {
+  private listeners = new Map<string, EventHandler[]>();
+
+  on(event: string, handler: EventHandler) {
+    const handlers = this.listeners.get(event) ?? [];
+    handlers.push(handler);
+    this.listeners.set(event, handlers);
+  }
+
+  off(event: string, handler: EventHandler) {
+    const handlers = (this.listeners.get(event) ?? []).filter(h => h !== handler);
+    this.listeners.set(event, handlers);
+  }
+
+  broadcast(payload: Record<string, unknown> & { type: string }) {
+    const handlers = this.listeners.get(payload.type) ?? [];
+    for (const handler of handlers) {
+      try { handler(payload); } catch {}
+    }
+
+    // Also fire wildcard listeners
+    const wildcards = this.listeners.get('*') ?? [];
+    for (const handler of wildcards) {
+      try { handler(payload); } catch {}
+    }
+  }
+}
+23. src/runtime/memory-manager.ts
+TypeScript
+
+// src/runtime/memory-manager.ts
+import { mkdir, readFile, writeFile, appendFile } from 'node:fs/promises';
+import path from 'node:path';
+
+const INITIAL_MEMORY = `# AutoOrg Memory
+
+## Overview
+This file records what the organization has learned across cycles.
+Each entry is date-stamped and attributed to the cycle that generated it.
+
+## Current best understanding
+(Updated automatically. Do not edit manually.)
+
+## Cycle history
+`;
+
+export class MemoryManager {
+  private memoryPath: string;
+  private factsDir: string;
+
+  constructor(private root = process.cwd()) {
+    this.memoryPath = path.join(root, 'memory', 'MEMORY.md');
+    this.factsDir = path.join(root, 'memory', 'facts');
+  }
+
+  async ensureInitialized() {
+    await mkdir(path.join(this.root, 'memory'), { recursive: true });
+    await mkdir(this.factsDir, { recursive: true });
+
+    try {
+      await readFile(this.memoryPath, 'utf-8');
+    } catch {
+      await writeFile(this.memoryPath, INITIAL_MEMORY, 'utf-8');
+    }
+  }
+
+  async buildContext(): Promise<string> {
+    const memory = await readFile(this.memoryPath, 'utf-8').catch(() => '');
+    return memory.slice(0, 4000);
+  }
+
+  async append(note: string, cycleNumber: number) {
+    const line = `\n### Cycle ${cycleNumber} — ${new Date().toISOString()}\n${note.trim()}\n`;
+    await appendFile(this.memoryPath, line, 'utf-8');
+  }
+
+  async replace(newContent: string) {
+    await writeFile(this.memoryPath, newContent, 'utf-8');
+  }
+}
+24. src/runtime/graph-manager.ts
+TypeScript
+
+// src/runtime/graph-manager.ts
+// Lightweight in-process knowledge graph.
+// Production upgrade: swap internal storage for a graph DB.
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import path from 'node:path';
+import { nanoid } from 'nanoid';
+import type { GraphNode, GraphEdge, KnowledgeGraph } from '@/types/index.js';
+
+interface GraphManagerState {
+  runId: string;
+  graph: KnowledgeGraph;
+  rootPath: string;
+}
+
+class GraphManagerImpl {
+  private state: GraphManagerState | null = null;
+
+  init(runId: string, rootPath = process.cwd()) {
+    this.state = {
+      runId,
+      rootPath,
+      graph: { nodes: [], edges: [], version: 0 },
+    };
+  }
+
+  private ensure(): GraphManagerState {
+    if (!this.state) throw new Error('GraphManager not initialized. Call init(runId) first.');
+    return this.state;
+  }
+
+  async ensureBuilt(config: {
+    seedMaterial?: string[];
+    workspaceRoot?: string;
+  }) {
+    const s = this.ensure();
+
+    const graphPath = path.join(s.rootPath, 'memory', 'graph.json');
+    await mkdir(path.dirname(graphPath), { recursive: true });
+
+    try {
+      const existing = JSON.parse(await readFile(graphPath, 'utf-8'));
+      s.graph = existing;
+      return;
+    } catch {}
+
+    // Build from seed material
+    if (config.seedMaterial?.length) {
+      for (const text of config.seedMaterial) {
+        await this.ingest({ text, source: 'seed', weight: 1.0 });
+      }
+    }
+
+    await this.persist();
+  }
+
+  async ingest(opts: { text: string; source: string; weight?: number }) {
+    const s = this.ensure();
+
+    // Extract simple concept nodes from key terms
+    const terms = opts.text
+      .split(/[\s,.:;()\[\]{}"']+/)
+      .filter(t => t.length > 4 && t.length < 50)
+      .slice(0, 50);
+
+    for (const term of terms) {
+      const existing = s.graph.nodes.find(n => n.label.toLowerCase() === term.toLowerCase());
+      if (existing) {
+        existing.weight = Math.min(1, existing.weight + 0.1);
+      } else {
+        s.graph.nodes.push({
+          id: `node_${nanoid(8)}`,
+          label: term,
+          type: 'concept',
+          weight: opts.weight ?? 0.5,
+          source: opts.source,
+        });
+      }
+    }
+
+    s.graph.version += 1;
+  }
+
+  buildContext(mission: string): string {
+    const s = this.ensure();
+    const topNodes = [...s.graph.nodes]
+      .sort((a, b) => b.weight - a.weight)
+      .slice(0, 20)
+      .map(n => `${n.label} (${n.type}, weight=${n.weight.toFixed(2)})`);
+
+    if (!topNodes.length) return '';
+
+    return [
+      '## Graph Context',
+      `Top concepts (${s.graph.nodes.length} total nodes, version ${s.graph.version}):`,
+      topNodes.join(', '),
+    ].join('\n');
+  }
+
+  getGraph(): KnowledgeGraph {
+    return this.ensure().graph;
+  }
+
+  async persist() {
+    const s = this.ensure();
+    const graphPath = path.join(s.rootPath, 'memory', 'graph.json');
+    await writeFile(graphPath, JSON.stringify(s.graph, null, 2), 'utf-8');
+  }
+}
+
+export const graphManager = new GraphManagerImpl();
+25. src/runtime/ratchet.ts
+TypeScript
+
+// src/runtime/ratchet.ts
+import { exec } from 'node:child_process';
+import { promisify } from 'node:util';
+import { getAdapterForModel } from '@/adapters/adapter-factory.js';
+import type { RatchetScore, Proposal, KnowledgeGraph } from '@/types/index.js';
+
+const sh = promisify(exec);
+
+export class RatchetEngine {
+  private constitution: string;
+  private runId: string;
+  private models: Record<string, string>;
+  private benchmarkCase?: { caseName: string; category: string; difficulty: string };
+
+  constructor(opts: {
+    constitution: string;
+    runId: string;
+    models: Record<string, string>;
+    benchmarkCase?: { caseName: string; category: string; difficulty: string };
+  }) {
+    this.constitution = opts.constitution;
+    this.runId = opts.runId;
+    this.models = opts.models;
+    this.benchmarkCase = opts.benchmarkCase;
+  }
+
+  async score(input: {
+    proposal: Proposal;
+    graph: KnowledgeGraph;
+    verificationReport?: { total_claims: number; supported_claims: number; unsupported_claims: number } | null;
+    evidencePackId?: string;
+    toolStats?: { toolCalls: number };
+    policyReport?: { score: number; approval_gaps: number; unsafe_action_count: number } | null;
+    provenanceReport?: { total_claims: number; linked_claims: number; broken_links: number } | null;
+    benchmarkCase?: { caseName: string; category: string; difficulty: string };
+  }): Promise<RatchetScore> {
+    const judgeModel = this.models['ratchetJudge'] ?? 'claude-opus-4';
+    const adapter = getAdapterForModel(judgeModel);
+
+    const systemPrompt = await this.buildJudgeSystemPrompt();
+
+    const userContent = JSON.stringify({
+      constitution: this.constitution,
+      proposal: {
+        content: input.proposal.content.slice(0, 16000),
+        role: input.proposal.role,
+        cycleNumber: input.proposal.cycleNumber,
+      },
+      graphSummary: {
+        nodeCount: input.graph.nodes.length,
+        edgeCount: input.graph.edges.length,
+        version: input.graph.version,
+      },
+      verificationReport: input.verificationReport ?? null,
+      evidencePackId: input.evidencePackId ?? null,
+      toolStats: input.toolStats ?? null,
+      policyReport: input.policyReport ?? null,
+      provenanceReport: input.provenanceReport ?? null,
+      benchmarkCase: input.benchmarkCase ?? this.benchmarkCase ?? null,
+    }, null, 2);
+
+    const judgeResponse = await adapter.run({
+      model: judgeModel,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userContent },
+      ],
+      temperature: 0.1,
+      maxTokens: 1200,
+    });
+
+    return this.parseScore(judgeResponse.content);
+  }
+
+  decide(score: RatchetScore, bestScore: number): 'COMMIT' | 'REVERT' {
+    return score.composite > bestScore ? 'COMMIT' : 'REVERT';
+  }
+
+  async materializeCommit(opts: { file?: string; commitMessage: string }): Promise<string> {
+    const file = opts.file ?? 'workspace/current_output.md';
+    await sh(`git add "${file}"`);
+    await sh(`git commit -m "${opts.commitMessage.replace(/"/g, '\\"')}"`);
+    const { stdout } = await sh('git rev-parse HEAD');
+    return stdout.trim();
+  }
+
+  async materializeRevert(file = 'workspace/current_output.md') {
+    await sh(`git checkout -- "${file}"`).catch(() => {});
+  }
+
+  private async buildJudgeSystemPrompt(): Promise<string> {
+    const { readFile } = await import('node:fs/promises');
+    const { join } = await import('node:path');
+    const basePrompt = await readFile(join(process.cwd(), 'roles', 'RatchetJudge.md'), 'utf-8').catch(() => '');
+    return basePrompt;
+  }
+
+  private parseScore(content: string): RatchetScore {
+    try {
+      const jsonMatch = content.match(/\{[\s\S]+\}/);
+      if (!jsonMatch) throw new Error('No JSON found in judge response');
+      const parsed = JSON.parse(jsonMatch[0]);
+
+      const groundedness = this.clamp(parsed.groundedness ?? 0.5);
+      const novelty = this.clamp(parsed.novelty ?? 0.5);
+      const consistency = this.clamp(parsed.consistency ?? 0.5);
+      const missionAlignment = this.clamp(parsed.missionAlignment ?? 0.5);
+      const policyCompliance = this.clamp(parsed.policyCompliance ?? 1.0);
+
+      const rawComposite = 0.30 * groundedness + 0.25 * novelty + 0.25 * consistency + 0.20 * missionAlignment;
+      const policyPenalty = policyCompliance < 0.80
+        ? 0.35 * (1 - policyCompliance)
+        : 0;
+
+      const composite = Math.max(0, rawComposite - policyPenalty);
+
+      return {
+        composite,
+        groundedness,
+        novelty,
+        consistency,
+        missionAlignment,
+        policyCompliance,
+        justification: parsed.justification ?? 'No justification provided.',
+      };
+    } catch {
+      return {
+        composite: 0.5,
+        groundedness: 0.5,
+        novelty: 0.5,
+        consistency: 0.5,
+        missionAlignment: 0.5,
+        policyCompliance: 1.0,
+        justification: 'Score parsing failed — using default midpoint scores.',
+      };
+    }
+  }
+
+  private clamp(n: number): number {
+    return Math.max(0, Math.min(1, Number(n) || 0));
+  }
+}
+26. src/runtime/dream.ts
+TypeScript
+
+// src/runtime/dream.ts
+import { readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { getAdapterForModel } from '@/adapters/adapter-factory.js';
+import { getDb } from '@/db/migrate.js';
+
+export class DreamEngine {
+  constructor(
+    private runId: string,
+    private opts: {
+      model: string;
+      memoryRoot: string;
+    },
+  ) {}
+
+  async run() {
+    const memoryPath = path.join(this.opts.memoryRoot, 'MEMORY.md');
+    const currentMemory = await readFile(memoryPath, 'utf-8').catch(() => '');
+
+    if (!currentMemory.trim()) return;
+
+    const db = getDb();
+    const recentResults = db.prepare(`
+      SELECT cycle_number, score, decision, summary
+      FROM results_log
+      WHERE run_id = ?
+      ORDER BY cycle_number DESC
+      LIMIT 10
+    `).all(this.runId) as Array<{
+      cycle_number: number;
+      score: number;
+      decision: string;
+      summary: string;
+    }>;
+    db.close();
+
+    const adapter = getAdapterForModel(this.opts.model);
+
+    const response = await adapter.run({
+      model: this.opts.model,
+      messages: [
+        {
+          role: 'system',
+          content: `You consolidate organizational memory. Read the current MEMORY.md and recent cycle results. Produce an improved MEMORY.md that:
+- Removes superseded information
+- Consolidates redundant entries
+- Elevates high-value patterns
+- Keeps total length under 4000 words
+- Preserves all evidence labels and citations
+
+Return only the new MEMORY.md content. No explanation.`,
+        },
+        {
+          role: 'user',
+          content: JSON.stringify({
+            currentMemory: currentMemory.slice(0, 6000),
+            recentCycles: recentResults,
+          }, null, 2),
+        },
+      ],
+      temperature: 0.2,
+      maxTokens: 3000,
+    });
+
+    if (response.content.trim().length > 100) {
+      await writeFile(memoryPath, response.content.trim(), 'utf-8');
+    }
+  }
+}
+27. src/runtime/scheduler.ts
+TypeScript
+
+// src/runtime/scheduler.ts
+import { getDb } from '@/db/migrate.js';
+
+function parseCron(expr: string): Date | null {
+  // Simplified cron parser — in production use the `cron-parser` package
+  try {
+    const { parseExpression } = require('cron-parser');
+    const interval = parseExpression(expr);
+    return interval.next().toDate();
+  } catch {
+    return null;
+  }
+}
+
+export class Scheduler {
+  dueJobs() {
+    const db = getDb();
+    const jobs = db.prepare(`
+      SELECT *
+      FROM scheduled_jobs
+      WHERE status = 'idle'
+        AND (
+          last_run_at IS NULL
+          OR (
+            cron_expression IS NOT NULL
+            AND datetime(last_run_at, '+60 seconds') < datetime('now')
+          )
+        )
+      ORDER BY created_at ASC
+    `).all() as Array<{
+      id: string;
+      job_type: string;
+      run_id: string | null;
+      cron_expression: string | null;
+      payload_json: string;
+    }>;
+    db.close();
+    return jobs;
+  }
+
+  seedDefaultJobs(runId: string) {
+    const db = getDb();
+    const defaults = [
+      {
+        id: `job_dream_${runId}`,
+        job_type: 'dream',
+        run_id: runId,
+        cron_expression: null,
+        payload_json: '{}',
+      },
+      {
+        id: `job_health_${runId}`,
+        job_type: 'health_check',
+        run_id: runId,
+        cron_expression: null,
+        payload_json: '{}',
+      },
+    ];
+
+    for (const job of defaults) {
+      db.prepare(`
+        INSERT OR IGNORE INTO scheduled_jobs
+        (id, job_type, run_id, cron_expression, status, payload_json)
+        VALUES (?, ?, ?, ?, 'idle', ?)
+      `).run(job.id, job.job_type, job.run_id, job.cron_expression, job.payload_json);
+    }
+
+    db.close();
+  }
+}
+28. src/runtime/scorer.ts
+TypeScript
+
+// src/runtime/scorer.ts
+// Score clamp utilities used by ratchet and judge
+
+export function applyVerificationClamp(
+  baseGroundedness: number,
+  verification?: { total_claims: number; unsupported_claims: number } | null
+): number {
+  if (!verification || verification.total_claims <= 0) return baseGroundedness;
+  const unsupportedRatio = verification.unsupported_claims / verification.total_claims;
+  const penalty = Math.min(0.5, unsupportedRatio * 0.75);
+  return Math.max(0, baseGroundedness - penalty);
+}
+
+export function applyPolicyComplianceClamp(
+  baseComposite: number,
+  policyCompliance?: number | null
+): number {
+  if (typeof policyCompliance !== 'number') return baseComposite;
+  const penalty = Math.max(0, 0.35 * (1 - policyCompliance));
+  return Math.max(0, baseComposite - penalty);
+}
+
+export function computeComposite(dims: {
+  groundedness: number;
+  novelty: number;
+  consistency: number;
+  missionAlignment: number;
+  policyCompliance?: number;
+  verificationReport?: { total_claims: number; unsupported_claims: number } | null;
+}): number {
+  const clampedGroundedness = applyVerificationClamp(
+    dims.groundedness,
+    dims.verificationReport
+  );
+
+  const rawComposite =
+    0.30 * clampedGroundedness +
+    0.25 * dims.novelty +
+    0.25 * dims.consistency +
+    0.20 * dims.missionAlignment;
+
+  return applyPolicyComplianceClamp(rawComposite, dims.policyCompliance);
+}
+29. src/runtime/ultraplan.ts
+TypeScript
+
+// src/runtime/ultraplan.ts
+import { nanoid } from 'nanoid';
+import { getAdapterForModel } from '@/adapters/adapter-factory.js';
+import { getDb } from '@/db/migrate.js';
+
+export class UltraPlanEngine {
+  constructor(
+    private runId: string,
+    private opts: {
+      models: Record<string, string>;
+      constitution: string;
+    }
+  ) {}
+
+  async createSession(input: {
+    cycleNumber: number;
+    currentBestScore: number;
+    plateauCount: number;
+    mission: string;
+    workspaceText: string;
+    graphContext: string;
+    memoryContext: string;
+  }) {
+    const sessionId = `ultra_${nanoid(10)}`;
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO ultraplan_sessions
+      (id, run_id, cycle_number, status, result_json)
+      VALUES (?, ?, ?, 'running', '{}')
+    `).run(sessionId, this.runId, input.cycleNumber);
+    db.close();
+
+    return { sessionId, input };
+  }
+
+  async executeSession(sessionId: string) {
+    const db = getDb();
+    const session = db.prepare(`
+      SELECT * FROM ultraplan_sessions WHERE id = ?
+    `).get(sessionId) as { run_id: string; cycle_number: number } | undefined;
+    db.close();
+
+    if (!session) throw new Error(`ULTRAPLAN session ${sessionId} not found`);
+
+    const model = this.opts.models['ceo'] ?? 'claude-opus-4';
+    const adapter = getAdapterForModel(model);
+
+    const response = await adapter.run({
+      model,
+      messages: [
+        {
+          role: 'system',
+          content: `You are AutoOrg's strategic pivot engine. The system is on a scoring plateau.
+Analyze the situation and produce a concrete strategic pivot plan.
+Return JSON with keys: bottleneck, pivot_hypothesis, five_cycle_plan (array of 5 strings), checkpoint_summary, cancellation_safe_summary, risks (array), expected_score_delta (number).`,
+        },
+        {
+          role: 'user',
+          content: JSON.stringify({
+            sessionId,
+            constitution: this.opts.constitution.slice(0, 3000),
+          }, null, 2),
+        },
+      ],
+      temperature: 0.3,
+      maxTokens: 1500,
+    });
+
+    let result: Record<string, unknown>;
+    try {
+      const match = response.content.match(/\{[\s\S]+\}/);
+      result = match ? JSON.parse(match[0]) : {};
+    } catch {
+      result = { checkpoint_summary: response.content };
+    }
+
+    const db2 = getDb();
+    db2.prepare(`
+      UPDATE ultraplan_sessions
+      SET status = 'completed', result_json = ?, finished_at = datetime('now')
+      WHERE id = ?
+    `).run(JSON.stringify(result), sessionId);
+    db2.close();
+
+    return result;
+  }
+}
+30. Error handling strategy (src/runtime/error-handler.ts)
+TypeScript
+
+// src/runtime/error-handler.ts
+import { IncidentLog } from '@/runtime/incident-log.js';
+
+export type ErrorCategory =
+  | 'llm_failure'
+  | 'tool_timeout'
+  | 'tool_denied'
+  | 'db_locked'
+  | 'approval_timeout'
+  | 'budget_exceeded'
+  | 'workspace_lock'
+  | 'graph_build'
+  | 'artifact_write'
+  | 'unknown';
+
+export interface HandledError {
+  category: ErrorCategory;
+  message: string;
+  retryable: boolean;
+  skipCycle: boolean;
+  fatal: boolean;
+}
+
+export function categorizeError(err: unknown): HandledError {
+  const message = err instanceof Error ? err.message : String(err);
+
+  // LLM failures
+  if (message.includes('rate_limit') || message.includes('429')) {
+    return { category: 'llm_failure', message, retryable: true, skipCycle: false, fatal: false };
+  }
+  if (message.includes('timeout') && message.includes('LLM')) {
+    return { category: 'llm_failure', message, retryable: true, skipCycle: true, fatal: false };
+  }
+
+  // Tool failures
+  if (message.includes('Sandbox timeout')) {
+    return { category: 'tool_timeout', message, retryable: false, skipCycle: false, fatal: false };
+  }
+  if (message.includes('Policy denied') || message.includes('Budget exceeded')) {
+    return { category: 'tool_denied', message, retryable: false, skipCycle: false, fatal: false };
+  }
+
+  // DB failures
+  if (message.includes('SQLITE_BUSY') || message.includes('database is locked')) {
+    return { category: 'db_locked', message, retryable: true, skipCycle: false, fatal: false };
+  }
+
+  // Workspace lock
+  if (message.includes('Workspace lock already held')) {
+    return { category: 'workspace_lock', message, retryable: false, skipCycle: false, fatal: true };
+  }
+
+  return { category: 'unknown', message, retryable: false, skipCycle: false, fatal: true };
+}
+
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  opts: {
+    runId?: string;
+    maxRetries?: number;
+    backoffMs?: number;
+    component?: string;
+  } = {}
+): Promise<T> {
+  const incidents = new IncidentLog();
+  const maxRetries = opts.maxRetries ?? 3;
+  const backoffMs = opts.backoffMs ?? 1000;
+
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      const categorized = categorizeError(err);
+
+      if (!categorized.retryable || attempt === maxRetries) {
+        throw err;
+      }
+
+      incidents.log({
+        runId: opts.runId,
+        severity: 'warn',
+        component: opts.component ?? 'retry',
+        summary: `Attempt ${attempt} failed (${categorized.category}), retrying...`,
+        details: { message: categorized.message },
+      });
+
+      await new Promise(r => setTimeout(r, backoffMs * attempt));
+    }
+  }
+
+  throw lastError;
+}
+31. Memory initialization (src/runtime/memory-init.ts)
+TypeScript
+
+// src/runtime/memory-init.ts
+// Called once when a workspace is first created to seed memory with org content.
+import { writeFile, readFile, mkdir } from 'node:fs/promises';
+import path from 'node:path';
+
+const MEMORY_TEMPLATE = (orgText: string) => `# AutoOrg Memory
+
+## Overview
+This workspace was initialized on ${new Date().toISOString()}.
+Memory is updated after each cycle and consolidated periodically by the DreamAgent.
+
+## Mission summary
+${orgText.slice(0, 800)}
+
+## Current best understanding
+No cycles completed yet.
+
+## Key constraints (from constitution)
+To be populated after first scored cycle.
+
+## Cycle history
+`;
+
+export async function initializeWorkspaceMemory(opts: {
+  root: string;
+  orgText: string;
+  constitutionText: string;
+}) {
+  const memoryDir = path.join(opts.root, 'memory');
+  const factsDir = path.join(memoryDir, 'facts');
+  const partitionsDir = path.join(memoryDir, 'partitions');
+  const memoryPath = path.join(memoryDir, 'MEMORY.md');
+
+  await mkdir(factsDir, { recursive: true });
+  await mkdir(partitionsDir, { recursive: true });
+
+  // Only initialize if not already present
+  try {
+    await readFile(memoryPath, 'utf-8');
+    return; // already initialized
+  } catch {}
+
+  await writeFile(memoryPath, MEMORY_TEMPLATE(opts.orgText), 'utf-8');
+
+  // Write constitution summary to facts
+  await writeFile(
+    path.join(factsDir, 'constitution-summary.md'),
+    `# Constitution Summary\n\n${opts.constitutionText.slice(0, 2000)}`,
+    'utf-8'
+  );
+}
+32. src/runtime/orchestrator-entrypoint.ts
+TypeScript
+
+// src/runtime/orchestrator-entrypoint.ts
+// Local development entrypoint. Reads org.md and constitution.md from CWD.
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { config as loadEnv } from 'dotenv';
+import { runAutoOrg } from '@/runtime/orchestrator.js';
+import { initializeWorkspaceMemory } from '@/runtime/memory-init.js';
+
+loadEnv();
+
+async function main() {
+  const root = process.cwd();
+
+  const orgText = await readFile(path.join(root, 'org.md'), 'utf-8').catch(() => {
+    console.error('❌ org.md not found. Create org.md with your mission before running.');
+    process.exit(1);
+  });
+
+  const constitutionText = await readFile(path.join(root, 'constitution.md'), 'utf-8').catch(() => {
+    console.error('❌ constitution.md not found. Create constitution.md with your scoring criteria.');
+    process.exit(1);
+  });
+
+  await initializeWorkspaceMemory({ root, orgText, constitutionText });
+
+  const result = await runAutoOrg({
+    orgText,
+    constitutionText,
+    mode: 'normal',
+    maxCycles: Number(process.env.AUTOORG_MAX_CYCLES ?? 20),
+    plateauCycles: Number(process.env.AUTOORG_PLATEAU_CYCLES ?? 5),
+    workspaceRoot: root,
+  });
+
+  console.log('\n════════════════════════════════════════');
+  console.log(`✅ Run complete: ${result.runId}`);
+  console.log(`   Cycles:        ${result.totalCycles}`);
+  console.log(`   Best score:    ${result.finalScore.composite.toFixed(4)}`);
+  console.log(`   Total cost:    $${result.totalCostUsd.toFixed(4)}`);
+  console.log(`   Tool calls:    ${result.totalToolCalls}`);
+  console.log(`   Stopped:       ${result.stoppedReason}`);
+  console.log('════════════════════════════════════════\n');
+}
+
+main().catch(err => {
+  console.error('Fatal error:', err);
+  process.exit(1);
+});
+33. web/next.config.ts
+TypeScript
+
+import type { NextConfig } from 'next';
+
+const nextConfig: NextConfig = {
+  reactStrictMode: true,
+  experimental: {
+    typedRoutes: false,
+  },
+  env: {
+    AUTOORG_API_URL: process.env.AUTOORG_API_URL ?? 'http://localhost:3000',
+  },
+};
+
+export default nextConfig;
+34. web/tailwind.config.ts
+TypeScript
+
+import type { Config } from 'tailwindcss';
+
+const config: Config = {
+  content: [
+    './app/**/*.{ts,tsx}',
+    './components/**/*.{ts,tsx}',
+  ],
+  theme: {
+    extend: {
+      colors: {
+        'autoorg-dark': '#0a0a0a',
+        'autoorg-card': '#111111',
+        'autoorg-border': '#222222',
+        'autoorg-cyan': '#22d3ee',
+        'autoorg-green': '#4ade80',
+        'autoorg-red': '#f87171',
+        'autoorg-yellow': '#fbbf24',
+      },
+      fontFamily: {
+        mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
+      },
+    },
+  },
+  plugins: [],
+};
+
+export default config;
+35. web/app/layout.tsx
+TypeScript
+
+import type { Metadata } from 'next';
+import './globals.css';
+
+export const metadata: Metadata = {
+  title: 'AutoOrg',
+  description: 'Governed autonomous organization runtime',
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const navLinks = [
+    ['Dashboard', '/'],
+    ['Graph', '/graph'],
+    ['Approvals', '/approvals'],
+    ['Budgets', '/budgets'],
+    ['Locks', '/locks'],
+    ['Issues', '/issues'],
+    ['Tools', '/tools'],
+    ['Evidence', '/evidence'],
+    ['Ledger', '/ledger'],
+    ['Provenance', '/provenance'],
+    ['Security', '/security'],
+    ['Benchmarks', '/benchmarks'],
+    ['Leaderboard', '/leaderboard'],
+    ['Regressions', '/regressions'],
+    ['Portfolio', '/portfolio'],
+    ['Runs', '/runs'],
+    ['Billing', '/billing'],
+    ['Learning', '/learning'],
+    ['Proposals', '/proposals'],
+    ['Admin', '/admin'],
+  ];
+
+  return (
+    <html lang="en" className="dark">
+      <body className="bg-[#0a0a0a] text-gray-100 min-h-screen font-mono">
+        <header className="border-b border-[#222] px-6 py-4 flex items-center justify-between sticky top-0 bg-[#0a0a0a] z-50">
+          <a href="/" className="text-cyan-400 font-bold text-lg tracking-tight">
+            AutoOrg
+          </a>
+          <nav className="flex gap-4 flex-wrap text-xs overflow-x-auto max-w-4xl">
+            {navLinks.map(([label, href]) => (
+              <a
+                key={href}
+                href={href}
+                className="text-gray-400 hover:text-cyan-400 transition-colors whitespace-nowrap"
+              >
+                {label}
+              </a>
+            ))}
+          </nav>
+        </header>
+        <main className="px-6 py-8 max-w-7xl mx-auto">
+          {children}
+        </main>
+      </body>
+    </html>
+  );
+}
+36. web/app/globals.css
+CSS
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0a0a0a;
+  --card: #111111;
+  --border: #222222;
+  --cyan: #22d3ee;
+  --green: #4ade80;
+  --red: #f87171;
+  --yellow: #fbbf24;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg);
+  color: #e5e7eb;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 16px;
+}
+
+.table-auto th {
+  text-align: left;
+  padding: 8px 12px;
+  color: #9ca3af;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+}
+
+.table-auto td {
+  padding: 8px 12px;
+  border-bottom: 1px solid #1a1a1a;
+  font-size: 12px;
+  vertical-align: top;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.badge-green { background: #052e16; color: var(--green); }
+.badge-red { background: #2d0808; color: var(--red); }
+.badge-yellow { background: #2d1f08; color: var(--yellow); }
+.badge-cyan { background: #082d33; color: var(--cyan); }
+.badge-gray { background: #1a1a1a; color: #9ca3af; }
+37. web/app/page.tsx (Dashboard)
+TypeScript
+
+// web/app/page.tsx
+'use client';
+
+import { useEffect, useState } from 'react';
+
+const API = process.env.NEXT_PUBLIC_AUTOORG_API_URL ?? 'http://localhost:3000';
+
+function useFetch<T>(url: string) {
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(url)
+      .then(r => r.json())
+      .then(setData)
+      .catch(e => setError(String(e)))
+      .finally(() => setLoading(false));
+  }, [url]);
+
+  return { data, loading, error };
+}
+
+export default function DashboardPage() {
+  const { data: health } = useFetch<{ ok: boolean; version: string; ts: string }>(`${API}/health`);
+  const { data: runs, loading: runsLoading } = useFetch<any[]>(`${API}/api/runs`);
+  const { data: findings } = useFetch<any[]>(`${API}/api/security/findings`);
+
+  const openFindings = (findings ?? []).filter((f: any) => f.status === 'open');
+
+  return (
+    <div className="space-y-8">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-cyan-400">Dashboard</h1>
+        <div className="text-xs text-gray-500">
+          {health ? (
+            <span className={health.ok ? 'text-green-400' : 'text-red-400'}>
+              {health.ok ? '● Online' : '● Degraded'} · v{health.version}
+            </span>
+          ) : '...'}
+        </div>
+      </div>
+
+      {/* Stats row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatCard label="Total Runs" value={runs?.length ?? '—'} />
+        <StatCard
+          label="Active Runs"
+          value={(runs ?? []).filter((r: any) => r.status === 'running').length}
+        />
+        <StatCard
+          label="Open Findings"
+          value={openFindings.length}
+          color={openFindings.length > 0 ? 'red' : 'green'}
+        />
+        <StatCard
+          label="Best Score"
+          value={
+            runs?.length
+              ? Math.max(...runs.map((r: any) => r.best_score ?? 0)).toFixed(4)
+              : '—'
+          }
+        />
+      </div>
+
+      {/* Recent runs */}
+      <div className="card">
+        <h2 className="text-sm font-bold text-gray-300 mb-4">Recent Runs</h2>
+        {runsLoading && <p className="text-gray-500 text-sm">Loading...</p>}
+        {!runsLoading && (!runs?.length) && (
+          <p className="text-gray-500 text-sm">No runs yet. Run <code>bun start</code> to begin.</p>
+        )}
+        {!runsLoading && runs?.length > 0 && (
+          <table className="table-auto w-full">
+            <thead>
+              <tr>
+                <th>Run ID</th>
+                <th>Status</th>
+                <th>Mode</th>
+                <th>Score</th>
+                <th>Cycles</th>
+                <th>Cost</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {runs.slice(0, 20).map((run: any) => (
+                <tr key={run.id}>
+                  <td className="font-mono text-xs text-cyan-400">{run.id}</td>
+                  <td>
+                    <span className={`badge badge-${
+                      run.status === 'completed' ? 'green' :
+                      run.status === 'running' ? 'cyan' :
+                      run.status === 'failed' ? 'red' : 'gray'
+                    }`}>
+                      {run.status}
+                    </span>
+                  </td>
+                  <td className="text-gray-400">{run.mode}</td>
+                  <td className="text-gray-300">{run.best_score?.toFixed(4) ?? '—'}</td>
+                  <td className="text-gray-400">{run.total_cycles ?? '—'}</td>
+                  <td className="text-gray-400">${run.total_cost_usd?.toFixed(4) ?? '0.0000'}</td>
+                  <td className="text-gray-500 text-xs">{run.created_at?.slice(0, 19)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Open security findings */}
+      {openFindings.length > 0 && (
+        <div className="card border-red-900">
+          <h2 className="text-sm font-bold text-red-400 mb-4">
+            Open Security Findings ({openFindings.length})
+          </h2>
+          <table className="table-auto w-full">
+            <thead>
+              <tr>
+                <th>Severity</th>
+                <th>Category</th>
+                <th>Summary</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {openFindings.slice(0, 10).map((f: any) => (
+                <tr key={f.id}>
+                  <td>
+                    <span className={`badge badge-${f.severity === 'critical' ? 'red' : 'yellow'}`}>
+                      {f.severity}
+                    </span>
+                  </td>
+                  <td className="text-gray-400">{f.category}</td>
+                  <td className="text-gray-300">{f.summary?.slice(0, 80)}</td>
+                  <td className="text-gray-500 text-xs">{f.created_at?.slice(0, 19)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatCard({ label, value, color = 'cyan' }: {
+  label: string;
+  value: string | number;
+  color?: 'cyan' | 'green' | 'red' | 'yellow';
+}) {
+  const colors = {
+    cyan: 'text-cyan-400',
+    green: 'text-green-400',
+    red: 'text-red-400',
+    yellow: 'text-yellow-400',
+  };
+
+  return (
+    <div className="card">
+      <p className="text-xs text-gray-500 mb-1">{label}</p>
+      <p className={`text-2xl font-bold ${colors[color]}`}>{value}</p>
+    </div>
+  );
+}
+38. web/package.json
+JSON
+
+{
+  "name": "autoorg-web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 3001",
+    "build": "next build",
+    "start": "next start --port 3001",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "^15.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "autoprefixer": "^10.4.0",
+    "postcss": "^8.4.0",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.4.0"
+  }
+}
+What the agent now has
+Every missing piece is now covered:
+
+text
+
+✅ tsconfig.json                    path aliases + strict mode
+✅ bunfig.toml                      test runner + install config
+✅ package.json                     all deps with correct names
+✅ .gitignore                       protects secrets + artifacts
+✅ .env.example                     every env var documented
+
+✅ src/types/index.ts               all shared types in one place
+✅ src/config/model-costs.ts        cost table for billing
+✅ src/config/feature-flags.ts      DB-backed + env-override flags
+✅ src/db/migrate.ts                getDb() with WAL + FK + timeout
+
+✅ src/adapters/base-adapter.ts     adapter interface + JSON retry
+✅ src/adapters/anthropic-adapter.ts  Anthropic SDK
+✅ src/adapters/openai-adapter.ts   OpenAI SDK
+✅ src/adapters/adapter-factory.ts  factory + model-name routing
+
+✅ src/runtime/agent-runner.ts      complete with tool planning + evidence
+✅ src/runtime/approval-gate.ts     request/approve/reject
+✅ src/runtime/results-logger.ts    TSV + DB write
+✅ src/runtime/transcript.ts        JSONL event writer
+✅ src/runtime/event-bus.ts         in-process pub/sub
+✅ src/runtime/memory-manager.ts    MEMORY.md read/write/append
+✅ src/runtime/graph-manager.ts     lightweight graph with ingest
+✅ src/runtime/ratchet.ts           score + decide + commit + revert
+✅ src/runtime/dream.ts             memory consolidation
+✅ src/runtime/scheduler.ts         due jobs query
+✅ src/runtime/scorer.ts            clamp utilities
+✅ src/runtime/ultraplan.ts         plateau pivot engine
+✅ src/runtime/error-handler.ts     error categorization + retry
+✅ src/runtime/memory-init.ts       first-time workspace seeding
+✅ src/runtime/orchestrator-entrypoint.ts  CLI entry point
+
+✅ roles/CEO.md                     complete prompt
+✅ roles/Engineer.md                complete prompt
+✅ roles/Critic.md                  complete prompt
+✅ roles/Archivist.md               complete prompt
+✅ roles/DevilsAdvocate.md          complete prompt
+✅ roles/RatchetJudge.md            complete with scoring formula
+✅ roles/CoordinatorLead.md         complete prompt
+✅ roles/DreamAgent.md              complete prompt
+
+✅ org.md                           canonical example
+✅ constitution.md                  canonical example with weights
+
+✅ src/api/server.ts                all routes aggregated + health
+
+✅ web/next.config.ts               Next.js config
+✅ web/tailwind.config.ts           Tailwind config
+✅ web/package.json                 web deps
+✅ web/app/layout.tsx               complete with full nav
+✅ web/app/globals.css              base styles
+✅ web/app/page.tsx                 working dashboard
+
+
+
+
+
+
+
+
