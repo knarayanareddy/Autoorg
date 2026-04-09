@@ -49205,3 +49205,1034 @@ text
 
 
 
+Engineering Spec (distilled from Autoorg.md)
+This is an implementation-oriented spec of AutoOrg as defined in the single design doc Autoorg.md: state machine + modules + data models + DB schema-by-phase + minimal acceptance tests. Everything below is grounded in what the doc explicitly specifies (including file paths, TypeScript signatures, schemas, and phase checklists). 
+1
+
+0) System contract: immutable vs mutable inputs/outputs
+0.1 The “three-file contract” (source-of-truth)
+AutoOrg’s core safety/discipline comes from a strict contract among three files:
+
+org.md — the only human-edited file; contains mission, seed material, constraints, stopping criteria, budgets, and model assignments. 
+1
+constitution.md — immutable scoring rubric + ratchet rule; agents that modify it are “terminated” per the constitution header. 
+1
+results.tsv — append-only experiment ledger written automatically each cycle (cycle/timestamp/scores/decision/cost/summary). 
+1
+0.2 Other “always-on” artifacts
+Git history is the ratchet’s persistence mechanism: COMMIT when improved, otherwise reset/revert. 
+1
+SQLite DB (autoorg.db) is the audit/observability spine (runs, cycles, agents, mailbox messages, scores, etc.). 
+1
+1) Runtime entrypoints & run modes (CLI + preflight)
+1.1 CLI entrypoint
+src/index.ts is the main entry point; it supports:
+
+--org <path> (alternate org file)
+--no-ui / --headless
+--mock / --phase0 (Phase 0 mock agents + mock scoring, no API calls) 
+1
+1.2 Provider preflight checks
+The entrypoint performs provider detection and warns if the Judge isn’t configured as desired. It checks env keys for Anthropic/OpenAI/Groq/Together and detects Ollama by hitting /api/tags. 
+1
+
+2) Core state machine (the orchestrator loop)
+2.1 Orchestrator is an async-generator “NEVER STOP” loop
+Phase 0 includes src/runtime/orchestrator.ts implemented as an async generator yielding structured OrchestratorEvents (for UI + logs). It explicitly enforces the “NEVER STOP” principle: errors do not crash the loop; it reverts state and continues. 
+1
+
+2.2 Stop conditions (hard gates)
+Each cycle checks OrgConfig stopping criteria:
+
+max_cycles
+plateau
+consecutive_rejects
+budget
+target_score 
+1
+2.3 Phase 0 canonical cycle phases
+The Phase 0 loop runs these phases (with cycleState.phase updates + phase_change events):
+
+assign — CEO assigns tasks (mocked in Phase 0)
+work — workers run in parallel (Engineer/Critic/DevilsAdvocate/Archivist)
+synthesize — CEO synthesizes and writes proposal + updates workspace/current_output.md
+judge — RatchetJudge scoring (mock scoring in Phase 0)
+ratchet — keep-or-revert via Git
+(optional) autoDream every dreamInterval
+bookkeeping: DB score_history insert, budget warnings, etc. 
+1
+3) Core types / wire formats (you implement against these)
+3.1 Parsed org configuration (OrgConfig)
+src/types/index.ts defines OrgConfig fields the orchestrator relies on:
+
+mission, seedMaterial, constraints
+activeRoles, modelAssignments
+maxCycles, plateauCycles, consecutiveRejects, maxApiSpendUsd, targetScore
+dreamInterval, maxWorkersParallel, cycleTimeoutMs
+contentHash (sha256 of org.md) 
+1
+3.2 Mailbox tasks and outputs
+AgentTask and AgentOutput are formalized:
+
+tasks: from/to role, cycleNumber, runId, instruction, contextRefs (pointers), metadata, timestamp
+outputs: content + optional structuredData + token/cost/duration accounting 
+1
+3.3 Ratchet scoring contract (RatchetScore)
+RatchetScore includes:
+
+four dimensions: groundedness/novelty/consistency/alignment
+composite weighted score
+decision (COMMIT|REVERT|DISQUALIFIED|TIMEOUT|ERROR)
+objections + blocker/major counts + optional disqualification reason 
+1
+4) Storage model
+4.1 Filesystem layout (canonical repo structure)
+The doc defines a target repo tree: roles, mailbox, memory tiers, knowledge graph, workspace, runtime, adapters, UIs, config, tests. 
+1
+
+Key subtrees (operational semantics):
+
+mailbox/ = filesystem IPC (inbox/ + outbox/). 
+1
+memory/ = tiered memory (MEMORY.md index under 150 lines; facts/; transcripts/). 
+1
+workspace/ = living artifact + per-cycle proposals/snapshots. 
+1
+knowledge-graph/ = entity/relationship JSON + graph.db. 
+1
+4.2 SQLite baseline schema (Phase 0)
+At minimum, Phase 0 schema includes:
+
+runs (run metadata + org hash + totals)
+cycles (score dimensions, decision, git hashes, proposal path, costs)
+agent_executions (per agent invocation per cycle)
+feature_flags, system_prompts
+knowledge graph tables (flat representation) and score history views like v_cycle_summary, v_run_progress 
+1
+4.3 results.tsv schema (Phase 0)
+results.tsv header is explicitly defined: cycle, timestamp, score, groundedness, novelty, consistency, alignment, decision, cost_usd, summary and each cycle appends one row; summary sanitized to remove tabs/newlines. 
+1
+
+5) Module-level spec (what each component must do)
+5.1 src/config/org-parser.ts
+Responsibilities:
+
+Extract required markdown sections (## MISSION, ## DOMAIN SEED MATERIAL, etc.) and enforce presence.
+Parse model assignment strings of form provider/model and inject provider base URLs + API keys from env.
+Produce an OrgConfig with defaults (maxCycles=50, plateauCycles=10, etc.). 
+1
+5.2 Feature flags (feature_flags table + loader)
+Phase 0 migration seeds a set of shipped + experimental flags (e.g., autoDream, graphRag, parallelWorkers, ultraplan, webDashboard, etc.). Later phases seed additional flags (Phase 2, Phase 3, Phase 4.1). 
+1
+
+5.3 src/runtime/mailman.ts (filesystem mailbox IPC)
+There are two levels of mailbox spec in the doc:
+
+(A) Minimal flat-file mailbox (concept)
+A simple deliver/read/reply pattern writing JSON files by role. 
+1
+
+(B) “Envelope” mailbox with DB logging (implementation)
+Defines MailboxMessage envelope:
+
+{id, from, to, type: task|reply|objection|directive|memory_update, payload, createdAt, readAt?} And exposes:
+deliverTask(task)
+readTask(role, cycleNumber)
+postReply(output)
+readReplies(roles, cycleNumber)
+cleanCycle(cycleNumber)
+logs to DB table mailbox_messages as best-effort. 
+1
+5.4 src/runtime/ratchet.ts (keep-or-revert engine)
+Phase 0 RatchetEngine implements:
+
+score(cycleNumber, previousBest, proposalPath?):
+in Phase 0 mock mode returns deterministic “learning-curve-like” scores and decisions.
+non-mock is “not implemented yet” until Phase 1 replaces it with LLM judging. 
+1
+keepOrRevert(score, previousBest, cycleState):
+if improved: gitCommit(...), update DB cycles row with git_commit_hash, append results.tsv
+else: gitReset(), update DB as REVERT, append results.tsv 
+1
+5.5 Prompts / roles (behavioral contracts)
+CEO assignment output is structured JSON
+CEO’s assignment pass must return a JSON object with:
+
+cycle_assessment
+assignments for Engineer/Critic/DevilsAdvocate/Archivist with task + focus/avoid/etc.
+synthesis_directive for later CEO synthesis. 
+1
+CEO synthesis is a rewrite gate
+CEO synthesis prompt enforces rules: resolve BLOCKERs, address MAJORs, incorporate Devil’s Advocate point, keep output grounded, rewrite the “living document.” 
+1
+
+Archivist memory governance
+Archivist is the only writer to tier-2 memory; only commits validated decisions on COMMIT and failed experiments on REVERT; MEMORY.md is pointer-only and capped at 150 lines. 
+1
+
+RatchetJudge must use constitution and return JSON score
+The role description makes Judge final and requires scoring by reading constitution + proposal + knowledge graph. The constitution also contains automatic disqualification rules. 
+1
+
+5.6 src/runtime/orchestrator.ts (authoritative behavior)
+Key invariants from the Phase 0 implementation:
+
+stopping criteria checked at top of loop
+phase events emitted for UI/observability
+parallel workers executed with Promise.all
+proposal content is written to per-cycle proposal files and current output updated
+errors cause revert + counters update, but do not crash the run 
+1
+5.7 Structured output parsing (utils/structured-output.ts)
+The doc provides a robust JSON extraction approach:
+
+try full output
+try ```json blocks
+try ``` blocks
+try substring between first {…} and first […] variants This exists to make Zod-validated structured agent outputs resilient. 
+1
+6) Memory subsystem spec (Phase 3)
+Phase 3 formalizes memory into a DB-backed “fact store” + transcript indexing + hybrid search + Dream engine.
+
+6.1 Phase 3 schema additions (core tables)
+Phase 3 migration adds tables:
+
+facts (statement + category + provenance + confidence + lifecycle + embedding)
+dream_runs (what was scanned/changed + report + cost)
+embeddings_cache
+transcript_index + FTS5 transcript_fts (BM25)
+contradictions
+memory_snapshots_v2 And views like v_fact_summary, v_dream_summary, v_memory_health. 
+1
+6.2 Hybrid search contract (0.7 semantic + 0.3 BM25)
+The doc makes hybrid search an explicit invariant (and cites the 0.7/0.3 ratio as “exact ratio used” in the referenced inspiration). 
+1
+
+6.3 DreamEngine (autoDream) is a first-class pipeline
+DreamEngine.dream(...) does:
+
+record dream run start into DB
+index recent transcripts
+search for patterns
+load current memory files + open objections
+call DreamAgent model
+parse output (fallback if parse fails) … and writes updated memory index, facts, contradiction resolution, etc. 
+1
+7) Knowledge graph subsystem spec (Phase 4 + 4.1)
+7.1 GraphBuilder pipeline (Phase 4)
+GraphBuilder is defined as:
+
+chunk seed material with overlap
+LLM extraction: entities + relationships
+merge/dedupe
+persist to graph DB (Neo4j driver or Kuzu fallback) 
+1
+7.2 Extraction prompts are Zod-specified
+Relationships extraction schema includes relationship enum with many canonical types and requires sourceText quote + confidence. 
+1
+
+7.3 Phase 4.1: deterministic groundedness + snapshots
+Phase 4.1 migration explicitly adds:
+
+graph_snapshots, graph_snapshot_nodes, graph_snapshot_edges
+groundedness_reports with computed coverage ratios
+feature flags: deterministicGroundedness, graphSnapshots, graphDiffs, graphExport, graphSearchUi 
+1
+8) Objections + pipeline tracking (Phase 2)
+Phase 2 turns Critic feedback into persistent, queryable workflow state.
+
+8.1 Phase 2 schema additions
+Adds:
+
+objections (severity BLOCKER/MAJOR/MINOR + lifecycle fields)
+pipeline_steps (records each step in sequential pipeline)
+cycle_context (stores each agent’s full prompt/context/response for interviews)
+interview_sessions
+websocket_events ring buffer with cleanup trigger And creates views v_objection_summary, v_pipeline_summary. 
+1
+8.2 Objection tracker UI component exists (web)
+The Next.js component displays open vs resolved objections and renders severity-coded items. 
+1
+
+9) Operational hardening & approvals (Phase 5.1)
+Phase 5.1 is explicitly defined as the “run unattended for 72+ hours safely” layer. 
+1
+
+9.1 Workspace concurrency locks
+WorkspaceLock implements TTL leases per lock_key and prevents concurrent mutation of the same repo/workspace. 
+1
+
+9.2 Crash recovery journal
+RecoveryJournal stores checkpoints and recovery events, and recoverInterruptedRun(runId) reclaims expired leases and sweeps locks, logging incidents. 
+1
+
+9.3 Strict approval blocking
+ApprovalEnforcer.stageCommitCandidate(...) stages candidate artifacts/diffs into artifacts/approvals/pending, creates an approval request, records pending_actions, and enforces a “hard block” until approval exists. 
+1
+
+9.4 Patch summarization from real diffs
+Phase 5.1 includes a diff summarizer with Zod schema and an integration that drafts PR text based on actual git diff. 
+1
+
+9.5 Phase 5.1 test suite (explicit)
+The doc lists concrete tests:
+
+approval-enforcer.test.ts
+workspace-lock.test.ts
+recovery-journal.test.ts
+lease-manager.test.ts
+budget-manager.test.ts
+issue-translator.test.ts
+diff-summarizer.test.ts 
+1
+10) Tool-using org + evidence packs (Phase 6)
+10.1 Tool registry and evidence packs are first-class artifacts
+Phase 6 adds:
+
+src/tools/registry.ts, tool-runner.ts, tool-policy.ts
+evidence packs (evidence-pack.ts) + replay (replay.ts) + sandbox execution
+prompts: tool planner, evidence synthesizer, verification auditor, tool-aware critic
+API routes for tools/traces/evidence/replay 
+1
+10.2 AgentRunner tool-aware execution path (reference implementation)
+AgentRunner.runWithTools(...):
+
+lists allowed tools via ToolPolicy
+plans tool calls via a structured ToolPlan schema
+executes tool calls and collects execution IDs
+builds evidence packs from executions
+synthesizes final response using evidence pack text 
+1
+11) Policy + provenance + signing + redaction (Phase 6.1)
+Phase 6.1 is explicitly the hardening layer making actions: policy-governed, reversible, attributable, signed, redactable, auditable. 
+1
+
+Minimal UI additions include /security, /provenance, /ledger pages and nav links. 
+1
+
+12) Benchmark lab & regressions (Phase 7)
+12.1 Gold evaluator exists (implementation detail)
+src/evals/gold-evaluator.ts combines:
+
+measured acceptance bands (passBand(...) thresholds)
+an LLM structured comparison against gold output …and returns final acceptance_pass gated by both. 
+1
+12.2 Explicit Phase 7 runbook
+The doc includes curl commands for:
+
+running suites
+leaderboards
+regressions
+replay
+constitution A/B
+template bakeoff
+judge calibration 
+1
+13) Portfolio orchestration (Phase 8)
+Phase 8 introduces a portfolio runner + variant manifests + allocator + judge council + tournaments + quarantine + best-of-N synthesis. 
+1
+
+A concrete reference implementation exists for best-of-N synthesis writing signed/immutable artifacts and recording portfolio_syntheses. 
+1
+
+14) Platform/productization (Phase 9)
+Phase 9 includes deployment modes, SDK scopes, and a public TypeScript SDK client. 
+1
+
+15) Learning organization (Phase 10)
+Phase 10 defines a bounded self-improvement loop with:
+
+pattern mining from benchmark + regression + policy + routing tables
+converting patterns into bounded improvement proposals
+simulation gate + drift detection + approval gating
+optional env knobs for thresholds 
+1
+16) DB tables by phase (quick delta index)
+Phase	Migration / schema adds (high-signal)
+0	runs, cycles, agent_executions, feature_flags, system_prompts, base graph tables, views (v_cycle_summary, v_run_progress) 
+1
+2	objections, pipeline_steps, cycle_context, interview_sessions, websocket_events + views v_objection_summary, v_pipeline_summary 
+1
+3	facts, dream_runs, embeddings_cache, transcript_index + FTS5, contradictions, memory_snapshots_v2 + views 
+1
+4.1	graph_snapshots (+ nodes/edges), groundedness_reports, new flags 
+1
+5.1	(hardening tables implied by code: locks, checkpoints, pending actions, etc.; plus tests + API routes snippets) 
+1
+6+	tools/traces/evidence + policy/provenance (declared as schema-phase6 / 6.1) 
+1
+7+	benchmark runs/attempts/metrics, regressions, leaderboards, calibration (declared via runbook + components) 
+1
+8+	portfolio runs/rounds/syntheses/quarantine (declared + sample insert) 
+1
+9+	platform/hosted run tables (implied by SDK + API) 
+1
+10	learning tables: pattern reports, improvement proposals, simulations, versions/routing lineage (shown via queries/inserts) 
+1
+17) Minimal acceptance tests (what “done” means)
+Phase 0 acceptance (explicit checklist)
+Must be true:
+
+bun run init creates directories + default files
+bun run db:migrate applies schema + seeds flags
+bun start --mock runs N cycles and stops correctly
+results.tsv populated
+git log shows commit entries
+autoorg.db has runs/cycles/score_history populated
+memory/MEMORY.md updated
+workspace/proposals/ has per-cycle files
+terminal UI shows scores/sparkline
+bun test passes 
+1
+Phase 5.1 acceptance (explicit)
+Must be true:
+
+cannot commit without approval
+resume after crash/restart
+reclaim orphaned tasks
+prevent two daemons mutating same repo
+scheduled jobs execute and are recorded
+issue → task translation works
+PR summaries are derived from actual diff
+enforce team budgets
+subteam memory partitions
+ULTRAPLAN checkpointing
+incident logs exist 
+1
+18) Notable doc-level inconsistencies (you should treat as design decisions to resolve)
+Two examples that are explicitly present in Autoorg.md:
+
+“Phase 5” meaning shifts: the Phase list in Part 14 says “Phase 5 = UI + Polish,” but the roadmap later emphasizes Phase 5 → hierarchical/daemon/approvals/integrations and Phase 5.1 → hardening. Treat Part 17 (Phase 5.1 hardening) as the authoritative operational definition. 
+1
+MEMORY.md hard cap is consistently 150 lines in prompt rules and templates; implementers should obey 150 as the invariant even if other narrative sections mention different caps. 
+1
+If you want a next artifact that’s directly “buildable,” I can convert this into:
+
+a single sequence diagram (Mermaid) for the orchestrator phases + approval/tool paths,
+plus a migration plan that enumerates every table + index + trigger in order (Phase 0 → 10), all still strictly grounded in the doc.
+
+
+
+
+
+
+
+1) Sequence diagram(s) — runnable mental model
+1.1 Core orchestrator cycle (Phase 0 → Phase 4)
+mermaid
+
+sequenceDiagram
+  autonumber
+  actor Human
+  participant Org as org.md
+  participant Const as constitution.md (immutable)
+  participant Orchestrator as runtime/orchestrator.ts
+  participant Graph as GraphBuilder / GraphRAG
+  participant CEO as CEO agent
+  participant Eng as Engineer agent
+  participant Crit as Critic agent
+  participant Adv as Devil's Advocate agent
+  participant Arc as Archivist agent
+  participant Judge as RatchetJudge agent
+  participant Ratchet as RatchetEngine (git keep/revert)
+  participant Git as git repo
+  participant TSV as results.tsv
+  participant DB as autoorg.db
+
+  Human->>Org: Edit mission/seed/constraints/stops/models
+  Orchestrator->>Org: readOrgMd()
+  Orchestrator->>Const: readConstitution() (read-only)
+  Orchestrator->>Graph: buildFromSeedMaterial(seed)
+
+  loop cycle 1..N (until stop criteria)
+    Orchestrator->>DB: INSERT cycles row (cycle start)
+    Orchestrator->>CEO: Assignment pass (tasks per role)
+    Orchestrator->>Eng: Run task
+    Orchestrator->>Crit: Review Engineer output
+    Orchestrator->>Adv: Contrarian analysis
+    Orchestrator->>Arc: Memory updates (facts/index pointers)
+
+    Orchestrator->>CEO: Synthesis pass (rewrite output)
+    Orchestrator->>Judge: Score proposal vs constitution+context
+    Judge-->>Orchestrator: {G,N,C,M,composite,decision,...}
+
+    alt decision == COMMIT
+      Orchestrator->>Ratchet: keepOrRevert(COMMIT)
+      Ratchet->>Git: git add/commit
+      Orchestrator->>TSV: append row
+      Orchestrator->>DB: UPDATE cycles + INSERT score_history
+    else decision == REVERT/DISQUALIFIED
+      Orchestrator->>Ratchet: keepOrRevert(REVERT)
+      Ratchet->>Git: git reset/checkout baseline
+      Orchestrator->>TSV: append row
+      Orchestrator->>DB: UPDATE cycles + INSERT score_history
+    end
+  end
+This is taken directly from the doc’s “master loop” (async-generator while(true) style), its “three-file contract” (org.md / immutable constitution.md / results.tsv), and the ratchet “commit if improved else reset” rule. 
+1
+
+1.2 Approval + tools + policy (Phase 5 → Phase 6.1)
+mermaid
+
+sequenceDiagram
+  autonumber
+  participant Orchestrator
+  participant Tools as ToolRegistry/Runner
+  participant Evidence as Evidence Packs
+  participant Verify as VerificationAuditor
+  participant Policy as PolicyEngine + RiskEngine
+  participant Ledger as action_ledger
+  participant Approvals as approvals + pending_actions
+  participant Enforcer as ApprovalEnforcer
+  participant Git as git repo
+
+  Orchestrator->>Policy: classify(action) + riskTier()
+  Policy-->>Orchestrator: {allowed?, requireApproval?, requireProvenance?}
+
+  alt tool use needed (Phase 6)
+    Orchestrator->>Tools: execute tool calls (policy/allowlist/budget)
+    Tools-->>Orchestrator: tool_executions + tool_artifacts
+    Orchestrator->>Evidence: build evidence_pack (items + summary)
+    Orchestrator->>Verify: compute supported vs unsupported claims
+    Verify-->>Orchestrator: verification_reports (clamp input)
+  end
+
+  Orchestrator->>Ledger: INSERT action_ledger(proposed/applied...) + provenance links
+
+  alt ratchet says COMMIT but strictApprovalBlocking enabled (Phase 5.1)
+    Orchestrator->>Approvals: create approval request (approval_type=commit)
+    Orchestrator->>Approvals: INSERT pending_actions(staged artifacts + diff)
+    Note over Orchestrator: HARD BLOCK (candidate removed from live tree)
+    Enforcer->>Approvals: poll approved actions
+    Enforcer->>Git: materialize commit from staged artifact
+    Enforcer->>Approvals: UPDATE pending_actions(materialized)
+  else no approval needed
+    Orchestrator->>Git: commit immediately
+  end
+This matches the Phase 5/5.1 “approval gates + strict blocking + materialization,” Phase 6 “tool registry + evidence packs + verification reports,” and Phase 6.1 “policy/risk + reversible ledger + provenance + signing/redaction” schema and code described in the doc. 
+1
+
+2) Migration plan (Phase 0 → Phase 10), enumerating tables + indexes + triggers in order
+2.1 Execution order (as the doc operationalizes it)
+The doc’s CI example runs migrations in this order (base → Phase 5 → 5.1 → 6 → 6.1 → 7). 
+1
+
+A “full build” migration order consistent with the phases present in the doc is:
+
+src/db/migrate.ts (Phase 0 base schema + seed flags) 
+1
+src/db/migrate-phase2.ts 
+1
+src/db/migrate-phase3.ts 
+1
+src/db/migrate-phase4.ts 
+1
+src/db/migrate-phase4_1.ts 
+1
+src/db/migrate-phase5.ts 
+1
+src/db/migrate-phase5_1.ts (present, but schema shown is partial—see §2.7) 
+1
+src/db/migrate-phase6.ts 
+1
+src/db/migrate-phase6_1.ts 
+1
+src/db/migrate-phase7.ts 
+1
+Phase 8–10: no complete schema files are included in Autoorg.md; only runtime SQL usage appears for some portfolio tables (Phase 8) and prompt artifacts (Phase 10). 
+1
+The doc also explicitly instructs that migrations must be idempotent using CREATE TABLE IF NOT EXISTS and INSERT OR IGNORE. 
+1
+
+2.2 Phase 0 — schema.sql (base spine)
+Tables
+
+runs
+cycles
+agent_executions
+mailbox_messages
+memory_snapshots
+score_history
+knowledge_graph_nodes
+knowledge_graph_edges
+feature_flags
+system_prompts 
+1
+Indexes
+
+idx_cycles_run_id, idx_cycles_score
+idx_agent_exec_cycle, idx_agent_exec_role
+idx_mailbox_cycle, idx_mailbox_to_agent
+idx_kgn_run, idx_kgn_type
+idx_kge_from, idx_kge_to 
+1
+Triggers
+
+none in Phase 0 schema (views only) 
+1
+Views
+
+v_cycle_summary
+v_run_progress 
+1
+Seed data
+
+Inserts a default set of rows into feature_flags via migrate.ts 
+1
+2.3 Phase 2 — schema-phase2.sql (persistent objections + pipeline + interviews + event ring buffer)
+Tables
+
+objections
+pipeline_steps
+cycle_context
+interview_sessions
+websocket_events 
+1
+Indexes
+
+idx_obj_run, idx_obj_open, idx_obj_severity
+idx_pipeline_cycle
+idx_ctx_cycle, idx_ctx_role
+idx_ws_run 
+1
+Triggers
+
+trg_ws_cleanup (AFTER INSERT on websocket_events, keeps last 500/run) 
+1
+Views
+
+v_objection_summary
+v_pipeline_summary 
+1
+Seed flags
+
+Phase 2 seeds flags like persistentObjections, sequentialPipeline, cycleContextStorage, agentInterviews, webDashboard, etc. 
+1
+2.4 Phase 3 — schema-phase3.sql (three-tier memory + fact store + dream engine + FTS5)
+Tables
+
+facts
+dream_runs
+embeddings_cache
+transcript_index
+transcript_fts (FTS5 virtual table)
+contradictions
+memory_snapshots_v2 
+1
+Indexes
+
+idx_facts_run, idx_facts_category, idx_facts_active, idx_facts_confidence
+idx_dreams_run
+idx_tidx_run, idx_tidx_cycle, idx_tidx_role
+idx_contra_run 
+1
+Triggers
+
+trg_tidx_insert (keeps FTS in sync on insert)
+trg_tidx_delete (keeps FTS in sync on delete) 
+1
+Views
+
+v_fact_summary
+v_dream_summary
+v_memory_health 
+1
+Seed flags
+
+Phase 3 seeds flags like fullAutoDream, semanticSearch, localEmbeddings, hybridSearch, factStore, transcriptIndex, etc. 
+1
+2.5 Phase 4 — schema-phase4.sql (knowledge graph tables + grounding-related analytics)
+Tables
+
+kg_nodes
+kg_edges
+kg_claims
+kg_extractions
+kg_entity_aliases 
+1
+Indexes
+
+On kg_nodes: idx_kgn_run, idx_kgn_type, idx_kgn_label, idx_kgn_canonical
+On kg_edges: idx_kge_run, idx_kge_from, idx_kge_to, idx_kge_rel
+On kg_claims: idx_kgc_run, idx_kgc_score
+On kg_entity_aliases: idx_kgea_canonical, idx_kgea_alias 
+1
+Views
+
+v_kg_summary
+v_kg_node_degrees
+v_kg_orphan_nodes
+v_grounding_quality 
+1
+Seed flags
+
+Phase 4 seeds flags like knowledgeGraph, graphRAG, entityExtraction, relationshipExtraction, neo4jBackend, kuzuBackend, etc. 
+1
+2.6 Phase 4.1 — schema-phase4_1.sql (deterministic groundedness + snapshots)
+Tables
+
+graph_snapshots
+graph_snapshot_nodes
+graph_snapshot_edges
+groundedness_reports 
+1
+Indexes
+
+idx_graph_snapshots_run
+idx_groundedness_run_cycle 
+1
+Triggers
+
+none shown for 4.1 
+1
+Seed flags
+
+inserts deterministicGroundedness, graphSnapshots, graphDiffs, graphExport, graphSearchUi 
+1
+Important note (doc inconsistency)
+
+The doc’s tests and API code also rely on graph_node_cache / graph_edge_cache tables, but those table creates are not shown as part of schema-phase4_1.sql; they appear in test setup DDL and in runtime SQL usage. 
+1
+Minimum DDL (derived from test setup)
+
+SQL
+
+CREATE TABLE IF NOT EXISTS graph_node_cache (
+  node_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  label TEXT NOT NULL,
+  node_type TEXT NOT NULL,
+  properties_json TEXT NOT NULL DEFAULT '{}',
+  embedding BLOB,
+  updated_at DATETIME DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS graph_edge_cache (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  from_node_id TEXT NOT NULL,
+  to_node_id TEXT NOT NULL,
+  rel_type TEXT NOT NULL,
+  weight REAL DEFAULT 1.0,
+  properties_json TEXT NOT NULL DEFAULT '{}',
+  updated_at DATETIME DEFAULT (datetime('now'))
+);
+(Those shapes come verbatim from the doc’s test DDL blocks.) 
+1
+
+2.7 Phase 5 — schema-phase5.sql (hierarchy + daemon + approvals + GitHub integration)
+Tables
+
+teams
+team_members
+delegated_tasks
+ultraplan_sessions
+approvals
+scheduled_jobs
+daemon_state (+ seeds a default row)
+github_events
+github_sync_state
+pr_drafts 
+1
+Indexes
+
+idx_teams_run
+idx_team_members_team
+idx_delegated_tasks_run_cycle
+idx_ultraplan_run
+idx_approvals_run_status
+idx_jobs_next_run
+idx_github_events_processed 
+1
+Triggers
+
+none shown for Phase 5 
+1
+Seed flags
+
+inserts flags like coordinatorHierarchy, subteams, daemonMode, scheduler, approvalGates, etc. 
+1
+2.8 Phase 5.1 — schema-phase5_1.sql (operational hardening)
+(A) DDL that the doc explicitly shows
+Tables shown
+
+pending_actions
+run_checkpoints
+recovery_events
+workspace_locks (definition starts but is truncated in the doc excerpt) 
+1
+Indexes shown
+
+idx_pending_actions_run_status
+idx_run_checkpoints_run_stage
+idx_recovery_events_run 
+1
+(B) Tables required by Phase 5.1 runtime code snippets, but no CREATE TABLE appears in Autoorg.md
+The doc’s Phase 5.1 runtime code uses/inserts/selects these tables:
+
+worker_leases (LeaseManager) 
+1
+team_budgets and budget_events (BudgetManager) 
+1
+memory_partitions (TeamMemoryPartitions) 
+1
+incident_log (IncidentLog) 
+1
+job_executions (JobExecutor) 
+1
+ultraplan_checkpoints and ultraplan_sla_events (UltraPlanSla) 
+1
+Minimum DDL (strictly derived from the columns used in the doc’s SQL statements)
+
+SQL
+
+CREATE TABLE IF NOT EXISTS worker_leases (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  cycle_number INTEGER NOT NULL,
+  task_id TEXT NOT NULL,
+  worker_role TEXT NOT NULL,
+  worker_instance TEXT NOT NULL,
+  team_id TEXT,
+  status TEXT NOT NULL,
+  lease_expires_at DATETIME NOT NULL,
+  heartbeat_at DATETIME,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  result_json TEXT,
+  updated_at DATETIME DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS team_budgets (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  team_id TEXT NOT NULL,
+  budget_type TEXT NOT NULL,
+  window_scope TEXT NOT NULL,
+  limit_value REAL NOT NULL,
+  consumed_value REAL NOT NULL DEFAULT 0,
+  hard_limit INTEGER NOT NULL DEFAULT 1,
+  updated_at DATETIME DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS budget_events (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  team_id TEXT NOT NULL,
+  role TEXT,
+  cycle_number INTEGER,
+  budget_type TEXT NOT NULL,
+  delta_value REAL NOT NULL,
+  reason TEXT NOT NULL,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS memory_partitions (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  team_id TEXT NOT NULL,
+  partition_name TEXT NOT NULL,
+  index_path TEXT NOT NULL,
+  facts_dir TEXT NOT NULL,
+  read_scope_json TEXT NOT NULL DEFAULT '[]',
+  write_scope_json TEXT NOT NULL DEFAULT '[]'
+);
+
+CREATE TABLE IF NOT EXISTS incident_log (
+  id TEXT PRIMARY KEY,
+  run_id TEXT,
+  severity TEXT NOT NULL,
+  component TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  details_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS job_executions (
+  id TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  claimed_by TEXT NOT NULL,
+  lease_expires_at DATETIME NOT NULL,
+  started_at DATETIME NOT NULL,
+  finished_at DATETIME,
+  output_json TEXT,
+  error_text TEXT
+);
+
+CREATE TABLE IF NOT EXISTS ultraplan_checkpoints (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  cycle_number INTEGER NOT NULL,
+  checkpoint_number INTEGER NOT NULL,
+  summary TEXT NOT NULL,
+  payload_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS ultraplan_sla_events (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  details_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME DEFAULT (datetime('now'))
+);
+These definitions intentionally contain only columns that the doc’s SQL statements demonstrate as required. 
+1
+
+2.9 Phase 6 — schema-phase6.sql (tools + traces + evidence + replay)
+Tables
+
+tool_definitions
+tool_policies
+tool_executions
+tool_artifacts
+evidence_packs
+evidence_items
+verification_reports
+tool_replays 
+1
+Indexes
+
+idx_tool_policies_run_role
+idx_tool_executions_run_cycle
+idx_tool_artifacts_execution
+idx_evidence_packs_run_cycle
+idx_evidence_items_pack
+idx_verification_reports_run_cycle 
+1
+Triggers
+
+none shown for Phase 6 
+1
+Seed flags
+
+inserts toolRegistry, toolUse, toolPolicies, toolTraces, evidencePacks, toolAwareJudge, etc. 
+1
+2.10 Phase 6.1 — schema-phase6_1.sql (policy + ledger + provenance + signing + redaction + security)
+Tables (as shown)
+
+action_policies (table definition appears earlier than the snippet, but indexes reference it)
+action_ledger
+run_manifests
+artifact_manifests
+claim_registry
+claim_citations
+provenance_reports
+redaction_events
+security_findings
+policy_reports
+security_exports 
+1
+Indexes
+
+idx_action_policies_run_role
+idx_action_ledger_run_cycle
+idx_run_manifests_run
+idx_artifact_manifests_run
+idx_claim_registry_run_cycle
+idx_claim_citations_claim
+idx_provenance_reports_run_cycle
+idx_redaction_events_run
+idx_security_findings_run
+idx_policy_reports_run_cycle
+idx_security_exports_run 
+1
+Triggers
+
+none shown for Phase 6.1 
+1
+Seed flags
+
+inserts policyEngine, actionLedger, provenanceChain, artifactSigning, redactionFilters, riskTieredApprovals, etc. 
+1
+2.11 Phase 7 — schema-phase7.sql (benchmarks + regressions + leaderboards + replay + calibration)
+Tables (as shown)
+
+benchmark_suites
+benchmark_cases
+benchmark_runs
+benchmark_attempts
+benchmark_metrics
+leaderboards
+constitution_experiments
+regression_alarms
+replay_sessions
+judge_calibration_runs
+template_bakeoffs 
+1
+Indexes (as shown)
+
+idx_benchmark_cases_suite
+idx_benchmark_runs_suite
+idx_benchmark_attempts_run
+idx_benchmark_metrics_attempt
+idx_leaderboards_suite_type
+idx_regression_alarms_run 
+1
+Triggers
+
+none shown for Phase 7 
+1
+Seed flags
+
+inserts benchmarkLab, goldEvaluator, leaderboards, constitutionAB, regressionAlarms, offlineReplayLab, judgeCalibration, templateBakeoffs, benchmarkCI 
+1
+2.12 Phase 8–10 — schemas not included; “minimum viable” tables you can infer from runtime SQL
+Phase 8 (portfolio orchestration): tables referenced by code snippets
+The doc includes runtime code that writes to/updates:
+
+portfolio_syntheses 
+1
+failure_containment_events 
+1
+portfolio_variants (updated for quarantine/elimination) 
+1
+Minimum DDL derived from shown SQL
+
+SQL
+
+CREATE TABLE IF NOT EXISTS portfolio_syntheses (
+  id TEXT PRIMARY KEY,
+  portfolio_run_id TEXT NOT NULL,
+  portfolio_round_id TEXT,
+  synthesis_type TEXT NOT NULL,
+  winning_variant_id TEXT,
+  source_variant_ids_json TEXT NOT NULL DEFAULT '[]',
+  artifact_path TEXT NOT NULL,
+  summary_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS failure_containment_events (
+  id TEXT PRIMARY KEY,
+  portfolio_run_id TEXT NOT NULL,
+  variant_id TEXT,
+  severity TEXT NOT NULL,
+  category TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  details_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS portfolio_variants (
+  id TEXT PRIMARY KEY,
+  status TEXT NOT NULL,
+  updated_at DATETIME DEFAULT (datetime('now'))
+);
+Again: this is the minimal shape implied by the exact INSERT/UPDATE statements shown. 
+1
+
+Phase 9–10
+Autoorg.md describes platformization (Phase 9) and self-improvement (Phase 10) largely at the architecture/prompt level in this excerpt, but does not provide schema-phase9.sql / schema-phase10.sql blocks to enumerate tables/indexes/triggers the way Phases 0–7 do. 
+1
+
+3) “Completeness” checklist (what you now have)
+Mermaid diagram of: core loop + ratchet + git + results.tsv + DB spine. 
+1
+Mermaid diagram of: tools + evidence + verification + policy/ledger + strict approval materialization. 
+1
+Migration plan enumerating tables/indexes/triggers for Phase 0, 2, 3, 4, 4.1, 5, 6, 6.1, 7 (and clearly marking Phase 5.1 + Phase 8 where the doc’s DDL is incomplete but SQL usage exists). 
+
+
+
+
