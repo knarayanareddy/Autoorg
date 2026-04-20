@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BUN_ENV: test
+  AUTOORG_DB_PATH: /tmp/autoorg-ci-${{ github.run_id }}.db
+  AUTOORG_SIGNING_SECRET: ci-test-signing-secret
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-autoorg
+      - run: bun run scripts/ci/lint.ts
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-autoorg
+      - run: bun run scripts/ci/typecheck.ts --project tsconfig.json
+      - run: bun run scripts/ci/typecheck.ts --project web/tsconfig.json
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-autoorg
+      - uses: ./.github/actions/run-migrations
+      - run: bun run scripts/ci/security-scan.ts
+
+  benchmarks:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-autoorg
+      - uses: ./.github/actions/run-migrations
+      - uses: ./.github/actions/benchmark-gate
+        with:
+          suite: core
+
+  tests:
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-autoorg
+      - uses: ./.github/actions/run-migrations
+      - run: bun run scripts/ci/test-unit.ts

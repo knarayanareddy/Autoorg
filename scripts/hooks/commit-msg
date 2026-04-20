@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+MSG=$(cat "$1")
+
+PATTERN="^(feat|fix|chore|docs|test|refactor|perf|ci|build|style|revert)(\(.+\))?: .{5,}"
+
+if ! echo "$MSG" | grep -qE "$PATTERN"; then
+  echo "❌ Commit message doesn't match convention:"
+  echo "   type(scope): message"
+  echo "   e.g. feat(api): add health check"
+  exit 1
+fi
+
+echo "✅ Commit message ok"

@@ -1,0 +1,40 @@
+name: Setup AutoOrg
+description: Install Bun, deps, and optionally build the web app.
+
+inputs:
+  bun-version:
+    description: Bun version to install
+    required: false
+    default: latest
+  install-playwright:
+    description: Install Playwright for E2E
+    required: false
+    default: 'false'
+  build-web:
+    description: Build Next.js dashboard
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: ${{ inputs.bun-version }}
+
+    - name: Install dependencies
+      shell: bash
+      run: bun install --frozen-lockfile
+
+    - name: Install Playwright browsers
+      if: inputs.install-playwright == 'true'
+      shell: bash
+      run: bunx playwright install --with-deps chromium
+
+    - name: Build web dashboard
+      if: inputs.build-web == 'true'
+      shell: bash
+      run: |
+        cd web
+        bun run build

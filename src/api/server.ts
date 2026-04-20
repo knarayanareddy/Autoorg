@@ -40,6 +40,7 @@ import { handlePortfolioRoutes } from './portfolio-routes.js';
 import { handlePivotRoutes } from './pivot-routes.js';
 import { handleSwarmRoutes } from './swarm-routes.js';
 import { handlePlatformRoutes } from './platform-routes.js';
+import { handleLearningRoutes } from './learning-routes.js';
 
 dotenvLoad();
 
@@ -81,13 +82,30 @@ async function handleRequest(req: Request): Promise<Response> {
     const platformResponse = await handlePlatformRoutes(url, req);
     if (platformResponse) return platformResponse;
 
-    // GET /api/health
-    if (url.pathname === '/api/health') {
+    // Phase 12: Learning routes
+    const learningResponse = await handleLearningRoutes(url, req);
+    if (learningResponse) return learningResponse;
+
+    // GET /api/health (Enterprise-tier health check)
+    if (url.pathname === '/api/health' || url.pathname === '/health') {
+      const db = getDb();
+      let dbOk = false;
+      try {
+        db.prepare('SELECT 1').get();
+        dbOk = true;
+      } catch (err) {
+        console.error(chalk.red(`[Health] DB Error: ${err}`));
+      }
+      db.close();
+
+      const status = dbOk ? 200 : 503;
       return json({
-        status:  'ok',
+        ok:      dbOk,
+        db:      dbOk ? 'ok' : 'error',
         clients: eventBus.clientCount,
-        time:    new Date().toISOString(),
-      });
+        version: process.env.AUTOORG_VERSION ?? '0.1.0-dev',
+        ts:      new Date().toISOString(),
+      }, { status });
     }
 
     // GET /api/flags

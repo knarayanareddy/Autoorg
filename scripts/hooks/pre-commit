@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -e
+
+echo "🔍 Running pre-commit checks..."
+
+# Typecheck
+/Users/macbookprom1pro/.bun/bin/bun run scripts/ci/typecheck.ts --project tsconfig.json
+
+# Check for secrets in staged files
+if git diff --cached --name-only | xargs grep -lE "(sk-[A-Za-z0-9_\-]{20,}|sk-ant-|gh[pousr]_)" 2>/dev/null; then
+  echo "❌ Potential secret in staged files. Aborting."
+  exit 1
+fi
+
+echo "✅ Pre-commit checks passed"

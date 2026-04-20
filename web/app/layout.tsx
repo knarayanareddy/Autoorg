@@ -23,6 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <a href="/swarm"        className="text-purple-400 font-bold hover:text-purple-300 transition-colors">Swarm</a>
             <a href="/agents"       className="text-orange-400 font-bold hover:text-orange-300 transition-colors">Agents</a>
             <a href="/workspaces"   className="text-orange-400 font-bold hover:text-orange-300 transition-colors">Workspaces</a>
+            <a href="/learning"     className="text-emerald-400 font-bold hover:text-emerald-300 transition-colors">Learning</a>
           </nav>
         </header>
         <main className="p-6">{children}</main>

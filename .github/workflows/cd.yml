@@ -1,0 +1,38 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy-staging:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-autoorg
+        with:
+          build-web: 'true'
+      
+      - name: Deploy to Staging
+        run: bun run scripts/deploy/deploy-single-node.ts
+        env:
+          SSH_HOST: ${{ vars.STAGING_HOST }}
+          SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+          DEPLOY_SHA: ${{ github.sha }}
+
+      - name: Health Check
+        uses: ./.github/actions/health-check
+        with:
+          api-url: ${{ vars.STAGING_URL }}
+
+      - name: Smoke Test
+        run: bun run scripts/ci/smoke-test.ts
+        env:
+          AUTOORG_API_URL: ${{ vars.STAGING_URL }}
+
+      - name: Rollback on Failure
+        if: failure()
+        run: bun run scripts/ci/rollback.ts
+        env:
+          ROLLBACK_SHA: ${{ github.event.before }}
