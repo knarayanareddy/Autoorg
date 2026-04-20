@@ -39,7 +39,7 @@ export async function extractEntities(
   );
 
   const parsed = parseStructuredOutput(response.content, EntityExtractionSchema);
-  return { entities: parsed.entities, costUsd: response.costUsd, coverageScore: parsed.coverage_score };
+  return { entities: parsed.entities, costUsd: response.costUsd ?? 0, coverageScore: parsed.coverage_score };
 }
 
 export async function extractRelationships(
@@ -62,5 +62,5 @@ export async function extractRelationships(
   );
 
   const parsed = parseStructuredOutput(response.content, RelationshipExtractionSchema);
-  return { relationships: parsed.relationships, costUsd: response.costUsd };
+  return { relationships: parsed.relationships, costUsd: response.costUsd ?? 0 };
 }

@@ -107,7 +107,7 @@ export class UltraPlanner {
       WHERE id=?
     `).run(
       JSON.stringify(parsed),
-      response.costUsd,
+      response.costUsd ?? 0,
       Date.now() - start,
       sessionId
     );
@@ -116,7 +116,7 @@ export class UltraPlanner {
     return {
       sessionId,
       result: parsed,
-      costUsd: response.costUsd,
+      costUsd: response.costUsd ?? 0,
     };
   }
 }

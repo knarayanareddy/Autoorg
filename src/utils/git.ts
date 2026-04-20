@@ -92,3 +92,15 @@ export async function getWorkspaceStatus(): Promise<{
     modified: status.modified,
   };
 }
+
+export async function gitPush(): Promise<void> {
+  try {
+    await git().push();
+  } catch (err) {
+    console.warn(chalk.yellow(`  ⚠  Git push failed (possibly no remote): ${err}`));
+  }
+}
+
+export async function gitCheckout(ref: string): Promise<void> {
+  await git().checkout(ref);
+}

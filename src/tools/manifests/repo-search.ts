@@ -12,7 +12,7 @@ export const RepoSearchTool: ToolDefinition<z.infer<typeof RepoSearchSchema>> = 
   displayName: 'Repository Search',
   capabilityClass: 'search',
   description: 'Search for text patterns in the local repository using ripgrep.',
-  inputSchema: RepoSearchSchema,
+  inputSchema: RepoSearchSchema as any,
   outputSchema: z.object({
     summary: z.string(),
     lines: z.array(z.object({

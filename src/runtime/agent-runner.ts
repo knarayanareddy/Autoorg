@@ -11,6 +11,8 @@
 import chalk                         from 'chalk';
 import { nanoid }                    from 'nanoid';
 import { getAdapter }                from '@/adapters/adapter-factory.js';
+import { featureFlag }                 from '@/config/feature-flags.js';
+import { gitCommit, gitPush, gitCheckout } from '@/utils/git.js';
 import { withLLMRetry }              from '@/utils/retry.js';
 import { parseStructuredOutput,
          parseStructuredOutputLenient } from '@/utils/structured-output.js';
@@ -237,8 +239,8 @@ async function runRoleToolLoop(
   ctx:  AgentRunnerContext,
   taskDescription: string,
   mission: string
-): Promise<string> {
-  if (!featureFlag('toolUse')) return '';
+): Promise<{ evidence: string; packId: string; }> {
+  if (!featureFlag('toolUse')) return { evidence: '', packId: '' };
 
   const modelConfig = resolveModelConfig(role, ctx.config.modelAssignments);
   const adapter = getAdapter(modelConfig);
@@ -271,10 +273,10 @@ async function runRoleToolLoop(
     toolCalls = JSON.parse(planResponse.content.match(/\[[\s\S]*\]/)?.[0] ?? '[]');
   } catch {
     console.warn(chalk.yellow(`  ⚠  ${role} failed to output valid tool plan JSON. Skipping tools.`));
-    return '';
+    return { evidence: '', packId: '' };
   }
 
-  if (toolCalls.length === 0) return '';
+  if (toolCalls.length === 0) return { evidence: '', packId: '' };
 
   // 2. EXECUTE
   console.log(chalk.cyan(`    [${role}] Planning ${toolCalls.length} tool calls...`));
@@ -540,7 +542,8 @@ export async function runRatchetJudge(
     proposal,
     criticObjections,
     failedExperiments,
-    seedMaterialSummary
+    seedMaterialSummary,
+    '' // Missing evidenceSummary — added as empty string for now
   );
 
   // ALWAYS use the highest-capability model for the judge
@@ -570,6 +573,7 @@ export async function runRatchetJudge(
       groundedness: { score: 0.3, reasoning: 'Parse error', grounded_claims: 0, total_claims: 1, ungrounded_examples: [] },
       novelty:      { score: 0.3, reasoning: 'Parse error', overlap_with_previous: '', novel_elements: [] },
       consistency:  { score: 0.3, reasoning: 'Parse error', blocker_objections: [], major_objections: [], internal_contradictions: [] },
+      evidence:     { score: 0.3, reasoning: 'Parse error', supported_claims: [], unsupported_claims: [] },
       alignment:    { score: 0.3, reasoning: 'Parse error', mission_elements_covered: [], mission_elements_missing: [] },
       composite:    0.3,
       decision:     'REVERT',

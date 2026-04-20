@@ -163,7 +163,7 @@ async function handleRequest(req: Request): Promise<Response> {
     if (params) {
       const limit  = parseInt(url.searchParams.get('limit') ?? '100');
       const events = eventBus.getRecentEvents(params.runId!, limit);
-      return json({ runs });
+      return json({ events });
     }
 
     // --- PHASE 5: DAEMON & APPROVALS ---

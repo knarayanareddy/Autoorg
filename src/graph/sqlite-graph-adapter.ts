@@ -85,7 +85,7 @@ export class SQLiteGraphDB implements GraphDatabase {
     }
     if (query.limit) { sql += ` LIMIT ?`; params.push(query.limit); }
 
-    const rows = db.prepare(sql).all(...params) as Record<string, unknown>[];
+    const rows = db.prepare(sql).all(...(params as any[])) as Record<string, unknown>[];
     db.close();
     return rows.map(r => this.rowToNode(r));
   }
@@ -102,7 +102,7 @@ export class SQLiteGraphDB implements GraphDatabase {
     sets.push('updated_at = datetime(\'now\')');
     vals.push(id, this.runId);
     const db = getDb();
-    db.prepare(`UPDATE kg_nodes SET ${sets.join(', ')} WHERE id = ? AND run_id = ?`).run(...vals);
+    db.prepare(`UPDATE kg_nodes SET ${sets.join(', ')} WHERE id = ? AND run_id = ?`).run(...(vals as any[]));
     db.close();
   }
 
@@ -147,7 +147,7 @@ export class SQLiteGraphDB implements GraphDatabase {
       if (query.where.toNodeId) { sql += ` AND to_node_id = ?`; params.push(query.where.toNodeId); }
     }
     if (query.limit) { sql += ` LIMIT ?`; params.push(query.limit); }
-    const rows = db.prepare(sql).all(...params) as Record<string, unknown>[];
+    const rows = db.prepare(sql).all(...(params as any[])) as Record<string, unknown>[];
     db.close();
     return rows.map(r => this.rowToEdge(r));
   }
@@ -165,7 +165,7 @@ export class SQLiteGraphDB implements GraphDatabase {
     sets.push('updated_at = datetime(\'now\')');
     vals.push(id, this.runId);
     const db = getDb();
-    db.prepare(`UPDATE kg_edges SET ${sets.join(', ')} WHERE id = ? AND run_id = ?`).run(...vals);
+    db.prepare(`UPDATE kg_edges SET ${sets.join(', ')} WHERE id = ? AND run_id = ?`).run(...(vals as any[]));
     db.close();
   }
 
@@ -245,7 +245,7 @@ export class SQLiteGraphDB implements GraphDatabase {
 
   async runRawQuery(query: string, params?: Record<string, unknown>): Promise<unknown> {
     const db = getDb();
-    const res = db.prepare(query).all(...Object.values(params ?? {}));
+    const res = db.prepare(query).all(...(Object.values(params ?? {}) as any[]));
     db.close(); return res;
   }
 

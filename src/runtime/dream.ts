@@ -204,7 +204,7 @@ export class DreamEngine {
       );
 
       rawLlmOutput = response.content;
-      costUsd      = response.costUsd;
+      costUsd      = response.costUsd ?? 0;
 
       // ── STEP 6: Parse DreamAgent output ─────────────────────────
       const fallbackDream: DreamOutput = {

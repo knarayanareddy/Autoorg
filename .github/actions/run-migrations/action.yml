@@ -12,10 +12,6 @@ runs:
       shell: bash
       run: bun run src/db/migrate-phase5.ts
 
-    - name: Phase 5.1 migration
-      shell: bash
-      run: bun run src/db/migrate-phase5_1.ts
-
     - name: Phase 6 migration
       shell: bash
       run: bun run src/db/migrate-phase6.ts
@@ -39,6 +35,10 @@ runs:
     - name: Phase 10 migration (Swarm)
       shell: bash
       run: bun run src/db/migrate-phase10.ts
+
+    - name: Phase 11 migration (Platform)
+      shell: bash
+      run: bun run src/db/migrate-phase11.ts
 
     - name: Phase 12 migration (Learning)
       shell: bash

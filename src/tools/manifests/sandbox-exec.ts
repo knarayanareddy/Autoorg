@@ -12,7 +12,7 @@ export const SandboxExecTool: ToolDefinition<z.infer<typeof SandboxExecSchema>> 
   displayName: 'Sandbox Execution',
   capabilityClass: 'execute',
   description: 'Execute shell commands or code in a restricted/sandboxed environment.',
-  inputSchema: SandboxExecSchema,
+  inputSchema: SandboxExecSchema as any,
   outputSchema: z.object({
     stdout: z.string(),
     stderr: z.string(),

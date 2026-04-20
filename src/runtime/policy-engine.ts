@@ -116,7 +116,7 @@ export class PolicyEngine {
     }
 
     const rank: Record<RiskTier, number> = { low: 1, medium: 2, high: 3, critical: 4 };
-    const requiresEscalation = rank[inferredRisk] > rank[rule.risk_tier];
+    const requiresEscalation = rank[inferredRisk] > rank[rule.risk_tier as RiskTier];
 
     return {
       allowed: !!rule.allowed,

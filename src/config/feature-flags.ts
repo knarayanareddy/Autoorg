@@ -1,5 +1,5 @@
 import { getDb } from '@/db/migrate.js';
-import type { FeatureFlagName } from '@/types/index.js';
+import type { FeatureFlag } from '@/types/index.js';
 
 // In-process cache — refreshed every 60 seconds
 const cache = new Map<string, boolean>();
@@ -24,7 +24,7 @@ function buildCache(): void {
   }
 }
 
-export function featureFlag(name: FeatureFlagName | string): boolean {
+export function featureFlag(name: FeatureFlag | string): boolean {
   // Env var override takes priority: FEATURE_TOOL_USE=1 or FEATURE_TOOL_USE=0
   const envKey = `FEATURE_${name
     .replace(/([A-Z])/g, '_$1')

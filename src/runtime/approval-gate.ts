@@ -1,10 +1,11 @@
 import { nanoid } from 'nanoid';
 import { getDb } from '@/db/migrate.js';
+import type { ApprovalType } from '@/types/index.js';
 
 export interface ApprovalRequest {
   runId: string;
   cycleNumber?: number;
-  approvalType: 'commit' | 'push' | 'merge' | 'ultraplan' | 'daemon_action' | 'job';
+  approvalType: ApprovalType;
   subject: string;
   requestedBy: string;
   summary: string;

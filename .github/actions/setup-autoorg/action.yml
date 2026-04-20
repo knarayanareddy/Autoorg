@@ -37,4 +37,5 @@ runs:
       shell: bash
       run: |
         cd web
+        bun install
         bun run build

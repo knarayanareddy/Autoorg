@@ -5,7 +5,7 @@ export async function safeWebFetch(url: string, maxChars = 8000): Promise<{ summ
     const res = await nodeFetch(url, {
       headers: { 'User-Agent': 'AutoOrg/1.0 (Phase6; Autonomous Research)' },
       timeout: 10000,
-    });
+    } as any);
 
     const body = await res.text();
     const clean = body.replace(/<script[\s\S]*?<\/script>/gi, '')

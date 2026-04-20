@@ -68,4 +68,16 @@ export class ToolPolicy {
     db.close();
     return row?.max_calls_per_cycle ?? 10;
   }
+
+  countCycleCalls(opts: { runId: string; cycleNumber: number; role: string; toolName: string }) {
+    const db = getDb();
+    const row = db.prepare(`
+      SELECT COUNT(*) as n
+      FROM tool_executions
+      WHERE run_id = ? AND cycle_number = ? AND role = ? AND tool_name = ?
+        AND status != 'failed'
+    `).get(opts.runId, opts.cycleNumber, opts.role, opts.toolName) as { n: number };
+    db.close();
+    return row.n;
+  }
 }

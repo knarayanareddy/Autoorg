@@ -156,7 +156,9 @@ export async function* orchestratorLoop(
 
   // ── Phase 4: Init graph and hierarchical teams ────────────────────
   await graphManager.init(runId);
-  await graphManager.ensureBuilt(config);
+  await graphManager.ensureBuilt({
+    seedMaterial: [config.seedMaterial],
+  });
   
   // Phase 5: Init hierarchical teams
   const coordinator = new CoordinatorEngine(runId);
@@ -201,7 +203,7 @@ export async function* orchestratorLoop(
     id: runId, config, status: 'running',
     cycleCount: 0, bestScore: await getBestScore(),
     plateauCount: 0, consecutiveRejects: 0,
-    totalCostUsd: 0, startedAt: new Date(),
+    totalCostUsd: 0, cycleHistory: [], startedAt: new Date(),
   };
 
   // Score history for DreamAgent (accumulated during run)
@@ -256,13 +258,14 @@ export async function* orchestratorLoop(
     const weights = await optimizer.getLatestObjectives();
     const dynamicModelMap = optimizer.calculateModelMap(weights);
     // Overlay dynamic model shifts onto config
-    const currentModelAssignments = { ...config.modelAssignments };
+    const currentModelAssignments: any = { ...config.modelAssignments };
     for (const [role, model] of Object.entries(dynamicModelMap)) {
       if (!currentModelAssignments[role]) currentModelAssignments[role] = { model };
       else currentModelAssignments[role].model = model;
     }
 
-    const cycleStartEvt: OrchestratorEvent = { type: 'cycle_start', cycleNumber, previousBest: runState.bestScore };
+    const previousBest = runState.bestScore;
+    const cycleStartEvt: OrchestratorEvent = { type: 'cycle_start', cycleNumber, previousBest };
     yield cycleStartEvt;
     eventBus.broadcast(cycleStartEvt);
 
@@ -429,7 +432,7 @@ export async function* orchestratorLoop(
 
         // After a successful dream run, update graph from facts (Phase 5)
         const activeFacts = memoryManager.getFactStore().getActiveFacts();
-        await graphManager.updateFromFacts(cycleNumber, activeFacts.slice(-25));
+        await graphManager.updateFromFacts(activeFacts.slice(-25).map(f => f.statement));
         
         const dreamResult = await dreamEngine.dream(
           config, cycleNumber, trigger, scoreHistory
@@ -437,7 +440,7 @@ export async function* orchestratorLoop(
 
         dreamRan = true;
 
-        const dreamDoneEvt: OrchestratorEvent = {
+        const dreamDoneEvt: any = {
           type:                  'dream_done',
           factsAdded:            dreamResult.factsExtracted,
           contradictionsRemoved: dreamResult.contradictionsResolved,
@@ -546,7 +549,7 @@ export async function* orchestratorLoop(
     // ── Phase 10: Swarm Delegation ───────────────────────────────
     if (featureFlag('hierarchicalSwarm')) {
       const currentRunOutput = await Bun.file('./workspace/current_output.md').text().catch(() => '');
-      const transcriptText = cycleContext.slice(-3).map(c => c.action).join('\n');
+      const transcriptText = runState.cycleHistory.slice(-3).map((c: any) => c.action).join('\n');
 
       const delegation = await swarm.evaluateDelegation({
         cycle: cycleNumber,

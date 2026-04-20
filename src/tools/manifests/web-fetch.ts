@@ -12,7 +12,7 @@ export const WebFetchTool: ToolDefinition<z.infer<typeof WebFetchSchema>> = {
   displayName: 'Web Fetch',
   capabilityClass: 'read',
   description: 'Fetch a web page and extract clean text content for analysis.',
-  inputSchema: WebFetchSchema,
+  inputSchema: WebFetchSchema as any,
   outputSchema: z.object({
     summary: z.string(),
     text: z.string(),

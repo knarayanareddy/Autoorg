@@ -10,6 +10,15 @@ export interface ModelCost {
   outputPerMToken: number;
 }
 
+export type ApprovalType = 
+  | 'ultraplan' 
+  | 'push' 
+  | 'commit' 
+  | 'merge' 
+  | 'daemon_action' 
+  | 'job' 
+  | 'self_improvement';
+
 export type LLMProvider = 
   | 'anthropic'
   | 'openai'
@@ -221,6 +230,7 @@ export interface RunState {
   consecutiveRejects: number;
   totalCostUsd: number;
   currentCycle?: CycleState;
+  cycleHistory: CycleState[];
   lastCommitHash?: string;
   startedAt: Date;
   endedAt?: Date;
@@ -263,3 +273,27 @@ export type FeatureFlag =
   | 'webDashboard'
   | 'streamingOutput'
   | 'multiOrg';
+
+// ── Knowledge Graph ──────────────────────────────────────────────────
+export interface GraphNode {
+  id: string;
+  label: string;
+  kind: string;
+  weight?: number;
+  metadata?: any;
+}
+
+export interface GraphEdge {
+  id: string;
+  from: string;
+  to: string;
+  relationship: string;
+  weight?: number;
+  metadata?: any;
+}
+
+export interface KnowledgeGraph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  version: number;
+}

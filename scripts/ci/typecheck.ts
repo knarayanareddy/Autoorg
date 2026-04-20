@@ -9,7 +9,7 @@ const project = projectIdx !== -1 ? args[projectIdx + 1] : 'tsconfig.json';
 async function main() {
   console.log(chalk.cyan(`\n🔍 Running typecheck on ${project}...\n`));
 
-  const result = await $`bunx tsc --noEmit --project ${project}`.nothrow();
+  const result = await $`bun run tsc --noEmit --project ${project}`.nothrow();
   if (result.exitCode !== 0) {
     console.error(chalk.red(`TypeCheck failed for ${project}`));
     process.exit(1);

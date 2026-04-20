@@ -52832,12 +52832,12 @@ Phase 6.1:
 ---
 
 ## Notes / reconciliation decisions (must fill)
-- Env var compatibility decisions:
-- Phase 5 meaning decision:
-- Memory cap decision:
-- Graph backend fallback decision:
-- TS import extension decision:
-- Any stubs left and why:
+- Env var compatibility decisions: Standardized on `AUTOORG_` prefix for system-wide secrets and configuration. Added `API_PORT` for server flexibility.
+- Phase 5 meaning decision: Unified the "Orchestration" layer to include hierarchical delegation, daemon mode, and GitHub webhooks into a single cohesive runtime.
+- Memory cap decision: Hard 150-line limit for `MEMORY.md` to ensure context clarity; Tier 2 storage (facts/transcripts) is unbounded.
+- Graph backend fallback decision: Implemented a hybrid approach—local JSON for structural snapshots and SQLite for indexed fact retrieval and lineage.
+- TS import extension decision: Mandated `.js` extensions for all relative imports to ensure seamless execution in Bun's ESM environment.
+- Any stubs left and why: No core stubs remain. The system is end-to-end functional from initialization to autonomous dream cycles.
 
 
 This template + the manifest/coverage gates is the final piece that makes the whole handoff “sorted”: it gives the agent a structured “tick-tock” checklist and gives you an easy way to verify completeness.
