@@ -1,0 +1,106 @@
+YAML
+
+name: Benchmarks Nightly
+
+on:
+  schedule:
+    - cron: '0 2 * * *'          # 02:00 UTC every night
+  workflow_dispatch:
+    inputs:
+      suite:
+        type: choice
+        options: [core, stress, all]
+        default: core
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  AUTOORG_DB_PATH: /tmp/autoorg-nightly-${{ github.run_id }}.db
+  AUTOORG_SIGNING_SECRET: ${{ secrets.BENCHMARK_SIGNING_SECRET }}
+  AUTOORG_API_KEY_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY }}
+  AUTOORG_API_KEY_OPENAI: ${{ secrets.OPENAI_API_KEY }}
+
+jobs:
+
+  nightly-benchmark:
+    name: Nightly Benchmark — ${{ inputs.suite || 'core' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-autoorg
+
+      - uses: ./.github/actions/run-migrations
+
+      - name: Run core benchmark suite
+        if: inputs.suite != 'stress' && inputs.suite != 'all'
+        uses: ./.github/actions/benchmark-gate
+        with:
+          suite: core
+          fail-on-regression: 'true'
+          upload-report: 'true'
+
+      - name: Run stress benchmark suite
+        if: inputs.suite == 'stress' || inputs.suite == 'all'
+        uses: ./.github/actions/benchmark-gate
+        with:
+          suite: stress
+          fail-on-regression: 'true'
+          upload-report: 'true'
+
+      - name: Run constitution A/B comparison
+        run: |
+          bun run -e "
+          const { ConstitutionAB } = await import('./src/evals/constitution-ab.ts');
+          const ab = new ConstitutionAB();
+          const result = await ab.compare({
+            suiteName: 'core',
+            variantA: 'default',
+            variantB: 'strict_grounding',
+          });
+          console.log(JSON.stringify(result, null, 2));
+          "
+
+      - name: Run judge calibration
+        run: |
+          bun run -e "
+          const { JudgeCalibrator } = await import('./src/evals/judge-calibrator.ts');
+          const { getDb } = await import('./src/db/migrate.ts');
+          const db = getDb();
+          const run = db.prepare('SELECT id FROM benchmark_runs ORDER BY started_at DESC LIMIT 1').get();
+          db.close();
+          if (run) {
+            const calibrator = new JudgeCalibrator();
+            const result = await calibrator.calibrate({ benchmarkRunId: run.id });
+            console.log(JSON.stringify(result, null, 2));
+          }
+          "
+
+      - name: Open issue on regression
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = `🔴 Nightly Benchmark Regression — ${new Date().toISOString().slice(0, 10)}`;
+            const body = [
+              `## Nightly Benchmark Failed`,
+              ``,
+              `- Run: ${{ github.run_id }}`,
+              `- SHA: ${{ github.sha }}`,
+              `- Branch: ${{ github.ref_name }}`,
+              ``,
+              `Check the [Actions run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.`,
+            ].join('\n');
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: ['benchmark-regression', 'automated'],
+            });
+8. Weekly learning cycle

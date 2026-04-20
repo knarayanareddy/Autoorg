@@ -1,0 +1,9 @@
+node_modules/
+.env
+autoorg.db
+autoorg.db-shm
+autoorg.db-wal
+*.map
+.DS_Store
+mailbox/inbox/*.json
+mailbox/outbox/*.json

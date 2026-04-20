@@ -1,3 +1,4 @@
 cycle	timestamp	score	groundedness	novelty	consistency	alignment	decision	summary
 1	2026-04-19T16:19:05.103Z	0.2947	0.3119	0.2670	0.3165	0.2765	COMMIT	0.000000	[MOCK] Cycle 1 score: 0.295. Improved from 0.000 (+0.295).
 4	2026-04-19T16:19:20.163Z	0.3139	0.3365	0.2880	0.3309	0.2909	REVERT	0.000000	[MOCK] Cycle 4 score: 0.314. Did not beat best 0.322.
+5	2026-04-19T16:19:25.404Z	0.3683	0.3768	0.3570	0.3867	0.3467	COMMIT	0.000000	[MOCK] Cycle 5 score: 0.368. Improved from 0.322 (+0.047).

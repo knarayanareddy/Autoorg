@@ -1,0 +1,72 @@
+YAML
+
+name: Learning Cycle Weekly
+
+on:
+  schedule:
+    - cron: '0 3 * * 0'          # 03:00 UTC every Sunday
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Benchmark suite to use for simulation
+        type: string
+        default: core
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  AUTOORG_DB_PATH: ${{ secrets.PRODUCTION_DB_PATH }}
+  AUTOORG_SIGNING_SECRET: ${{ secrets.PRODUCTION_SIGNING_SECRET }}
+  AUTOORG_API_KEY_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY }}
+  AUTOORG_API_KEY_OPENAI: ${{ secrets.OPENAI_API_KEY }}
+
+jobs:
+
+  learning-cycle:
+    name: Weekly Learning Cycle
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-autoorg
+
+      - name: Run bounded learning cycle
+        run: |
+          bun run -e "
+          const { LearningOrchestrator } = await import('./src/learning/learning-orchestrator.ts');
+          const orchestrator = new LearningOrchestrator();
+          const result = await orchestrator.run({
+            suiteName: process.env.BENCHMARK_SUITE ?? 'core',
+            runId: 'weekly_learning_${{ github.run_id }}',
+            cycleNumber: 0,
+          });
+          console.log(JSON.stringify(result, null, 2));
+          "
+        env:
+          BENCHMARK_SUITE: ${{ inputs.suite || 'core' }}
+
+      - name: Upload learning cycle artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: learning-cycle-${{ github.run_id }}
+          path: artifacts/learning/
+          retention-days: 60
+
+      - name: Alert on learning failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🔴 Weekly Learning Cycle Failed — ${new Date().toISOString().slice(0, 10)}`,
+              body: `Run: ${{ github.run_id }}\nSHA: ${{ github.sha }}`,
+              labels: ['learning-failure', 'automated'],
+            });
+9. Weekly security audit

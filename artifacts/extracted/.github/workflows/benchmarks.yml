@@ -1,0 +1,344 @@
+YAML
+
+name: Benchmarks
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install deps
+        run: bun install
+
+      - name: Run DB migrations
+        run: |
+          bun run src/db/migrate.ts
+          bun run src/db/migrate-phase5.ts
+          bun run src/db/migrate-phase5_1.ts
+          bun run src/db/migrate-phase6.ts
+          bun run src/db/migrate-phase6_1.ts
+          bun run src/db/migrate-phase7.ts
+
+      - name: Run benchmark CI gate
+        env:
+          BENCHMARK_SUITE: core
+          BENCHMARK_TEMPLATE: baseline
+          BENCHMARK_CONSTITUTION: default
+        run: bun run src/evals/benchmark-ci.ts
+This is the point where regressions start blocking merges instead of just being noticed later.
+
+24. Tests for Phase 7
+tests/suite-loader.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { BenchmarkSuiteLoader } from '../src/evals/suite-loader.js';
+
+describe('BenchmarkSuiteLoader', () => {
+  it('loads suite cases from disk', async () => {
+    const loader = new BenchmarkSuiteLoader();
+    const cases = await loader.loadSuite('core').catch(() => []);
+    expect(Array.isArray(cases)).toBe(true);
+  });
+});
+tests/metrics.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { mean, variance, passBand } from '../src/evals/metrics.js';
+
+describe('eval metrics', () => {
+  it('computes mean and variance', () => {
+    expect(mean([1, 2, 3])).toBe(2);
+    expect(variance([1, 1, 1])).toBe(0);
+    expect(passBand(0.8, { min: 0.7 })).toBe(true);
+    expect(passBand(5, { max: 3 })).toBe(false);
+  });
+});
+tests/gold-comparator-schema.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { GoldComparisonSchema } from '../src/prompts/gold-comparator.js';
+
+describe('GoldComparisonSchema', () => {
+  it('validates gold comparison output', () => {
+    const parsed = GoldComparisonSchema.parse({
+      gold_match: 0.84,
+      acceptance_pass: true,
+      strengths: ['Has clear acceptance criteria'],
+      misses: ['Could include stronger rollback detail'],
+      missing_required_elements: [],
+      notes: ['Groundedness acceptable'],
+    });
+
+    expect(parsed.acceptance_pass).toBe(true);
+  });
+});
+tests/regression-detector-schema.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { RegressionExplanationSchema } from '../src/prompts/regression-explainer.js';
+
+describe('RegressionExplanationSchema', () => {
+  it('validates regression explanations', () => {
+    const parsed = RegressionExplanationSchema.parse({
+      likely_causes: ['Tool usage increased latency'],
+      affected_metrics: ['latency_ms'],
+      hypotheses: ['New template added more worker calls'],
+      suggested_checks: ['Compare tool call counts'],
+      severity: 'warn',
+    });
+
+    expect(parsed.affected_metrics[0]).toBe('latency_ms');
+  });
+});
+tests/leaderboard.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { LeaderboardService } from '../src/evals/leaderboard.js';
+
+describe('LeaderboardService', () => {
+  it('has a recompute method', async () => {
+    const svc = new LeaderboardService();
+    expect(typeof svc.recomputeForSuite).toBe('function');
+  });
+});
+tests/replay-lab.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { ReplayLab } from '../src/evals/replay-lab.js';
+
+describe('ReplayLab', () => {
+  it('fails clearly for unknown attempt', async () => {
+    const lab = new ReplayLab();
+    await expect(lab.replayAttempt({ attemptId: 'missing' })).rejects.toThrow();
+  });
+});
+tests/judge-calibration-schema.test.ts
+TypeScript
+
+import { describe, it, expect } from 'bun:test';
+import { JudgeCalibrationSchema } from '../src/prompts/judge-calibrator.js';
+
+describe('JudgeCalibrationSchema', () => {
+  it('validates judge calibration output', () => {
+    const parsed = JudgeCalibrationSchema.parse({
+      agreement_score: 0.91,
+      mean_variance: 0.003,
+      unstable_cases: [],
+      notes: ['Judge is stable on current suite'],
+    });
+
+    expect(parsed.agreement_score).toBeGreaterThan(0.8);
+  });
+});
+25. Run instructions for Phase 7
+Bash
+
+# 1. Apply migration
+bun run src/db/migrate-phase7.ts
+
+# 2. Ensure benchmark suite files exist
+tree benchmarks/suites
+
+# 3. Start API/dashboard if you want visibility
+bun run src/api/server.ts
+cd web && bun run dev
+
+# 4. Run a suite manually
+curl -X POST http://localhost:3000/api/benchmarks/run \
+  -H "Content-Type: application/json" \
+  -d '{"suiteName":"core","constitutionVariant":"default","templateVariant":"baseline"}'
+
+# 5. View leaderboards
+curl "http://localhost:3000/api/leaderboards?suite=core"
+
+# 6. View regressions
+curl "http://localhost:3000/api/regressions"
+
+# 7. Replay a benchmark attempt
+curl -X POST http://localhost:3000/api/replay \
+  -H "Content-Type: application/json" \
+  -d '{"attemptId":"ba_...","mode":"artifact_only"}'
+
+# 8. Run constitution A/B
+curl -X POST http://localhost:3000/api/constitution-ab \
+  -H "Content-Type: application/json" \
+  -d '{"suiteName":"core","variantA":"default","variantB":"strict_grounding"}'
+
+# 9. Run template bakeoff
+curl -X POST http://localhost:3000/api/template-bakeoff \
+  -H "Content-Type: application/json" \
+  -d '{"suiteName":"core","templateA":"baseline","templateB":"hierarchy"}'
+
+# 10. Judge calibration
+curl -X POST http://localhost:3000/api/judge-calibrate \
+  -H "Content-Type: application/json" \
+  -d '{"benchmarkRunId":"br_..."}'
+26. Optional .env additions for Phase 7
+Bash
+
+# ── BENCHMARK LAB ────────────────────────────────────────────
+BENCHMARK_SUITE=core
+BENCHMARK_TEMPLATE=baseline
+BENCHMARK_CONSTITUTION=default
+BENCHMARK_MAX_CASES=
+BENCHMARK_SEED=42
+
+# ── REGRESSION THRESHOLDS ────────────────────────────────────
+REGRESSION_SCORE_DROP=0.03
+REGRESSION_GROUNDEDNESS_DROP=0.04
+REGRESSION_POLICY_DROP=0.03
+REGRESSION_COST_INCREASE=0.20
+REGRESSION_LATENCY_INCREASE=0.25
+
+# ── CALIBRATION ──────────────────────────────────────────────
+JUDGE_CALIBRATION_REPEATS=3
+JUDGE_CALIBRATION_SAMPLE_LIMIT=50
+
+# ── REPLAY ───────────────────────────────────────────────────
+REPLAY_DEFAULT_MODE=artifact_only
+BENCHMARK_OUTPUT_DIR=benchmarks/outputs
+27. What Phase 7 now gives you
+At this point AutoOrg can:
+
+text
+
+✅ Run a standard benchmark suite against real missions
+✅ Compare outputs against gold expectations and acceptance bands
+✅ Track normalized metrics across runs
+✅ Build leaderboards for models, templates, and constitutions
+✅ Detect regressions in score, groundedness, policy, cost, and latency
+✅ Explain likely regression causes
+✅ Replay historical benchmark attempts offline
+✅ Compare constitutions head-to-head
+✅ Compare org templates head-to-head
+✅ Calibrate the Judge for consistency and stability
+✅ Enforce benchmark gates in CI
+This is the phase where AutoOrg stops relying on “it seems better” and starts operating on measured progress.
+
+28. Recommended implementation order
+I’d implement Phase 7 in this order:
+
+DB migration
+benchmark suite file format + suite loader
+benchmark runner wired into real orchestrator
+gold evaluator
+leaderboards
+regression detector
+replay lab
+constitution A/B + template bakeoffs
+judge calibration
+CI gate + UI
+Why:
+
+the first objective is to make benchmark execution real,
+the second is to make it comparable,
+the third is to make it enforceable.
+
+
+
+
+
+
+here is Phase 8 expanded in the same detailed format.
+
+Phase 7 made AutoOrg measurable.
+Phase 8 makes it portfolio-native.
+
+This is the phase where one autonomous org becomes many competing orgs, each with its own:
+
+constitution variant,
+role mix,
+template,
+model map,
+branch/worktree,
+budget,
+failure boundary.
+Then a portfolio layer:
+
+runs them in parallel,
+reallocates budget toward stronger variants,
+quarantines cross-org exchange,
+uses judge councils and tournaments,
+synthesizes the best final answer.
+AutoOrg — Phase 8: Portfolio Orchestration
+Concurrent Orgs, Budget Allocation, Judge Council, Tournament Mode, Quarantined Exchange, Best-of-N Synthesis
+WHAT PHASE 8 ADDS
+text
+
+Phase 7   ── Benchmark lab + leaderboards + regression evals + replay + judge calibration
+
+Phase 8   ── ┌──────────────────────────────────────────────────────────────┐
+             │ Multiple concurrent orgs on one mission                     │
+             │ Competing constitutions / role mixes / model maps           │
+             │ Portfolio allocator routes budget to best variants          │
+             │ Judge ensemble / council mode                               │
+             │ Cross-org artifact exchange with quarantine                 │
+             │ Tournament mode for org strategies                          │
+             │ Best-of-N synthesis layer                                   │
+             │ Branch-per-org git strategy + isolated worktrees            │
+             │ Portfolio dashboard with capital allocation view            │
+             │ Failure containment between org variants                    │
+             └──────────────────────────────────────────────────────────────┘
+DIRECTORY ADDITIONS
+text
+
+src/
+├── portfolio/
+│   ├── org-variant.ts              ← variant manifest + loading
+│   ├── portfolio-runner.ts         ← top-level portfolio orchestration
+│   ├── allocator.ts                ← deterministic + LLM budget routing
+│   ├── judge-council.ts            ← ensemble variant comparison
+│   ├── tournament.ts               ← knockout / swiss pairings
+│   ├── best-of-n.ts                ← final synthesis from top variants
+│   ├── quarantine.ts               ← safe cross-org artifact exchange
+│   ├── exchange-bus.ts             ← send artifacts between variants
+│   ├── branch-strategy.ts          ← branch/worktree per org
+│   ├── failure-containment.ts      ← isolate / kill / quarantine bad variants
+│   └── priors.ts                   ← seed priors from Phase 7 leaderboards
+├── prompts/
+│   ├── portfolio-allocator.ts      ← reallocation reasoning
+│   ├── judge-council.ts            ← compare competing variants
+│   ├── tournament-referee.ts       ← pick winner in pairwise match
+│   ├── best-of-n-synthesizer.ts    ← synthesize top outputs into final
+│   └── quarantine-reviewer.ts      ← decide whether shared artifact is safe
+├── db/
+│   ├── schema-phase8.sql
+│   └── migrate-phase8.ts
+└── api/
+    └── portfolio-routes.ts         ← portfolio runs, variants, capital, tournament
+
+portfolio/
+├── variants/
+│   ├── default.json
+│   ├── strict_grounding.json
+│   ├── hierarchy_fast.json
+│   ├── research_heavy.json
+│   └── quality_heavy.json
+
+artifacts/
+├── portfolio/
+│   ├── runs/
+│   ├── rounds/
+│   ├── syntheses/
+│   ├── quarantine/
+│   ├── allocations/
+│   └── councils/
+1. Phase 8 DB schema

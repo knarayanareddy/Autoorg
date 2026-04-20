@@ -1,0 +1,44 @@
+{
+  "name": "autoorg",
+  "version": "0.1.0",
+  "description": "Autonomous Research Organization Engine — You write the mission. The agents run the company.",
+  "module": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "bun --watch run src/index.ts",
+    "init": "bun run src/scripts/init.ts",
+    "run:org": "bun run src/index.ts --org org.md",
+    "test": "bun test",
+    "db:migrate": "bun run src/db/migrate.ts",
+    "clean": "bun run src/scripts/clean.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "openai": "^4.86.1",
+    "chalk": "^5.3.0",
+    "ink": "^4.4.1",
+    "ink-spinner": "^5.0.0",
+    "react": "^18.2.0",
+    "zod": "^3.22.4",
+    "gray-matter": "^4.0.3",
+    "glob": "^10.3.10",
+    "dotenv": "^16.4.1",
+    "node-fetch": "^3.3.2",
+    "simple-git": "^3.22.0",
+    "tsx": "^4.7.0",
+    "yaml": "^2.3.4",
+    "marked": "^11.1.1",
+    "p-limit": "^5.0.0",
+    "nanoid": "^5.0.4",
+    "fast-xml-parser": "^4.3.3"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/react": "^18.2.0",
+    "typescript": "^5.3.3"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

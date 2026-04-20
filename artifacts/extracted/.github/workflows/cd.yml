@@ -1,0 +1,230 @@
+YAML
+
+name: CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [local, staging, production]
+        default: staging
+      skip-smoke-tests:
+        description: Skip smoke tests
+        type: boolean
+        default: false
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  deployments: write
+  id-token: write
+
+env:
+  AUTOORG_VERSION: ${{ github.sha }}
+
+jobs:
+
+  # ─────────────────────────────────────────────────────────
+  # JOB: pre-deploy-checks
+  # ─────────────────────────────────────────────────────────
+  pre-deploy-checks:
+    name: Pre-Deploy Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-autoorg
+
+      - name: Verify CI passed on this SHA
+        run: |
+          echo "Deploying SHA: ${{ github.sha }}"
+          echo "Branch: ${{ github.ref_name }}"
+
+      - name: Check no pending critical security findings
+        run: bun run scripts/ci/security-scan.ts --pre-deploy
+        env:
+          AUTOORG_DB_PATH: ${{ secrets.AUTOORG_DB_PATH }}
+          AUTOORG_SIGNING_SECRET: ${{ secrets.AUTOORG_SIGNING_SECRET }}
+
+  # ─────────────────────────────────────────────────────────
+  # JOB: build-release
+  # ─────────────────────────────────────────────────────────
+  build-release:
+    name: Build Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [pre-deploy-checks]
+
+    outputs:
+      image-tag: ${{ steps.meta.outputs.image-tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-autoorg
+        with:
+          build-web: 'true'
+
+      - name: Set image metadata
+        id: meta
+        run: |
+          echo "image-tag=autoorg:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Create release bundle
+        run: |
+          mkdir -p release
+          cp -r src release/
+          cp -r web/.next release/.next
+          cp package.json bun.lockb tsconfig.json release/
+          tar -czf autoorg-${{ github.sha }}.tar.gz release/
+
+      - name: Upload release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: autoorg-release-${{ github.sha }}
+          path: autoorg-${{ github.sha }}.tar.gz
+          retention-days: 14
+
+  # ─────────────────────────────────────────────────────────
+  # JOB: deploy-staging
+  # ─────────────────────────────────────────────────────────
+  deploy-staging:
+    name: Deploy → Staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [build-release]
+    environment:
+      name: staging
+      url: ${{ vars.STAGING_URL }}
+
+    env:
+      AUTOORG_DEPLOYMENT_MODE: single-node
+      AUTOORG_DB_PATH: ${{ secrets.STAGING_DB_PATH }}
+      AUTOORG_SIGNING_SECRET: ${{ secrets.STAGING_SIGNING_SECRET }}
+      AUTOORG_API_URL: ${{ vars.STAGING_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-autoorg
+
+      - name: Download release bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: autoorg-release-${{ github.sha }}
+
+      - name: Deploy to staging
+        run: bun run scripts/deploy/deploy-single-node.ts
+        env:
+          DEPLOY_TARGET: staging
+          DEPLOY_SHA: ${{ github.sha }}
+          SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+          SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+
+      - name: Run migrations on staging
+        run: bun run scripts/ci/migrate-all.ts --remote
+        env:
+          REMOTE_DB_PATH: ${{ secrets.STAGING_DB_PATH }}
+
+      - name: Wait for staging health
+        uses: ./.github/actions/health-check
+        with:
+          api-url: ${{ vars.STAGING_URL }}
+          timeout-seconds: '90'
+
+      - name: Run smoke tests against staging
+        if: ${{ !inputs.skip-smoke-tests }}
+        run: bun run scripts/ci/smoke-test.ts
+        env:
+          AUTOORG_API_URL: ${{ vars.STAGING_URL }}
+          AUTOORG_API_KEY: ${{ secrets.STAGING_API_KEY }}
+
+      - name: Rollback on failure
+        if: failure()
+        run: bun run scripts/ci/rollback.ts
+        env:
+          DEPLOY_TARGET: staging
+          ROLLBACK_SHA: ${{ github.event.before }}
+
+  # ─────────────────────────────────────────────────────────
+  # JOB: deploy-production
+  # ─────────────────────────────────────────────────────────
+  deploy-production:
+    name: Deploy → Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [deploy-staging]
+    if: github.ref_name == 'main'
+    environment:
+      name: production
+      url: ${{ vars.PRODUCTION_URL }}
+
+    env:
+      AUTOORG_DEPLOYMENT_MODE: ${{ vars.PRODUCTION_DEPLOYMENT_MODE }}
+      AUTOORG_API_URL: ${{ vars.PRODUCTION_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-autoorg
+
+      - name: Download release bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: autoorg-release-${{ github.sha }}
+
+      - name: Deploy to production
+        run: bun run scripts/deploy/deploy-${{ vars.PRODUCTION_DEPLOYMENT_MODE }}.ts
+        env:
+          DEPLOY_TARGET: production
+          DEPLOY_SHA: ${{ github.sha }}
+          SSH_HOST: ${{ secrets.PRODUCTION_SSH_HOST }}
+          SSH_USER: ${{ secrets.PRODUCTION_SSH_USER }}
+          SSH_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+          AUTOORG_DB_PATH: ${{ secrets.PRODUCTION_DB_PATH }}
+          AUTOORG_SIGNING_SECRET: ${{ secrets.PRODUCTION_SIGNING_SECRET }}
+
+      - name: Run migrations on production
+        run: bun run scripts/ci/migrate-all.ts --remote
+        env:
+          REMOTE_DB_PATH: ${{ secrets.PRODUCTION_DB_PATH }}
+
+      - name: Wait for production health
+        uses: ./.github/actions/health-check
+        with:
+          api-url: ${{ vars.PRODUCTION_URL }}
+          timeout-seconds: '120'
+
+      - name: Run smoke tests against production
+        run: bun run scripts/ci/smoke-test.ts --production
+        env:
+          AUTOORG_API_URL: ${{ vars.PRODUCTION_URL }}
+          AUTOORG_API_KEY: ${{ secrets.PRODUCTION_API_KEY }}
+
+      - name: Tag release in git
+        run: |
+          git config --global user.name "autoorg-bot"
+          git config --global user.email "bot@autoorg"
+          git tag -a "release-${{ github.sha }}" -m "Production release ${{ github.sha }}"
+          git push origin "release-${{ github.sha }}"
+
+      - name: Rollback on failure
+        if: failure()
+        run: bun run scripts/ci/rollback.ts
+        env:
+          DEPLOY_TARGET: production
+          ROLLBACK_SHA: ${{ github.event.before }}
+          SSH_HOST: ${{ secrets.PRODUCTION_SSH_HOST }}
+          SSH_USER: ${{ secrets.PRODUCTION_SSH_USER }}
+          SSH_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+7. Nightly benchmark suite

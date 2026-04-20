@@ -1,0 +1,47 @@
+YAML
+
+name: Distillation Export Monthly
+
+on:
+  schedule:
+    - cron: '0 5 1 * *'          # 05:00 UTC on the 1st of every month
+  workflow_dispatch:
+
+env:
+  AUTOORG_DB_PATH: ${{ secrets.PRODUCTION_DB_PATH }}
+  AUTOORG_SIGNING_SECRET: ${{ secrets.PRODUCTION_SIGNING_SECRET }}
+
+jobs:
+
+  distillation:
+    name: Monthly Trace Distillation Export
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-autoorg
+
+      - name: Export high-quality traces
+        run: |
+          bun run -e "
+          const { AdapterDistiller } = await import('./src/learning/adapter-distiller.ts');
+          const d = new AdapterDistiller();
+          for (const kind of ['planner', 'judge', 'critic', 'tool_planner']) {
+            const result = await d.exportDataset({
+              jobKind: kind,
+              minScore: 0.82,
+              minPolicyCompliance: 0.97,
+            });
+            console.log(kind, JSON.stringify(result));
+          }
+          "
+
+      - name: Upload distillation datasets
+        uses: actions/upload-artifact@v4
+        with:
+          name: distillation-datasets-${{ github.run_id }}
+          path: artifacts/learning/distillation/
+          retention-days: 180
+11. Dependency review

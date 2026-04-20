@@ -1,0 +1,291 @@
+YAML
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+env:
+  BUN_ENV: test
+  AUTOORG_DB_PATH: /tmp/autoorg-ci-${{ github.run_id }}.db
+  AUTOORG_SIGNING_SECRET: ci-test-signing-secret
+  DEFAULT_LLM_PROVIDER: anthropic
+  BENCHMARK_SUITE: core
+  BENCHMARK_TEMPLATE: baseline
+  BENCHMARK_CONSTITUTION: default
+
+jobs:
+
+  # ─────────────────────────────────────────────────────────
+  # JOB: lint
+  # ─────────────────────────────────────────────────────────
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-autoorg
+
+      - name: Run ESLint
+        run: bun run scripts/ci/lint.ts
+
+      - name: Check formatting
+        run: bunx prettier --check "src/**/*.{ts,tsx}" "web/**/*.{ts,tsx}"
+
+      - name: Check imports
+        run: bun run scripts/ci/lint.ts --imports-only
+
+  # ─────────────────────────────────────────────────────────
+  # JOB: typecheck
+  # ─────────────────────────────────────────────────────────
+  typecheck:
+    name: TypeCheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-autoorg
+
+      - name: Check types (src)
+        run: bun run scripts/ci/typecheck.ts --project tsconfig.json
+
+      - name: Check types (web)
+        run: bun run scripts/ci/typecheck.ts --project web/tsconfig.json
+
+  # ─────────────────────────────────────────────────────────
+  # JOB: unit-tests
+  # ─────────────────────────────────────────────────────────
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [lint, typecheck]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-autoorg
+
+      - uses: ./.github/actions/run-migrations
+
+      - name: Run unit tests
+        run: bun run scripts/ci/test-unit.ts
+        env:
+          AUTOORG_DB_PATH: /tmp/autoorg-unit-${{ github.run_id }}.db
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results-${{ github.sha }}
+          path: test-results/
+          retention-days: 7
+
+  # ─────────────────────────────────────────────────────────
+  # JOB: migration-integrity
+  # ─────────────────────────────────────────────────────────
+  migration-integrity:
+    name: Migration Integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [lint, typecheck]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-autoorg
+
+      - name: Run all migrations on clean DB
+        uses: ./.github/actions/run-migrations
+        env:
+          AUTOORG_DB_PATH: /tmp/autoorg-migrate-${{ github.run_id }}.db
+
+      - name: Verify idempotency (run migrations again)
+        uses: ./.github/actions/run-migrations
+        env:
+          AUTOORG_DB_PATH: /tmp/autoorg-migrate-${{ github.run_id }}.db
+
+      - name: Check DB schema consistency
+        run: bun run scripts/ci/migrate-all.ts --check-schema
+        env:
+          AUTOORG_DB_PATH: /tmp/autoorg-migrate-${{ github.run_id }}.db
+
+  # ─────────────────────────────────────────────────────────
+  # JOB: security-scan
+  # ─────────────────────────────────────────────────────────
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [unit-tests]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-autoorg
+
+      - uses: ./.github/actions/run-migrations
+        env:
+          AUTOORG_DB_PATH: /tmp/autoorg-sec-${{ github.run_id }}.db
+
+      - name: Run security scan
+        run: bun run scripts/ci/security-scan.ts
+        env:
+          AUTOORG_DB_PATH: /tmp/autoorg-sec-${{ github.run_id }}.db
+
+      - name: Check for secret leaks
+        run: |
+          if grep -rE \
+            "(sk-[A-Za-z0-9_\-]{20,}|sk-ant-[A-Za-z0-9_\-]{20,}|gh[pousr]_[A-Za-z0-9_]{20,})" \
+            src/ web/ scripts/ --include="*.ts" --include="*.tsx" --include="*.json" \
+            --exclude-dir=node_modules; then
+            echo "::error::Potential secret found in source"
+            exit 1
+          fi
+
+      - name: Check artifact integrity
+        run: bun run scripts/ci/security-scan.ts --artifacts-only
+        env:
+          AUTOORG_DB_PATH: /tmp/autoorg-sec-${{ github.run_id }}.db
+
+      - name: Check approval health
+        run: bun run scripts/ci/approval-health.ts
+        env:
+          AUTOORG_DB_PATH: /tmp/autoorg-sec-${{ github.run_id }}.db
+
+  # ─────────────────────────────────────────────────────────
+  # JOB: benchmark-gate
+  # ─────────────────────────────────────────────────────────
+  benchmark-gate:
+    name: Benchmark Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: [unit-tests, migration-integrity, security-scan]
+    if: >
+      github.event_name == 'pull_request' &&
+      !github.event.pull_request.draft
+
+    env:
+      AUTOORG_API_KEY_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY }}
+      AUTOORG_API_KEY_OPENAI: ${{ secrets.OPENAI_API_KEY }}
+      AUTOORG_DB_PATH: /tmp/autoorg-bench-${{ github.run_id }}.db
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-autoorg
+
+      - uses: ./.github/actions/run-migrations
+        env:
+          AUTOORG_DB_PATH: /tmp/autoorg-bench-${{ github.run_id }}.db
+
+      - uses: ./.github/actions/benchmark-gate
+        with:
+          suite: core
+          fail-on-regression: 'true'
+          upload-report: 'true'
+
+      - name: Comment benchmark results on PR
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const results = fs.existsSync('benchmarks/outputs/ci-summary.json')
+              ? JSON.parse(fs.readFileSync('benchmarks/outputs/ci-summary.json', 'utf8'))
+              : {};
+
+            const status = results.failed === 0 && results.regressions === 0
+              ? '✅ Passed'
+              : '❌ Failed';
+
+            const body = [
+              `## Benchmark Results ${status}`,
+              ``,
+              `| Metric | Value |`,
+              `|--------|-------|`,
+              `| Cases run | ${results.total ?? '?'} |`,
+              `| Acceptance failures | ${results.failed ?? '?'} |`,
+              `| Serious regressions | ${results.regressions ?? '?'} |`,
+              `| Avg score | ${results.avgScore?.toFixed(4) ?? '?'} |`,
+              `| Avg policy | ${results.avgPolicy?.toFixed(4) ?? '?'} |`,
+              `| Avg cost USD | ${results.avgCost?.toFixed(4) ?? '?'} |`,
+              ``,
+              `[Full report](../actions/runs/${{ github.run_id }})`,
+            ].join('\n');
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });
+
+  # ─────────────────────────────────────────────────────────
+  # JOB: build-check
+  # ─────────────────────────────────────────────────────────
+  build-check:
+    name: Build Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [unit-tests]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-autoorg
+        with:
+          build-web: 'true'
+
+      - name: Check build artifacts exist
+        run: |
+          test -d web/.next || (echo "::error::Next.js build output missing" && exit 1)
+
+  # ─────────────────────────────────────────────────────────
+  # JOB: ci-gate (final required check)
+  # ─────────────────────────────────────────────────────────
+  ci-gate:
+    name: CI Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs:
+      - lint
+      - typecheck
+      - unit-tests
+      - migration-integrity
+      - security-scan
+      - build-check
+    if: always()
+
+    steps:
+      - name: Evaluate all jobs
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then
+            echo "::error::One or more CI jobs failed"
+            exit 1
+          fi
+          if [[ "${{ contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+            echo "::error::One or more CI jobs were cancelled"
+            exit 1
+          fi
+          echo "All CI jobs passed"
+6. CD pipeline

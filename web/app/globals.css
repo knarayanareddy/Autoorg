@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --cyan:   #22d3ee;
+  --green:  #4ade80;
+  --red:    #f87171;
+  --yellow: #facc15;
+  --gray:   #6b7280;
+}
+
+.sparkline-bar { transition: height 0.3s ease; }
+.agent-node    { transition: all 0.2s ease; }
+.score-pulse   { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }

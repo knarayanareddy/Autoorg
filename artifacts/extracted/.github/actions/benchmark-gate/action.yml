@@ -1,0 +1,47 @@
+YAML
+
+name: Benchmark Gate
+description: Run benchmark suite and fail on regressions or acceptance failures.
+
+inputs:
+  suite:
+    description: Benchmark suite to run
+    required: false
+    default: core
+  constitution:
+    description: Constitution variant
+    required: false
+    default: default
+  template:
+    description: Template variant
+    required: false
+    default: baseline
+  fail-on-regression:
+    description: Fail on detected regressions
+    required: false
+    default: 'true'
+  upload-report:
+    description: Upload benchmark report artifact
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Run benchmark CI gate
+      shell: bash
+      env:
+        BENCHMARK_SUITE: ${{ inputs.suite }}
+        BENCHMARK_CONSTITUTION: ${{ inputs.constitution }}
+        BENCHMARK_TEMPLATE: ${{ inputs.template }}
+        BENCHMARK_FAIL_ON_REGRESSION: ${{ inputs.fail-on-regression }}
+      run: bun run src/evals/benchmark-ci.ts
+
+    - name: Upload benchmark report
+      if: inputs.upload-report == 'true' && always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-report-${{ github.sha }}
+        path: benchmarks/outputs/
+        retention-days: 30
+4. Reusable composite action: Health check

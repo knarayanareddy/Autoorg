@@ -1,0 +1,70 @@
+YAML
+
+name: Security Audit Weekly
+
+on:
+  schedule:
+    - cron: '0 4 * * 1'          # 04:00 UTC every Monday
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  issues: write
+
+env:
+  AUTOORG_DB_PATH: ${{ secrets.PRODUCTION_DB_PATH }}
+  AUTOORG_SIGNING_SECRET: ${{ secrets.PRODUCTION_SIGNING_SECRET }}
+
+jobs:
+
+  security-audit:
+    name: Weekly Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-autoorg
+
+      - name: Run dependency audit
+        run: bun audit
+
+      - name: Run artifact integrity check
+        run: bun run scripts/ci/security-scan.ts --full-audit
+
+      - name: Export security bundle
+        run: |
+          bun run -e "
+          const { SecurityAudit } = await import('./src/runtime/security-audit.ts');
+          const audit = new SecurityAudit('weekly_audit_${{ github.run_id }}');
+          const result = await audit.exportBundle('json');
+          console.log(JSON.stringify(result, null, 2));
+          "
+
+      - name: Upload security audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-audit-${{ github.run_id }}
+          path: artifacts/security/audits/
+          retention-days: 180
+
+      - name: Check for open critical findings
+        run: bun run scripts/ci/security-scan.ts --check-open-critical
+        env:
+          AUTOORG_DB_PATH: ${{ secrets.PRODUCTION_DB_PATH }}
+
+      - name: Alert on critical findings
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🔴 Critical Security Findings — ${new Date().toISOString().slice(0, 10)}`,
+              body: `Run: ${{ github.run_id }}\nReview the uploaded security audit artifact immediately.`,
+              labels: ['security', 'critical', 'automated'],
+            });
+10. Monthly distillation export

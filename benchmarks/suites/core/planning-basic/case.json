@@ -1,0 +1,17 @@
+{
+  "suite": "core",
+  "case_name": "planning-basic",
+  "category": "planning",
+  "difficulty": "easy",
+  "description": "Baseline planning mission with measurable acceptance criteria.",
+  "seed": 42,
+  "max_cycles": 3,
+  "template_variant": "baseline",
+  "acceptance": {
+    "min_score": 0.70,
+    "min_groundedness": 0.80,
+    "max_cost_usd": 1.0,
+    "max_latency_ms": 300000,
+    "min_policy_compliance": 1.0
+  }
+}

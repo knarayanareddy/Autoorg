@@ -1,0 +1,1975 @@
+{
+  "inPath": "Autoorg.md",
+  "headersFound": 253,
+  "extractedCount": 246,
+  "extracted": [
+    {
+      "filePath": "src/utils/retry.ts",
+      "languageHint": null,
+      "startLine": 4896,
+      "endLine": 4985,
+      "bytes": 2699,
+      "sha256": "92eb42459639c782df5b0f1bb4b633ade169e113c8c6f0520b1d996c47e17c1b"
+    },
+    {
+      "filePath": "src/utils/structured-output.ts",
+      "languageHint": null,
+      "startLine": 4986,
+      "endLine": 5099,
+      "bytes": 3273,
+      "sha256": "f33e9eb2cfd217d89341644d43955540bc523bd9dd77866df78468ec4eae80f0"
+    },
+    {
+      "filePath": "src/utils/token-counter.ts",
+      "languageHint": null,
+      "startLine": 5100,
+      "endLine": 5133,
+      "bytes": 1128,
+      "sha256": "0ed2e8c592e0797b1f08a1701754058b2f6ffe83d4cb664a5c4457882ec53976"
+    },
+    {
+      "filePath": "src/runtime/mailman.ts",
+      "languageHint": null,
+      "startLine": 5134,
+      "endLine": 5337,
+      "bytes": 6767,
+      "sha256": "1d9521ef0a49853cd9878ddd0f96fb053588fe7b79a67e7b5a71a13072c407b4"
+    },
+    {
+      "filePath": "src/runtime/transcript-logger.ts",
+      "languageHint": null,
+      "startLine": 5338,
+      "endLine": 5462,
+      "bytes": 3316,
+      "sha256": "1a36aca83b9e93c7c7f9efce5f835b5f5ae560f915129579f3b427c7ead927e7"
+    },
+    {
+      "filePath": "src/prompts/base.ts",
+      "languageHint": null,
+      "startLine": 5463,
+      "endLine": 5564,
+      "bytes": 3416,
+      "sha256": "da4d3cd382f95a6cd47887a014624c2b142f5aea68b25c515fabdf5631320901"
+    },
+    {
+      "filePath": "src/prompts/ceo.ts",
+      "languageHint": null,
+      "startLine": 5565,
+      "endLine": 5758,
+      "bytes": 6882,
+      "sha256": "3d4e56078193cea063ececd2d6384958cbebe5948048f3d031af5819ed5a936c"
+    },
+    {
+      "filePath": "src/prompts/engineer.ts",
+      "languageHint": null,
+      "startLine": 5759,
+      "endLine": 5854,
+      "bytes": 3041,
+      "sha256": "3d16385fe10b50120359d217f88e8170a920c6ba376e24cc1b51345bacb0facb"
+    },
+    {
+      "filePath": "src/prompts/critic.ts",
+      "languageHint": null,
+      "startLine": 5855,
+      "endLine": 5976,
+      "bytes": 4422,
+      "sha256": "e94d6cdfd07117f74c7de735866e4915d505e870d395aecc343c896eaa679de5"
+    },
+    {
+      "filePath": "src/prompts/devils-advocate.ts",
+      "languageHint": null,
+      "startLine": 5977,
+      "endLine": 6092,
+      "bytes": 3753,
+      "sha256": "93ba796f115968619b473795e0d9d08714109a549b038d6f2ae66c10c8fba840"
+    },
+    {
+      "filePath": "src/prompts/archivist.ts",
+      "languageHint": null,
+      "startLine": 6093,
+      "endLine": 6229,
+      "bytes": 4467,
+      "sha256": "b3401ca2ce700b3c46d2c8eb1ff332bba41ab9a19d3c14a787e35bb1b785c258"
+    },
+    {
+      "filePath": "src/prompts/ratchet-judge.ts",
+      "languageHint": null,
+      "startLine": 6230,
+      "endLine": 6394,
+      "bytes": 5250,
+      "sha256": "d203e033766a19eeabb5c7c891ec64e53806ac30f544d3ab235994fd777805b5"
+    },
+    {
+      "filePath": "src/runtime/agent-runner.ts",
+      "languageHint": null,
+      "startLine": 6395,
+      "endLine": 7045,
+      "bytes": 26059,
+      "sha256": "5458a2725921c567f5ddfecc1fca76b140347b5a481c49a9c85f8e064e48bfad"
+    },
+    {
+      "filePath": "src/runtime/memory-manager.ts",
+      "languageHint": null,
+      "startLine": 7046,
+      "endLine": 8704,
+      "bytes": 68379,
+      "sha256": "77805e945cd169bcbae6727e5e8d02f596de08ccf33f03e91dcdfe1d1aee4ae2"
+    },
+    {
+      "filePath": "src/db/migrate-phase2.ts",
+      "languageHint": null,
+      "startLine": 8705,
+      "endLine": 8773,
+      "bytes": 2379,
+      "sha256": "82ad55e3e92913984480044edf29d58d3bfd7387702ad23e97a4b514431595cf"
+    },
+    {
+      "filePath": "src/runtime/objection-tracker.ts",
+      "languageHint": null,
+      "startLine": 8774,
+      "endLine": 9093,
+      "bytes": 10582,
+      "sha256": "33a49235becac415cefba81e6d91b823157e90e63d1665fd4896d64d8be714db"
+    },
+    {
+      "filePath": "src/runtime/cycle-context-builder.ts",
+      "languageHint": null,
+      "startLine": 9094,
+      "endLine": 10797,
+      "bytes": 65850,
+      "sha256": "f919b409ae7dc107d16246264148ff94915a8b53787411ea46f616eb601a00cc"
+    },
+    {
+      "filePath": "web/next.config.js",
+      "languageHint": null,
+      "startLine": 10798,
+      "endLine": 10816,
+      "bytes": 339,
+      "sha256": "43f37a977df13309ea4076aced78d95b2fae86f1ab75747e9e8e049ae085cb50"
+    },
+    {
+      "filePath": "web/app/layout.tsx",
+      "languageHint": null,
+      "startLine": 10817,
+      "endLine": 10844,
+      "bytes": 1079,
+      "sha256": "52c196fc44df356c88da1a52953495578461f0f0566bfd45bbec513a2de726e0"
+    },
+    {
+      "filePath": "web/app/globals.css",
+      "languageHint": null,
+      "startLine": 10845,
+      "endLine": 10862,
+      "bytes": 353,
+      "sha256": "0312a8ced47f30dd138dfbad6ce61c0960f94b6627347157ba8bf1bc13ee78b5"
+    },
+    {
+      "filePath": "web/components/ScoreChart.tsx",
+      "languageHint": null,
+      "startLine": 10863,
+      "endLine": 10990,
+      "bytes": 3849,
+      "sha256": "bc352a72fa693ddb1fe220331952b7b533d4ecaaf8d03b273b81c6ddf0947f6e"
+    },
+    {
+      "filePath": "web/components/ObjectionTracker.tsx",
+      "languageHint": null,
+      "startLine": 10991,
+      "endLine": 11066,
+      "bytes": 2533,
+      "sha256": "74557dc5f4550ef7a2fdc93d6b6d3b18713870bbabee4758a0ab9455ab6dada4"
+    },
+    {
+      "filePath": "web/components/CostBreakdown.tsx",
+      "languageHint": null,
+      "startLine": 11067,
+      "endLine": 11132,
+      "bytes": 2040,
+      "sha256": "6be566eed18ce3cc67e9cc14391874421cfbc29cae280fddf0b121e31cff17b9"
+    },
+    {
+      "filePath": "web/components/MailboxFeed.tsx",
+      "languageHint": null,
+      "startLine": 11133,
+      "endLine": 12050,
+      "bytes": 37319,
+      "sha256": "0382edd4d43a2502b01112fa05afb0aecefb0884a01ae8c6a9b1008805c0468d"
+    },
+    {
+      "filePath": "src/db/schema-phase3.sql",
+      "languageHint": null,
+      "startLine": 12051,
+      "endLine": 12283,
+      "bytes": 10961,
+      "sha256": "60bc62d7a348672ecb69dd7eb458d4a80f53fb8454eca31fb63dd28eae79810e"
+    },
+    {
+      "filePath": "src/db/migrate-phase3.ts",
+      "languageHint": null,
+      "startLine": 12284,
+      "endLine": 17203,
+      "bytes": 187093,
+      "sha256": "6d1c34e6edb4792bfac9c9193f9b66e0e03e45f961fa31c28344735bee3d21f1"
+    },
+    {
+      "filePath": "web/tsconfig.json",
+      "languageHint": null,
+      "startLine": 17204,
+      "endLine": 17232,
+      "bytes": 672,
+      "sha256": "7ab882a719ecf591beb2b32e26f8c330a6a4e5d2209938469d94a235036a1734"
+    },
+    {
+      "filePath": "src/graph/types.ts",
+      "languageHint": null,
+      "startLine": 17233,
+      "endLine": 17296,
+      "bytes": 1088,
+      "sha256": "d98c71b255b4da510c16ac56b25d9b6716a6c15ba2871b57276b6479c9dd1bd4"
+    },
+    {
+      "filePath": "src/graph/normalize.ts",
+      "languageHint": null,
+      "startLine": 17297,
+      "endLine": 17448,
+      "bytes": 4246,
+      "sha256": "525f90f0594500cdbc174168858408785b24358ee3979229cc30bf5bb2fe8869"
+    },
+    {
+      "filePath": "src/graph/extract.ts",
+      "languageHint": null,
+      "startLine": 17449,
+      "endLine": 17546,
+      "bytes": 2703,
+      "sha256": "bfbd5e800764984c2ef204157216a531ea56b311566a67b8c836d5d69c0695e7"
+    },
+    {
+      "filePath": "src/graph/build.ts",
+      "languageHint": null,
+      "startLine": 17547,
+      "endLine": 17790,
+      "bytes": 7087,
+      "sha256": "0740a9322732933e9d065259f47e4b76feb07f9ade296d510707d0cf497ce047"
+    },
+    {
+      "filePath": "src/runtime/graph-manager.ts",
+      "languageHint": null,
+      "startLine": 17791,
+      "endLine": 17832,
+      "bytes": 1220,
+      "sha256": "30bd3b88a00a5801546aced7684f7cf70f53b62be2b2ffc1817cdce337bb8502"
+    },
+    {
+      "filePath": "src/runtime/grounded-context.ts",
+      "languageHint": null,
+      "startLine": 17833,
+      "endLine": 17931,
+      "bytes": 3084,
+      "sha256": "c7be0dd85276956a31d52536286fd8a0c257d359149cd09dcf5b55853d7ace69"
+    },
+    {
+      "filePath": "src/graph/citations.ts",
+      "languageHint": null,
+      "startLine": 17932,
+      "endLine": 18482,
+      "bytes": 14553,
+      "sha256": "764f54ceffbe3bed921aaf9a8696e4519af20161f48904e5d9838e0ef252bed4"
+    },
+    {
+      "filePath": "web/components/AgentGraph.tsx",
+      "languageHint": null,
+      "startLine": 18483,
+      "endLine": 18671,
+      "bytes": 5057,
+      "sha256": "afd132756660f3648e026e58cbcd5ac1d63728478652dc9b8078e7d08e1dc19b"
+    },
+    {
+      "filePath": "web/app/graph/page.tsx",
+      "languageHint": null,
+      "startLine": 18672,
+      "endLine": 19061,
+      "bytes": 12408,
+      "sha256": "514a4233ee89f69e0461f282c027eba6a9de35d2220af9e97243190602bf1ae9"
+    },
+    {
+      "filePath": "src/db/schema-phase4_1.sql",
+      "languageHint": null,
+      "startLine": 19062,
+      "endLine": 19146,
+      "bytes": 4917,
+      "sha256": "ee312aee25047d71b23a88bc53ce59fa87ce54b4d7550fba7f01fab00f8b9465"
+    },
+    {
+      "filePath": "src/db/migrate-phase4_1.ts",
+      "languageHint": null,
+      "startLine": 19147,
+      "endLine": 19182,
+      "bytes": 819,
+      "sha256": "a763e53d8c884bf6314f31c25d959de1790d6b757b83e7e83e8f8ef9e9016c8b"
+    },
+    {
+      "filePath": "src/graph/groundedness-validator.ts",
+      "languageHint": null,
+      "startLine": 19183,
+      "endLine": 19334,
+      "bytes": 4433,
+      "sha256": "5cd1d77d1bd2b45ab5bc020901d1c62e3a1aac9c3373a8384fde408448b2f6c8"
+    },
+    {
+      "filePath": "src/graph/snapshots.ts",
+      "languageHint": null,
+      "startLine": 19335,
+      "endLine": 19475,
+      "bytes": 4446,
+      "sha256": "c44927f7686b42ef5433b37d4430510810122a3150680df2ff8fa7f0a907c0a9"
+    },
+    {
+      "filePath": "src/graph/export.ts",
+      "languageHint": null,
+      "startLine": 19476,
+      "endLine": 19893,
+      "bytes": 13389,
+      "sha256": "f1e587a91c8c976e9db670c6a8b91b7cb33758f94053782f8623ed4102a70a7a"
+    },
+    {
+      "filePath": "web/components/GraphSearch.tsx",
+      "languageHint": null,
+      "startLine": 19894,
+      "endLine": 19975,
+      "bytes": 2518,
+      "sha256": "d1f7dcf65368907d1f207999bba3b554805cc8f3e8474e33831fdca87f503b60"
+    },
+    {
+      "filePath": "web/components/GraphDiff.tsx",
+      "languageHint": null,
+      "startLine": 19976,
+      "endLine": 20053,
+      "bytes": 3325,
+      "sha256": "900d6d78f60248a0de9ecd7759aa56c2510d53a9de25f32f19b01be57c4e5342"
+    },
+    {
+      "filePath": "web/app/graph/page.tsx",
+      "languageHint": null,
+      "startLine": 20054,
+      "endLine": 20527,
+      "bytes": 15572,
+      "sha256": "a04633ebf8227b3190daa9748dfb7ea460debff67ec651801c44146e5eb332d1"
+    },
+    {
+      "filePath": "src/db/schema-phase5.sql",
+      "languageHint": null,
+      "startLine": 20528,
+      "endLine": 20743,
+      "bytes": 11558,
+      "sha256": "29e89fcca269fe74627c720950abd617f36495160b815e87c1206b877cf04d36"
+    },
+    {
+      "filePath": "src/db/migrate-phase5.ts",
+      "languageHint": null,
+      "startLine": 20744,
+      "endLine": 20767,
+      "bytes": 578,
+      "sha256": "fa9de1bef47e21b72b5a3a052c44c1a2efa6d82501d590a8fa2cb606929bc383"
+    },
+    {
+      "filePath": "src/prompts/coordinator-lead.ts",
+      "languageHint": null,
+      "startLine": 20768,
+      "endLine": 20842,
+      "bytes": 1742,
+      "sha256": "8d7294592508a07deec7590c95a3ddf2373ced2f041a100a91c5aae71266b267"
+    },
+    {
+      "filePath": "src/prompts/ultraplan.ts",
+      "languageHint": null,
+      "startLine": 20843,
+      "endLine": 20900,
+      "bytes": 1321,
+      "sha256": "bfc571e2ff59d3c42a80de12e9fb8dcfa96673f7a1d69fb6b48e9202197eae98"
+    },
+    {
+      "filePath": "src/runtime/team-manager.ts",
+      "languageHint": null,
+      "startLine": 20901,
+      "endLine": 21011,
+      "bytes": 2576,
+      "sha256": "7f000c2bef2057e26f8389e25638454eaa564f01aca947b682dadb3ebbff98e1"
+    },
+    {
+      "filePath": "src/runtime/coordinator.ts",
+      "languageHint": null,
+      "startLine": 21012,
+      "endLine": 21146,
+      "bytes": 3810,
+      "sha256": "18f5183defade5272f42edc0d29b757a5dec86d44777d40bdb3e9506dc475be7"
+    },
+    {
+      "filePath": "src/runtime/ultraplan.ts",
+      "languageHint": null,
+      "startLine": 21147,
+      "endLine": 21273,
+      "bytes": 3950,
+      "sha256": "170f1a91b5667f1ec26602f5df1839e5c1edac0fffc010350f96f553a1086212"
+    },
+    {
+      "filePath": "src/runtime/approval-gate.ts",
+      "languageHint": null,
+      "startLine": 21274,
+      "endLine": 21352,
+      "bytes": 2049,
+      "sha256": "744edd8b6c2f098a7dff968247e1b494b3f98f84cc6c6c0aee7269ac369fa5d9"
+    },
+    {
+      "filePath": "src/runtime/scheduler.ts",
+      "languageHint": null,
+      "startLine": 21353,
+      "endLine": 21448,
+      "bytes": 2490,
+      "sha256": "ad6d6121b7e7bcae0baefed71c1deaa28f1c8907312b8bf8a86e1b6da09f35aa"
+    },
+    {
+      "filePath": "src/runtime/service-state.ts",
+      "languageHint": null,
+      "startLine": 21449,
+      "endLine": 21502,
+      "bytes": 1349,
+      "sha256": "256159b9f6080cd21869b44cb803035bad9ac78e83b3afe31d3ad90954684e56"
+    },
+    {
+      "filePath": "src/runtime/daemon.ts",
+      "languageHint": null,
+      "startLine": 21503,
+      "endLine": 21588,
+      "bytes": 2131,
+      "sha256": "90b3ad4dbba90c05f493cd1c4d09426530db3e3963394a1218babc35c22b83ae"
+    },
+    {
+      "filePath": "src/integrations/github.ts",
+      "languageHint": null,
+      "startLine": 21589,
+      "endLine": 21654,
+      "bytes": 1938,
+      "sha256": "4a7262c4c2cb960a113e11ed7363be2a140639697fdc20dfcea1edfc16502b2b"
+    },
+    {
+      "filePath": "src/integrations/pr-writer.ts",
+      "languageHint": null,
+      "startLine": 21655,
+      "endLine": 21713,
+      "bytes": 1234,
+      "sha256": "a787c2a2e62d49152e0ea72125d2361087ef0ae45dbc991d4b54eee178afe624"
+    },
+    {
+      "filePath": "src/integrations/webhooks.ts",
+      "languageHint": null,
+      "startLine": 21714,
+      "endLine": 21950,
+      "bytes": 7970,
+      "sha256": "d12974152527c871f31df4303ac45a74eca16e19aa2ef0e2348c10a16b657e75"
+    },
+    {
+      "filePath": "web/app/approvals/page.tsx",
+      "languageHint": null,
+      "startLine": 21951,
+      "endLine": 22363,
+      "bytes": 15528,
+      "sha256": "f903ce93abddb93ec2465cb0b22ca37d43089203d165c36d131e7de9dab440b6"
+    },
+    {
+      "filePath": "src/db/schema-phase5_1.sql",
+      "languageHint": null,
+      "startLine": 22364,
+      "endLine": 22661,
+      "bytes": 15002,
+      "sha256": "3056f3f1f2a72e4e7826607b5f2483d1405b2e46ec3e9997c31d4d0e2b77197a"
+    },
+    {
+      "filePath": "src/db/migrate-phase5_1.ts",
+      "languageHint": null,
+      "startLine": 22662,
+      "endLine": 22731,
+      "bytes": 2031,
+      "sha256": "5061493c9023aaa652a4ae72ae3a469704ef0ea533769a228bf28a17d10d86a5"
+    },
+    {
+      "filePath": "src/runtime/approval-enforcer.ts",
+      "languageHint": null,
+      "startLine": 22732,
+      "endLine": 22887,
+      "bytes": 4915,
+      "sha256": "14c3831124784739a86998957f5c4b753f6552a1e5569cce5c878417ab988cd7"
+    },
+    {
+      "filePath": "src/runtime/workspace-lock.ts",
+      "languageHint": null,
+      "startLine": 22888,
+      "endLine": 22976,
+      "bytes": 2589,
+      "sha256": "16e14b4960df61948f9dd9be1c7ce41d05fadc4a70b0408afdfbaac4052c150d"
+    },
+    {
+      "filePath": "src/runtime/recovery-journal.ts",
+      "languageHint": null,
+      "startLine": 22977,
+      "endLine": 23042,
+      "bytes": 1631,
+      "sha256": "12781afb3487f5a64d54cb16b5d464ad6c13a15cb14186f9aa592d12da13fe80"
+    },
+    {
+      "filePath": "src/runtime/crash-recover.ts",
+      "languageHint": null,
+      "startLine": 23043,
+      "endLine": 23084,
+      "bytes": 1352,
+      "sha256": "426bd297d003160d7118844632ce9158e4942951650ff5d5a24fd420db8170ee"
+    },
+    {
+      "filePath": "src/runtime/lease-manager.ts",
+      "languageHint": null,
+      "startLine": 23085,
+      "endLine": 23197,
+      "bytes": 2955,
+      "sha256": "9f49d134331957bb4181f6ba6c370f1ab3e8023d732cb7013f769ad0da2cea3e"
+    },
+    {
+      "filePath": "src/runtime/incident-log.ts",
+      "languageHint": null,
+      "startLine": 23198,
+      "endLine": 23228,
+      "bytes": 690,
+      "sha256": "43ea62440b0a450aaeb4c8504a5d09468ac6d37ccd2d0514fdc6d17379f5a8eb"
+    },
+    {
+      "filePath": "src/runtime/job-executor.ts",
+      "languageHint": null,
+      "startLine": 23229,
+      "endLine": 23324,
+      "bytes": 2862,
+      "sha256": "58b0e58dbd95f4c9ec1ec56901ab27bac70256f4e52a2db86676493b6f401fa6"
+    },
+    {
+      "filePath": "src/runtime/budget-manager.ts",
+      "languageHint": null,
+      "startLine": 23325,
+      "endLine": 23421,
+      "bytes": 2818,
+      "sha256": "5ab86f93498fb95eb2982e8d2fb5cbc821cb6209cbfcdd20b82e1c41eed0793c"
+    },
+    {
+      "filePath": "src/runtime/memory-partitions.ts",
+      "languageHint": null,
+      "startLine": 23422,
+      "endLine": 23489,
+      "bytes": 2112,
+      "sha256": "d80cd495d87d1c80e969debdb9eed67508770c958fefcac95438d0f287428cf1"
+    },
+    {
+      "filePath": "src/prompts/issue-translator.ts",
+      "languageHint": null,
+      "startLine": 23490,
+      "endLine": 23520,
+      "bytes": 976,
+      "sha256": "9f5c8639e00aea23d140c13724015530ef7cacbd481a0999745c5a9cdf85db92"
+    },
+    {
+      "filePath": "src/integrations/issue-translator.ts",
+      "languageHint": null,
+      "startLine": 23521,
+      "endLine": 23609,
+      "bytes": 2687,
+      "sha256": "5e044aa4b5885166291d46c1a828672b8e5745856c956ac79c0629f60a797e7d"
+    },
+    {
+      "filePath": "src/prompts/diff-summarizer.ts",
+      "languageHint": null,
+      "startLine": 23610,
+      "endLine": 23632,
+      "bytes": 582,
+      "sha256": "71171cfcb5ae4fb551003a368e2c71fa0f4461533ffd95dedc32566f67991408"
+    },
+    {
+      "filePath": "src/integrations/diff-summarizer.ts",
+      "languageHint": null,
+      "startLine": 23633,
+      "endLine": 23753,
+      "bytes": 3120,
+      "sha256": "b7bd1a613c7cbe91bf533071c420d8ef61ae2be0ee342ff0740b285865a55bcc"
+    },
+    {
+      "filePath": "src/runtime/ultraplan-sla.ts",
+      "languageHint": null,
+      "startLine": 23754,
+      "endLine": 24335,
+      "bytes": 16868,
+      "sha256": "f2cda227c0f58cc60fb922d59279532c87a28ae5042498ff4f86313e149251d1"
+    },
+    {
+      "filePath": "src/prompts/recovery-analyst.ts",
+      "languageHint": null,
+      "startLine": 24336,
+      "endLine": 24362,
+      "bytes": 708,
+      "sha256": "b50796c2c287b46841f3f264acc16cb523207f498abad849bc05bb4ed05ecc44"
+    },
+    {
+      "filePath": "src/api/hardening-routes.ts",
+      "languageHint": null,
+      "startLine": 24363,
+      "endLine": 24750,
+      "bytes": 14528,
+      "sha256": "94a79fef5c437e2e095de65c4da17f9c535c0290d9782fdadcb8181d2c8627f1"
+    },
+    {
+      "filePath": "src/db/schema-phase6.sql",
+      "languageHint": null,
+      "startLine": 24751,
+      "endLine": 24938,
+      "bytes": 9733,
+      "sha256": "de8570b9b4d5b071b0678ead53709b9270ee9dead4f133438c60f08cecdd0b67"
+    },
+    {
+      "filePath": "src/db/migrate-phase6.ts",
+      "languageHint": null,
+      "startLine": 24939,
+      "endLine": 24963,
+      "bytes": 584,
+      "sha256": "9caaf461ad9c683b9f4ad7ba0db5ee2104a364db9e04a7d5055bb2923329449e"
+    },
+    {
+      "filePath": "src/tools/registry.ts",
+      "languageHint": null,
+      "startLine": 24964,
+      "endLine": 25046,
+      "bytes": 2007,
+      "sha256": "19d63ecd871c9f5ce61980d0ea6a0e122e41956193094b2aab05e980bbebff07"
+    },
+    {
+      "filePath": "src/tools/tool-policy.ts",
+      "languageHint": null,
+      "startLine": 25047,
+      "endLine": 25139,
+      "bytes": 2600,
+      "sha256": "9229938cb3c40a80af5950d5d96f9c77710c64431be4cfbbc0f9d46a304c8ffa"
+    },
+    {
+      "filePath": "src/integrations/connectors/repo-search.ts",
+      "languageHint": null,
+      "startLine": 25140,
+      "endLine": 25166,
+      "bytes": 763,
+      "sha256": "4a8dad795a1a3e026831c47b6d45d65eeb1a813a5b1e03a91a7cb83bf7a16112"
+    },
+    {
+      "filePath": "src/integrations/connectors/local-docs.ts",
+      "languageHint": null,
+      "startLine": 25167,
+      "endLine": 25193,
+      "bytes": 781,
+      "sha256": "dc632c37e891938f1656b8db4454bd1f3c2d608a0fd71c86f33d61603d8cd0cc"
+    },
+    {
+      "filePath": "src/integrations/connectors/web-fetch.ts",
+      "languageHint": null,
+      "startLine": 25194,
+      "endLine": 25218,
+      "bytes": 560,
+      "sha256": "f4a8756bc1996c2bee6c73f4c97791eeb2c172ba95b0dc6dd7c2cd6777b14c6c"
+    },
+    {
+      "filePath": "src/integrations/connectors/github-search.ts",
+      "languageHint": null,
+      "startLine": 25219,
+      "endLine": 25249,
+      "bytes": 763,
+      "sha256": "350d9fead0204e713ed017f5dd9006eb1263c26f6b6a8615c50e78b717e5a240"
+    },
+    {
+      "filePath": "src/tools/manifests/repo-search.ts",
+      "languageHint": null,
+      "startLine": 25250,
+      "endLine": 25293,
+      "bytes": 1231,
+      "sha256": "e3161bb74c9a0e63bbe62e28153dfc0c23ea1cd9e0ed0a20a8ae9751fe0d21ad"
+    },
+    {
+      "filePath": "src/tools/manifests/repo-read-file.ts",
+      "languageHint": null,
+      "startLine": 25294,
+      "endLine": 25337,
+      "bytes": 1242,
+      "sha256": "0556e46f7714dd6ad5dda64a8da0db17b523cfbdab10820b09bf38141580e9cd"
+    },
+    {
+      "filePath": "src/tools/manifests/local-docs-search.ts",
+      "languageHint": null,
+      "startLine": 25338,
+      "endLine": 25379,
+      "bytes": 1114,
+      "sha256": "4d5e0c00f4fe8a8963b10045c8dd91e1d9934a5d44b5b4a7f6648a4f1de3894e"
+    },
+    {
+      "filePath": "src/tools/manifests/web-fetch.ts",
+      "languageHint": null,
+      "startLine": 25380,
+      "endLine": 25418,
+      "bytes": 1018,
+      "sha256": "b4052ea80623808a4c1f7c648fe7f59e74693307d807ba032bf352098d350ea0"
+    },
+    {
+      "filePath": "src/tools/manifests/github-search.ts",
+      "languageHint": null,
+      "startLine": 25419,
+      "endLine": 25464,
+      "bytes": 1297,
+      "sha256": "86bdfe640190acc720e02096dc01a55edb50da66f90925a9ac3af7573dd5093a"
+    },
+    {
+      "filePath": "src/tools/manifests/sandbox-exec.ts",
+      "languageHint": null,
+      "startLine": 25465,
+      "endLine": 25508,
+      "bytes": 1268,
+      "sha256": "91fcaab8524376a196407ff616dcb82f6f51ffc2f253f64bfe3dacc5960fb64e"
+    },
+    {
+      "filePath": "src/tools/sandbox.ts",
+      "languageHint": null,
+      "startLine": 25509,
+      "endLine": 25576,
+      "bytes": 1694,
+      "sha256": "6844377cc97a7e249b33c8491961d6a644481612be7fa3f44be0a108d12e4464"
+    },
+    {
+      "filePath": "src/tools/tool-runner.ts",
+      "languageHint": null,
+      "startLine": 25577,
+      "endLine": 25775,
+      "bytes": 5754,
+      "sha256": "f672779af0b5a6fcfcae09a6a057191f29f5bc4a1653b5079c2c1443fc9700e8"
+    },
+    {
+      "filePath": "src/tools/evidence-pack.ts",
+      "languageHint": null,
+      "startLine": 25776,
+      "endLine": 25913,
+      "bytes": 3960,
+      "sha256": "f1c8aed7dd685154b0e6551c2c4b3a4baab927842f1d4a39d85fbdd1056e6afe"
+    },
+    {
+      "filePath": "src/tools/replay.ts",
+      "languageHint": null,
+      "startLine": 25914,
+      "endLine": 25968,
+      "bytes": 1571,
+      "sha256": "4cd5e23fee27aef96996a2cd9d1c5099d277540a8c1db4b9a2961dc6bbaba37c"
+    },
+    {
+      "filePath": "src/prompts/tool-planner.ts",
+      "languageHint": null,
+      "startLine": 25969,
+      "endLine": 26005,
+      "bytes": 874,
+      "sha256": "2f90a357a3cf9286437d3a2a3f582ee6862746922e29ba31dfb8d90ff8c9230e"
+    },
+    {
+      "filePath": "src/prompts/evidence-synthesizer.ts",
+      "languageHint": null,
+      "startLine": 26006,
+      "endLine": 26029,
+      "bytes": 648,
+      "sha256": "c3b85755c2a444c4394d25d57083e6a0c6f22cb171fd62f424c79e1b0112cd1c"
+    },
+    {
+      "filePath": "src/prompts/verification-auditor.ts",
+      "languageHint": null,
+      "startLine": 26030,
+      "endLine": 26057,
+      "bytes": 792,
+      "sha256": "895c3ef96652fc77f5f68c55daa153624103052725d5ab61ffc64c802579c8ac"
+    },
+    {
+      "filePath": "src/prompts/tool-aware-critic.ts",
+      "languageHint": null,
+      "startLine": 26058,
+      "endLine": 26069,
+      "bytes": 486,
+      "sha256": "53beb51eff0763320bd6db8a7071a7bf9c1da0ad52edef8bb34465c65aba5855"
+    },
+    {
+      "filePath": "src/tools/bootstrap.ts",
+      "languageHint": null,
+      "startLine": 26070,
+      "endLine": 26240,
+      "bytes": 5233,
+      "sha256": "6137343d74514644f5073dcef743af76e8ad66663d695187e6de6b539f190922"
+    },
+    {
+      "filePath": "src/runtime/verification-auditor.ts",
+      "languageHint": null,
+      "startLine": 26241,
+      "endLine": 26490,
+      "bytes": 6766,
+      "sha256": "189225fe0901cc0fc859fc05e9e2d39b298c6aced8ab713a930db082cb4dbe1a"
+    },
+    {
+      "filePath": "src/api/tool-routes.ts",
+      "languageHint": null,
+      "startLine": 26491,
+      "endLine": 26868,
+      "bytes": 13070,
+      "sha256": "36737a129c6d6316ac5157bda69e87042a83b7c84c4667696b56c38b486a301f"
+    },
+    {
+      "filePath": "src/db/schema-phase6_1.sql",
+      "languageHint": null,
+      "startLine": 26869,
+      "endLine": 27131,
+      "bytes": 13563,
+      "sha256": "16f61d57244316e0153a7817c6cd7de78e9061444ec94e3d9d09d553ca2d0852"
+    },
+    {
+      "filePath": "src/db/migrate-phase6_1.ts",
+      "languageHint": null,
+      "startLine": 27132,
+      "endLine": 27156,
+      "bytes": 586,
+      "sha256": "5547d738e45f2cfbfa1001e909baf0ad7f548891d54ef2ac737d201ec0be3ffb"
+    },
+    {
+      "filePath": "src/runtime/policy-engine.ts",
+      "languageHint": null,
+      "startLine": 27157,
+      "endLine": 27317,
+      "bytes": 5050,
+      "sha256": "945b431198fd1eece92343b0fea7f7268bc02c036a5f8c6bc8bee1544bcfe842"
+    },
+    {
+      "filePath": "src/runtime/risk-engine.ts",
+      "languageHint": null,
+      "startLine": 27318,
+      "endLine": 27378,
+      "bytes": 1638,
+      "sha256": "54f8578b7924833edd221f7b518f3f0cbd1a513454fbf946bbe4eb3f1fa813fd"
+    },
+    {
+      "filePath": "src/runtime/action-ledger.ts",
+      "languageHint": null,
+      "startLine": 27379,
+      "endLine": 27511,
+      "bytes": 3555,
+      "sha256": "9a7ba5daa2fb24024bc189967fa8a1fecffe1d23570234082d3eaf760f6c3888"
+    },
+    {
+      "filePath": "src/runtime/artifact-signing.ts",
+      "languageHint": null,
+      "startLine": 27512,
+      "endLine": 27597,
+      "bytes": 2317,
+      "sha256": "0361e458ca41e3ebf12f73b7c6390e97d8b12101877457e71adc149f8749360c"
+    },
+    {
+      "filePath": "src/runtime/immutable-artifacts.ts",
+      "languageHint": null,
+      "startLine": 27598,
+      "endLine": 27651,
+      "bytes": 1350,
+      "sha256": "91f72baf6d5ae5f921e8009ebed0e1a5bd09f359f3991498456cc9b30b376a91"
+    },
+    {
+      "filePath": "src/runtime/run-manifest.ts",
+      "languageHint": null,
+      "startLine": 27652,
+      "endLine": 27704,
+      "bytes": 1414,
+      "sha256": "88ed844f4bbb006a87060c677fdb3c357e1f8f9219dc57100919ca1fde885d84"
+    },
+    {
+      "filePath": "src/runtime/redaction.ts",
+      "languageHint": null,
+      "startLine": 27705,
+      "endLine": 27816,
+      "bytes": 2825,
+      "sha256": "4fbfae43d7b04f02eb4b9a5877a87e5a0e4bbd8a270cd34ac8c438de18252132"
+    },
+    {
+      "filePath": "src/prompts/unsafe-action-detector.ts",
+      "languageHint": null,
+      "startLine": 27817,
+      "endLine": 27863,
+      "bytes": 1197,
+      "sha256": "99dd7016b166c0bddd977b0aa25a9c2a30a4209968dd1f671da75ddedc0f9262"
+    },
+    {
+      "filePath": "src/runtime/safety-review.ts",
+      "languageHint": null,
+      "startLine": 27864,
+      "endLine": 27931,
+      "bytes": 2125,
+      "sha256": "0cb753403d3cecd4723b7571ffe5509333d8c0129a20402fdb52fd4692da5f57"
+    },
+    {
+      "filePath": "src/prompts/provenance-linker.ts",
+      "languageHint": null,
+      "startLine": 27932,
+      "endLine": 27958,
+      "bytes": 846,
+      "sha256": "29eb335a70b2e08e10fb37784a174a31b3341cf6b98d502bd44f6ba976b51a84"
+    },
+    {
+      "filePath": "src/runtime/provenance.ts",
+      "languageHint": null,
+      "startLine": 27959,
+      "endLine": 28114,
+      "bytes": 4406,
+      "sha256": "eddce5289c1e4bd7335a4d032e6aa714bdb2bf63d280a087aeb25b05654eed14"
+    },
+    {
+      "filePath": "src/prompts/policy-auditor.ts",
+      "languageHint": null,
+      "startLine": 28115,
+      "endLine": 28151,
+      "bytes": 876,
+      "sha256": "fe48beec1b55f993cd093c8d770a7c85203e809979d1a3d6e3c7a700271058bd"
+    },
+    {
+      "filePath": "src/runtime/policy-auditor.ts",
+      "languageHint": null,
+      "startLine": 28152,
+      "endLine": 28236,
+      "bytes": 2341,
+      "sha256": "b86e3c6d34143970776f112f4767d3e736a90f2eaf4188502daf7b6899a3c7e4"
+    },
+    {
+      "filePath": "src/runtime/security-audit.ts",
+      "languageHint": null,
+      "startLine": 28237,
+      "endLine": 29023,
+      "bytes": 21943,
+      "sha256": "81187d01d1d6332ae2efbbd93eee74ebbcfada14b6af1bab700f7d5ee2b70191"
+    },
+    {
+      "filePath": "src/api/security-routes.ts",
+      "languageHint": null,
+      "startLine": 29024,
+      "endLine": 29529,
+      "bytes": 17114,
+      "sha256": "d5aef5f2dcbc926e3f8ac002bf5fe98323fb6a4264ecd7f76f4626e87afbf7c5"
+    },
+    {
+      "filePath": "src/db/schema-phase7.sql",
+      "languageHint": null,
+      "startLine": 29530,
+      "endLine": 29760,
+      "bytes": 12406,
+      "sha256": "de3c930b05777c7625147516e24bc22ae13deba5303208958130db264c382bbb"
+    },
+    {
+      "filePath": "src/db/migrate-phase7.ts",
+      "languageHint": null,
+      "startLine": 29761,
+      "endLine": 29829,
+      "bytes": 1700,
+      "sha256": "27cbf11c178596567613c4579735acd976a929e72b79d09dcf4dd2740608cb38"
+    },
+    {
+      "filePath": "src/evals/metrics.ts",
+      "languageHint": null,
+      "startLine": 29830,
+      "endLine": 29860,
+      "bytes": 818,
+      "sha256": "290342590201f391b3e9da8febee59ccdd5b0ef03887c62c4e33fd3e6a92b04f"
+    },
+    {
+      "filePath": "src/evals/suite-loader.ts",
+      "languageHint": null,
+      "startLine": 29861,
+      "endLine": 29956,
+      "bytes": 2918,
+      "sha256": "e7970fa1be68f2e965382d8c92734bb503fc36a915b4aa1b4a22807e2a35808d"
+    },
+    {
+      "filePath": "src/prompts/gold-comparator.ts",
+      "languageHint": null,
+      "startLine": 29957,
+      "endLine": 29991,
+      "bytes": 1027,
+      "sha256": "38297ff17459e0989788e454d7790dae8d99b896ff23210b8170ead55d16df4e"
+    },
+    {
+      "filePath": "src/evals/gold-evaluator.ts",
+      "languageHint": null,
+      "startLine": 29992,
+      "endLine": 30055,
+      "bytes": 2070,
+      "sha256": "b9563755f712de72e1058fc29edcd42bd3c073960eb02e454926fecc22b8e1b2"
+    },
+    {
+      "filePath": "src/evals/benchmark-runner.ts",
+      "languageHint": null,
+      "startLine": 30056,
+      "endLine": 30277,
+      "bytes": 7391,
+      "sha256": "cb884cc675be124a9e1af2bdd5d126516de2884c247e2f3294895450a0648297"
+    },
+    {
+      "filePath": "src/evals/leaderboard.ts",
+      "languageHint": null,
+      "startLine": 30278,
+      "endLine": 30349,
+      "bytes": 2201,
+      "sha256": "e6cefcbde0f0cb84bb9dd1698908990bf5405da7931d84d0426c39011103253c"
+    },
+    {
+      "filePath": "src/prompts/regression-explainer.ts",
+      "languageHint": null,
+      "startLine": 30350,
+      "endLine": 30383,
+      "bytes": 948,
+      "sha256": "7781c4abfaa856ed55ea78a75741c74f80415ac4132a794dc2c89633fa4e061d"
+    },
+    {
+      "filePath": "src/evals/regression-detector.ts",
+      "languageHint": null,
+      "startLine": 30384,
+      "endLine": 30517,
+      "bytes": 4226,
+      "sha256": "7369e31d522c33487e5038235596937668624151605a802053c4b4fe1023e54c"
+    },
+    {
+      "filePath": "src/evals/replay-lab.ts",
+      "languageHint": null,
+      "startLine": 30518,
+      "endLine": 30612,
+      "bytes": 2986,
+      "sha256": "e618898ca655c0c232a749158856289b96d1b01487f82a1416da057fa85172f0"
+    },
+    {
+      "filePath": "src/evals/constitution-ab.ts",
+      "languageHint": null,
+      "startLine": 30613,
+      "endLine": 30697,
+      "bytes": 2418,
+      "sha256": "57f775e931d39f7de5fd070a792a2a4f2dee9fd24b21822a41b2bcf817f871bc"
+    },
+    {
+      "filePath": "src/evals/template-bakeoff.ts",
+      "languageHint": null,
+      "startLine": 30698,
+      "endLine": 30776,
+      "bytes": 2428,
+      "sha256": "34f5f73b8146bea06ad0e082cf0a74c422dc99c824f68083d441d08b22d41da3"
+    },
+    {
+      "filePath": "src/prompts/judge-calibrator.ts",
+      "languageHint": null,
+      "startLine": 30777,
+      "endLine": 30807,
+      "bytes": 810,
+      "sha256": "d8df310a97584051965c56a3b1c32d25c6cb843b6e5a628b2c5eb513fce10ac3"
+    },
+    {
+      "filePath": "src/evals/judge-calibrator.ts",
+      "languageHint": null,
+      "startLine": 30808,
+      "endLine": 30911,
+      "bytes": 3094,
+      "sha256": "1f69b45bdf14a292059c6a04770f9963560906515c4105213e47aa52abfe3369"
+    },
+    {
+      "filePath": "src/evals/benchmark-ci.ts",
+      "languageHint": null,
+      "startLine": 30912,
+      "endLine": 31021,
+      "bytes": 3046,
+      "sha256": "e0eb8d564625839a3c079b58f674aec10090aef2e8a9868440329a3193e0b23e"
+    },
+    {
+      "filePath": "src/api/eval-routes.ts",
+      "languageHint": null,
+      "startLine": 31022,
+      "endLine": 31276,
+      "bytes": 8128,
+      "sha256": "c3f2afc5dbcfcc10717bab1183641a4f24ec33c1c3731dea55a959e6d4e1c3f4"
+    },
+    {
+      "filePath": ".github/workflows/benchmarks.yml",
+      "languageHint": null,
+      "startLine": 31277,
+      "endLine": 31621,
+      "bytes": 11881,
+      "sha256": "30f6911cd22d010071d069c6073dc53fbfdbc5de10f4240d1449ae4aa31bcff6"
+    },
+    {
+      "filePath": "src/db/schema-phase8.sql",
+      "languageHint": null,
+      "startLine": 31622,
+      "endLine": 31898,
+      "bytes": 15454,
+      "sha256": "d369cc7b24fdcbe12801cff118ac3ddbd2bc379432efc093b39db13556ecde31"
+    },
+    {
+      "filePath": "src/db/migrate-phase8.ts",
+      "languageHint": null,
+      "startLine": 31899,
+      "endLine": 31969,
+      "bytes": 1585,
+      "sha256": "cbf88df7bdc8cf57e0d71bedf64b52aba1237b858d225abd1294a4fe05f46a66"
+    },
+    {
+      "filePath": "src/portfolio/org-variant.ts",
+      "languageHint": null,
+      "startLine": 31970,
+      "endLine": 32016,
+      "bytes": 1156,
+      "sha256": "4b26943bc400f54c4c3a084e8c04a793fe4bb4c5079c2a98cc14c2906327e10c"
+    },
+    {
+      "filePath": "src/portfolio/branch-strategy.ts",
+      "languageHint": null,
+      "startLine": 32017,
+      "endLine": 32080,
+      "bytes": 1574,
+      "sha256": "c0dd67485f6a60085421450416d8f261d04c744e24f982257dd15cc88fb57fe8"
+    },
+    {
+      "filePath": "src/portfolio/failure-containment.ts",
+      "languageHint": null,
+      "startLine": 32081,
+      "endLine": 32162,
+      "bytes": 2235,
+      "sha256": "3f1ab6fd72a8f6e314d92f3b20c450dbe34762a4ab69ea891608ece074b3dc6d"
+    },
+    {
+      "filePath": "src/portfolio/priors.ts",
+      "languageHint": null,
+      "startLine": 32163,
+      "endLine": 32210,
+      "bytes": 1524,
+      "sha256": "f6b46cd62951b681c19825b1321128bce28dabb9a21bbace9d96bb69d6b143c4"
+    },
+    {
+      "filePath": "src/prompts/portfolio-allocator.ts",
+      "languageHint": null,
+      "startLine": 32211,
+      "endLine": 32250,
+      "bytes": 1076,
+      "sha256": "f8a8a255f14e08af0484f9e9ab79835ff2966d741c5859483b2f4f14f2bf24b7"
+    },
+    {
+      "filePath": "src/portfolio/allocator.ts",
+      "languageHint": null,
+      "startLine": 32251,
+      "endLine": 32365,
+      "bytes": 3512,
+      "sha256": "39be9262f88b01a2be08316999d82a5fbae362b3f2e0c013406b05d727b3e540"
+    },
+    {
+      "filePath": "src/prompts/judge-council.ts",
+      "languageHint": null,
+      "startLine": 32366,
+      "endLine": 32395,
+      "bytes": 754,
+      "sha256": "8e572dd1e68865ea615cbfcf1e4635f7376c5b820d783880c764e71bd1b29084"
+    },
+    {
+      "filePath": "src/portfolio/judge-council.ts",
+      "languageHint": null,
+      "startLine": 32396,
+      "endLine": 32490,
+      "bytes": 2781,
+      "sha256": "561258772919d20eb9f81d661136dea1c74302bf0644c54efdbe810e19b767a1"
+    },
+    {
+      "filePath": "src/prompts/quarantine-reviewer.ts",
+      "languageHint": null,
+      "startLine": 32491,
+      "endLine": 32519,
+      "bytes": 796,
+      "sha256": "e0194d00686a1cb25f58c249dfe9e87f7144509d6f30e6d9a9a3fa4be2dd65b9"
+    },
+    {
+      "filePath": "src/portfolio/quarantine.ts",
+      "languageHint": null,
+      "startLine": 32520,
+      "endLine": 32610,
+      "bytes": 2898,
+      "sha256": "56482971648d4ab2d18d93c6dfa59eaae4cbdb62d2819ef7ebec61333803572c"
+    },
+    {
+      "filePath": "src/portfolio/exchange-bus.ts",
+      "languageHint": null,
+      "startLine": 32611,
+      "endLine": 32694,
+      "bytes": 2385,
+      "sha256": "7ef365c074f5c393920c59388af038deeaa969b8cc386059e66372fac1ffd495"
+    },
+    {
+      "filePath": "src/prompts/best-of-n-synthesizer.ts",
+      "languageHint": null,
+      "startLine": 32695,
+      "endLine": 32717,
+      "bytes": 694,
+      "sha256": "9969658b8ed693b851c516fe43dbf0c0d260399c88509f3c3d422834ef0d8ba9"
+    },
+    {
+      "filePath": "src/portfolio/best-of-n.ts",
+      "languageHint": null,
+      "startLine": 32718,
+      "endLine": 32805,
+      "bytes": 2567,
+      "sha256": "a6e5d7f4d039f1a0c22f47d88df30f0bac9a7d8ae6cbbce8d577f03012d8b0e0"
+    },
+    {
+      "filePath": "src/prompts/tournament-referee.ts",
+      "languageHint": null,
+      "startLine": 32806,
+      "endLine": 32832,
+      "bytes": 653,
+      "sha256": "506bfa5885143b7ee5bb72438174042080e9181a1bbe3fa9c79ad5f9e3fe4384"
+    },
+    {
+      "filePath": "src/portfolio/tournament.ts",
+      "languageHint": null,
+      "startLine": 32833,
+      "endLine": 32931,
+      "bytes": 2839,
+      "sha256": "73ff7d496fb5ae20ca8dec6d75a5d2edd09e932d733928f7a4a9b9d0a47d4bd1"
+    },
+    {
+      "filePath": "src/portfolio/portfolio-runner.ts",
+      "languageHint": null,
+      "startLine": 32932,
+      "endLine": 33427,
+      "bytes": 15325,
+      "sha256": "0fd1a6a5ae86678f14bd43f6966fc079ca71b33792429c77419ea93544abce37"
+    },
+    {
+      "filePath": "src/api/portfolio-routes.ts",
+      "languageHint": null,
+      "startLine": 33428,
+      "endLine": 33969,
+      "bytes": 18318,
+      "sha256": "b019b8b6d6e9dacb7846c5d30051291db3371e05e1414b91a9a8991f4843957b"
+    },
+    {
+      "filePath": "src/db/schema-phase9.sql",
+      "languageHint": null,
+      "startLine": 33970,
+      "endLine": 34366,
+      "bytes": 22310,
+      "sha256": "5ffd8c7e1509452c401b2bb9599570a90aca4fbbaff8da7c15c7d558eb75e075"
+    },
+    {
+      "filePath": "src/db/migrate-phase9.ts",
+      "languageHint": null,
+      "startLine": 34367,
+      "endLine": 34391,
+      "bytes": 577,
+      "sha256": "155e1cb75d2e4c018883b683f7a1ce0077976a9872571426c776ce96701d5172"
+    },
+    {
+      "filePath": "src/platform/auth.ts",
+      "languageHint": null,
+      "startLine": 34392,
+      "endLine": 34573,
+      "bytes": 4359,
+      "sha256": "ae3a64786e43a20277f0d6c0ec370238450977f07649d7b8b52789358c02e9d5"
+    },
+    {
+      "filePath": "src/platform/rbac.ts",
+      "languageHint": null,
+      "startLine": 34574,
+      "endLine": 34674,
+      "bytes": 3336,
+      "sha256": "7f52a9e2978837d87b8a100b83937d20f5e9fcdc5505c0afc9a5459ecb26751f"
+    },
+    {
+      "filePath": "src/platform/tenant-context.ts",
+      "languageHint": null,
+      "startLine": 34675,
+      "endLine": 34748,
+      "bytes": 1771,
+      "sha256": "03776906bf0784902c4dca9e24e86156c04c6c6048c4bc67859140fb041dc99e"
+    },
+    {
+      "filePath": "src/platform/workspace-provisioner.ts",
+      "languageHint": null,
+      "startLine": 34749,
+      "endLine": 34797,
+      "bytes": 1351,
+      "sha256": "c9647c44194150b49c5fbc8be04f4689304e834ebbf9e5aef72b5f8779aa3285"
+    },
+    {
+      "filePath": "src/platform/quota-manager.ts",
+      "languageHint": null,
+      "startLine": 34798,
+      "endLine": 34950,
+      "bytes": 4454,
+      "sha256": "3166fdcf89f8ff296cbdc4a7fec4ba93c3a259f1e25225ea235c2280a052afcf"
+    },
+    {
+      "filePath": "src/platform/billing.ts",
+      "languageHint": null,
+      "startLine": 34951,
+      "endLine": 35003,
+      "bytes": 1376,
+      "sha256": "80f1aa18f7df38105847c40600c7708e694c4da4ea5d9d9d3d1ce35abed3d452"
+    },
+    {
+      "filePath": "src/platform/hosted-runner.ts",
+      "languageHint": null,
+      "startLine": 35004,
+      "endLine": 35129,
+      "bytes": 2936,
+      "sha256": "d1639a95d0012dc7b21176253fb4b4427f3640567c8884d36d397ffe5324a6c5"
+    },
+    {
+      "filePath": "src/platform/remote-agent.ts",
+      "languageHint": null,
+      "startLine": 35130,
+      "endLine": 35222,
+      "bytes": 2277,
+      "sha256": "ef774bb98b0843ba51ba10797979ca12a639ecf06f12b15e1dd58feecfea590d"
+    },
+    {
+      "filePath": "src/platform/comments.ts",
+      "languageHint": null,
+      "startLine": 35223,
+      "endLine": 35284,
+      "bytes": 1469,
+      "sha256": "4b20e83e6a315adf31436b1f843d4fdb9bc67864cc2b8afb042ec574e8b6e67a"
+    },
+    {
+      "filePath": "src/prompts/template-curator.ts",
+      "languageHint": null,
+      "startLine": 35285,
+      "endLine": 35311,
+      "bytes": 731,
+      "sha256": "3289c5eabaf470cc5be242226ee5f60f4cc51c4bcb6cb5c649531d3783d4fdf7"
+    },
+    {
+      "filePath": "src/platform/template-registry.ts",
+      "languageHint": null,
+      "startLine": 35312,
+      "endLine": 35414,
+      "bytes": 3066,
+      "sha256": "fdabf093669538f3c3ec063221b232c100349a9c080c4bee009fccbfec60af08"
+    },
+    {
+      "filePath": "src/platform/role-registry.ts",
+      "languageHint": null,
+      "startLine": 35415,
+      "endLine": 35457,
+      "bytes": 1242,
+      "sha256": "27f77fd46d98cca388dc7d1d0fdd2ed1421ad094e4cb9ba9d21fb61176db3aa9"
+    },
+    {
+      "filePath": "src/platform/backup-manager.ts",
+      "languageHint": null,
+      "startLine": 35458,
+      "endLine": 35582,
+      "bytes": 3777,
+      "sha256": "5c8b9794cdc41a221d62ff77c2303e91b445b00320b769caefc745d4c51dcb98"
+    },
+    {
+      "filePath": "src/platform/retention-manager.ts",
+      "languageHint": null,
+      "startLine": 35583,
+      "endLine": 35644,
+      "bytes": 1986,
+      "sha256": "cf71fecb43f735a0a047530d84762cd3dbb6669f096f587599c1093919e9956b"
+    },
+    {
+      "filePath": "src/platform/observability.ts",
+      "languageHint": null,
+      "startLine": 35645,
+      "endLine": 35702,
+      "bytes": 2203,
+      "sha256": "874dac3ac58f8f7a0a2864a5e1ea19ccf9df03cee740a63ed144563c8296f8e2"
+    },
+    {
+      "filePath": "src/platform/deployment-modes.ts",
+      "languageHint": null,
+      "startLine": 35703,
+      "endLine": 35726,
+      "bytes": 864,
+      "sha256": "a1caaa5fed49808cc83fc9816f8c47d605c6370dbf8a8ba0e2fb5fd9bdabecef"
+    },
+    {
+      "filePath": "src/platform/sdk-tokens.ts",
+      "languageHint": null,
+      "startLine": 35727,
+      "endLine": 35742,
+      "bytes": 250,
+      "sha256": "d02605d906c0110d18c5647b0dbc861a270d798436825d845242d335694ed7a7"
+    },
+    {
+      "filePath": "src/sdk/ts/types.ts",
+      "languageHint": null,
+      "startLine": 35743,
+      "endLine": 35762,
+      "bytes": 452,
+      "sha256": "200337c68c53360726dcbd5328fd13ed8ee25c7832505ab765feb96dce94858e"
+    },
+    {
+      "filePath": "src/sdk/ts/client.ts",
+      "languageHint": null,
+      "startLine": 35763,
+      "endLine": 35808,
+      "bytes": 1154,
+      "sha256": "6c10e7b77be80ca0b95bfdd8e4fa3fed3a3bf77bf4939b4a77c580c2b21ec94a"
+    },
+    {
+      "filePath": "src/sdk/ts/index.ts",
+      "languageHint": null,
+      "startLine": 35809,
+      "endLine": 35814,
+      "bytes": 94,
+      "sha256": "66deb4cec5ab571d0dce6cbc682a7d1197317c3e42d04204dd2e841676d4e32a"
+    },
+    {
+      "filePath": "src/api/workspace-routes.ts",
+      "languageHint": null,
+      "startLine": 35815,
+      "endLine": 35919,
+      "bytes": 3002,
+      "sha256": "50815af9e885e84093394e72cef582013f9cf280a528ba47ed12b6817ebd715a"
+    },
+    {
+      "filePath": "src/api/auth-routes.ts",
+      "languageHint": null,
+      "startLine": 35920,
+      "endLine": 35994,
+      "bytes": 1866,
+      "sha256": "e67e6978ed9dbeb6a022421244dad53ebdcf72e38b0be8b23260d05385deab22"
+    },
+    {
+      "filePath": "src/api/billing-routes.ts",
+      "languageHint": null,
+      "startLine": 35995,
+      "endLine": 36037,
+      "bytes": 1179,
+      "sha256": "443191f4e6cc21522a601288683b00f177ad36f5cabd69141f1c6d553c54f528"
+    },
+    {
+      "filePath": "src/api/template-routes.ts",
+      "languageHint": null,
+      "startLine": 36038,
+      "endLine": 36090,
+      "bytes": 1474,
+      "sha256": "6a50e5130203f53b07dca3bd28cbf0ce5be164fbebd6c347cf426d747649a9f7"
+    },
+    {
+      "filePath": "src/api/admin-routes.ts",
+      "languageHint": null,
+      "startLine": 36091,
+      "endLine": 36155,
+      "bytes": 1915,
+      "sha256": "f59eb5480e8136420fb3e946940972071963b520eec8a5c5894bac8f64a782df"
+    },
+    {
+      "filePath": "src/api/sdk-routes.ts",
+      "languageHint": null,
+      "startLine": 36156,
+      "endLine": 36259,
+      "bytes": 2951,
+      "sha256": "8fd497eb0786a7bdc12f97e820270745bf834a43b9a33f2233be3d8fb0ae66a1"
+    },
+    {
+      "filePath": "src/prompts/comment-summarizer.ts",
+      "languageHint": null,
+      "startLine": 36260,
+      "endLine": 36277,
+      "bytes": 337,
+      "sha256": "ef66f767b2305fb85022bd6a76a5e093786f637117c440e4216623c96b556e79"
+    },
+    {
+      "filePath": "src/prompts/usage-analyzer.ts",
+      "languageHint": null,
+      "startLine": 36278,
+      "endLine": 36841,
+      "bytes": 18766,
+      "sha256": "5822df65ab0e371850c8377a0d14d75382d5c6e68fd47c0623ffd6d97ccb6a14"
+    },
+    {
+      "filePath": "src/db/schema-phase10.sql",
+      "languageHint": null,
+      "startLine": 36842,
+      "endLine": 37129,
+      "bytes": 15765,
+      "sha256": "be6d33e27278fcd1bfb4243972470ded856eb1516b7608c4ca0a48c2ced47b13"
+    },
+    {
+      "filePath": "src/db/migrate-phase10.ts",
+      "languageHint": null,
+      "startLine": 37130,
+      "endLine": 37156,
+      "bytes": 637,
+      "sha256": "3540714021a061e9c3b2819dd61316023c956429e386b8eb399bb846175a11d0"
+    },
+    {
+      "filePath": "src/learning/version-manager.ts",
+      "languageHint": null,
+      "startLine": 37157,
+      "endLine": 37431,
+      "bytes": 7077,
+      "sha256": "6b1ca95ddc248fc187663626aeaaef638fe0de7a7effc93b1d67fdccf29d4932"
+    },
+    {
+      "filePath": "src/learning/lineage.ts",
+      "languageHint": null,
+      "startLine": 37432,
+      "endLine": 37475,
+      "bytes": 1075,
+      "sha256": "6ca376da7ee711874d5e643aacf1fa0e4cfdd9eb318748bff0dfcbb42c7199a2"
+    },
+    {
+      "filePath": "src/prompts/pattern-extractor.ts",
+      "languageHint": null,
+      "startLine": 37476,
+      "endLine": 37515,
+      "bytes": 1176,
+      "sha256": "22dbb7e5f19d17988ffc5407100a67f7743fb1bd3f473fa285c3d621f642efa9"
+    },
+    {
+      "filePath": "src/learning/pattern-miner.ts",
+      "languageHint": null,
+      "startLine": 37516,
+      "endLine": 37625,
+      "bytes": 3045,
+      "sha256": "1eb1c122b45aeac2c0a5b7565e08fd012e78a1ce3193c13f2b221cfcb583209b"
+    },
+    {
+      "filePath": "src/prompts/improvement-proposer.ts",
+      "languageHint": null,
+      "startLine": 37626,
+      "endLine": 37649,
+      "bytes": 739,
+      "sha256": "0ec380ea7ebc1f8f05d42602a59d4dd21b84ce5c4ce24c0bd58b1471e7893588"
+    },
+    {
+      "filePath": "src/learning/proposal-manager.ts",
+      "languageHint": null,
+      "startLine": 37650,
+      "endLine": 37746,
+      "bytes": 2671,
+      "sha256": "4b1b81630456d376dcfa8c6bd533f470604ea8d7c20ebd23a5c9ce04afaedba9"
+    },
+    {
+      "filePath": "src/prompts/prompt-optimizer.ts",
+      "languageHint": null,
+      "startLine": 37747,
+      "endLine": 37776,
+      "bytes": 834,
+      "sha256": "c3dd9334f729bd262bfd10fbfad942d4efd59e9cdc3015b43225b39b3a8690ae"
+    },
+    {
+      "filePath": "src/learning/prompt-optimizer.ts",
+      "languageHint": null,
+      "startLine": 37777,
+      "endLine": 37862,
+      "bytes": 2821,
+      "sha256": "2d54ac0c4e932c25aeda19ed7b090ca259cb087664792c291e681b58f84fe03a"
+    },
+    {
+      "filePath": "src/prompts/policy-optimizer.ts",
+      "languageHint": null,
+      "startLine": 37863,
+      "endLine": 37888,
+      "bytes": 706,
+      "sha256": "82fb5cae7464c7c4df4c2146e242588c258dafe12e553e019a9ef8e7cb520478"
+    },
+    {
+      "filePath": "src/learning/policy-optimizer.ts",
+      "languageHint": null,
+      "startLine": 37889,
+      "endLine": 37962,
+      "bytes": 2338,
+      "sha256": "dc2208abf7e1760e069625372ba2915d90e9eeae700794d2338f0c6cf1a648a6"
+    },
+    {
+      "filePath": "src/prompts/role-evolver.ts",
+      "languageHint": null,
+      "startLine": 37963,
+      "endLine": 37990,
+      "bytes": 727,
+      "sha256": "a266f4db19e3ba27c0162b31ae433813a126b0d368e3c5808d5fafca7b3e0602"
+    },
+    {
+      "filePath": "src/learning/role-evolver.ts",
+      "languageHint": null,
+      "startLine": 37991,
+      "endLine": 38064,
+      "bytes": 2272,
+      "sha256": "ce1738a6d5c382a3d481e5b764276ef118e5c97a1268394d537b448979447e79"
+    },
+    {
+      "filePath": "src/prompts/memory-utility.ts",
+      "languageHint": null,
+      "startLine": 38065,
+      "endLine": 38091,
+      "bytes": 688,
+      "sha256": "15f4c01618be5ab2afb9a9ef7ffdab9fdc8903485a185078a57d6636486a8616"
+    },
+    {
+      "filePath": "src/learning/memory-utility.ts",
+      "languageHint": null,
+      "startLine": 38092,
+      "endLine": 38187,
+      "bytes": 2840,
+      "sha256": "016716bd90b2a678b65adc336805ef48d0605c9f8977ec933bd2f3a67e2ed7b5"
+    },
+    {
+      "filePath": "src/learning/memory-pruner.ts",
+      "languageHint": null,
+      "startLine": 38188,
+      "endLine": 38243,
+      "bytes": 1530,
+      "sha256": "aab8f5d220e090e48991fbd17b13dafbdaf24f71320d1f73479e394db66ab493"
+    },
+    {
+      "filePath": "src/prompts/routing-optimizer.ts",
+      "languageHint": null,
+      "startLine": 38244,
+      "endLine": 38271,
+      "bytes": 719,
+      "sha256": "5b2b7cd8a47a837d9f444b730ab5f1d88e578729ec01113f3e855a96e6c1ed80"
+    },
+    {
+      "filePath": "src/learning/routing-optimizer.ts",
+      "languageHint": null,
+      "startLine": 38272,
+      "endLine": 38347,
+      "bytes": 2490,
+      "sha256": "88f85bed2e1bd7f3eed2a438e873e00d0b8945dfb63890cf37ceedbad58932c1"
+    },
+    {
+      "filePath": "src/learning/adapter-distiller.ts",
+      "languageHint": null,
+      "startLine": 38348,
+      "endLine": 38432,
+      "bytes": 2549,
+      "sha256": "f83fd25fd78373b9148ae23fd654d55818a0f85da09588482f60b4470ac3b4dc"
+    },
+    {
+      "filePath": "src/prompts/rollout-simulator.ts",
+      "languageHint": null,
+      "startLine": 38433,
+      "endLine": 38468,
+      "bytes": 930,
+      "sha256": "1ca8f04b79ded4a5c3f48241ca65f6ff5f0715e89f0cadb02e5c6d336469337c"
+    },
+    {
+      "filePath": "src/learning/simulator.ts",
+      "languageHint": null,
+      "startLine": 38469,
+      "endLine": 38591,
+      "bytes": 3843,
+      "sha256": "73df7d7b4d04af1cbff5b024516ed06ccad07a52a8dc91f65b26023ba659f6e0"
+    },
+    {
+      "filePath": "src/prompts/prompt-drift-auditor.ts",
+      "languageHint": null,
+      "startLine": 38592,
+      "endLine": 38619,
+      "bytes": 789,
+      "sha256": "7557bb50eb9951e8d2c6a657c74da6b5b1fb9445ff915a495b06b91d484c1826"
+    },
+    {
+      "filePath": "src/learning/drift-detector.ts",
+      "languageHint": null,
+      "startLine": 38620,
+      "endLine": 38688,
+      "bytes": 1995,
+      "sha256": "3fb802ddd4e3fc559928b843ce4eeef57ea2953dc84561766135d0fbeab68b17"
+    },
+    {
+      "filePath": "src/learning/release-gate.ts",
+      "languageHint": null,
+      "startLine": 38689,
+      "endLine": 38838,
+      "bytes": 4585,
+      "sha256": "b6e239bf89aa3fd79647520d947a97f794982642d5c5f3a17fd005f11e189018"
+    },
+    {
+      "filePath": "src/learning/learning-orchestrator.ts",
+      "languageHint": null,
+      "startLine": 38839,
+      "endLine": 40025,
+      "bytes": 40196,
+      "sha256": "f98521f63e5f273ef9bde173e078a1463d817ae97c4ddaf00946c818c197b353"
+    },
+    {
+      "filePath": ".github/actions/setup-autoorg/action.yml",
+      "languageHint": null,
+      "startLine": 40026,
+      "endLine": 40079,
+      "bytes": 1246,
+      "sha256": "cdbc3fa29f267543e934938c90b7ddd15715a4add17c4510f1c234749ebad90e"
+    },
+    {
+      "filePath": ".github/actions/run-migrations/action.yml",
+      "languageHint": null,
+      "startLine": 40080,
+      "endLine": 40128,
+      "bytes": 1100,
+      "sha256": "7c88568f549011ba7fe57d972023d6310fa17566048547f63f94f4d1bca1fcdc"
+    },
+    {
+      "filePath": ".github/actions/benchmark-gate/action.yml",
+      "languageHint": null,
+      "startLine": 40129,
+      "endLine": 40176,
+      "bytes": 1264,
+      "sha256": "fb534ec93a4d31631e55cad1906e7bb8a17170459a91cd4e5fc0d182d8f7c429"
+    },
+    {
+      "filePath": ".github/actions/health-check/action.yml",
+      "languageHint": null,
+      "startLine": 40177,
+      "endLine": 40214,
+      "bytes": 861,
+      "sha256": "f89a832223be3dd9e4a81c7f6573876fba521bca2eda87013f556d5fb20e63fe"
+    },
+    {
+      "filePath": ".github/workflows/ci.yml",
+      "languageHint": null,
+      "startLine": 40215,
+      "endLine": 40506,
+      "bytes": 10387,
+      "sha256": "e31edb34e85bdc562e5ca43682dbb3c7f65ece10089035dfd08a9f48317c9c02"
+    },
+    {
+      "filePath": ".github/workflows/cd.yml",
+      "languageHint": null,
+      "startLine": 40507,
+      "endLine": 40737,
+      "bytes": 7802,
+      "sha256": "4f2c3ba17193480647e83a299ee92d8fe1de841af1c57ca9a202a03f0d1607da"
+    },
+    {
+      "filePath": ".github/workflows/benchmarks-nightly.yml",
+      "languageHint": null,
+      "startLine": 40738,
+      "endLine": 40844,
+      "bytes": 3313,
+      "sha256": "9d4e389c80e84584d83502ccfd7d65be1f8d5adb37d7f2d0d7bf02a6412fa3f4"
+    },
+    {
+      "filePath": ".github/workflows/learning-weekly.yml",
+      "languageHint": null,
+      "startLine": 40845,
+      "endLine": 40917,
+      "bytes": 2116,
+      "sha256": "0882b0179685dbff418c3f35324311f545459453c64130cccce7775545a54bed"
+    },
+    {
+      "filePath": ".github/workflows/security-audit.yml",
+      "languageHint": null,
+      "startLine": 40918,
+      "endLine": 40988,
+      "bytes": 2052,
+      "sha256": "40be52f3abdd64add3ee1c8f6663180eed8fb86564255817e04a33b4e0fa88d9"
+    },
+    {
+      "filePath": ".github/workflows/distillation-monthly.yml",
+      "languageHint": null,
+      "startLine": 40989,
+      "endLine": 41036,
+      "bytes": 1286,
+      "sha256": "3891f97a7ea12b0af21da2f938d93169da25174ffd4789399ffd13c633444bd6"
+    },
+    {
+      "filePath": ".github/workflows/dependency-review.yml",
+      "languageHint": null,
+      "startLine": 41037,
+      "endLine": 41067,
+      "bytes": 545,
+      "sha256": "5a74baac76e31b8987e48fef2a7a3093fde8d575ff93a7e680ecea9134c85669"
+    },
+    {
+      "filePath": "scripts/ci/lint.ts",
+      "languageHint": null,
+      "startLine": 41068,
+      "endLine": 41092,
+      "bytes": 546,
+      "sha256": "73fae7a2c6cbb1e834bdda5e3b17be6688642759693f4e7ba4809a76c3ac24d6"
+    },
+    {
+      "filePath": "scripts/ci/typecheck.ts",
+      "languageHint": null,
+      "startLine": 41093,
+      "endLine": 41116,
+      "bytes": 614,
+      "sha256": "4e836f2e3bc8d987895036d8d3a1fc090727031006da7e2bc4f820244ba87300"
+    },
+    {
+      "filePath": "scripts/ci/test-unit.ts",
+      "languageHint": null,
+      "startLine": 41117,
+      "endLine": 41140,
+      "bytes": 568,
+      "sha256": "860c375fc0508c629a755e1488e8446807ed03477912d5b6b96db2a787bacd9f"
+    },
+    {
+      "filePath": "scripts/ci/migrate-all.ts",
+      "languageHint": null,
+      "startLine": 41141,
+      "endLine": 41213,
+      "bytes": 1807,
+      "sha256": "ea81294b43b6b79e18e8ee891bb607ed572e228259bf3431471ecfedff8e633e"
+    },
+    {
+      "filePath": "scripts/ci/smoke-test.ts",
+      "languageHint": null,
+      "startLine": 41214,
+      "endLine": 41273,
+      "bytes": 1746,
+      "sha256": "e0505fd73bf0bed6353c7e55dff9cb9db80384af5245bb7f12f2be8aade5c859"
+    },
+    {
+      "filePath": "scripts/ci/health-check.ts",
+      "languageHint": null,
+      "startLine": 41274,
+      "endLine": 41300,
+      "bytes": 617,
+      "sha256": "5997bb62ebddd463797d95ddd7cf3d03bacda047e2eaeab3c5793c99c6f839b9"
+    },
+    {
+      "filePath": "scripts/ci/security-scan.ts",
+      "languageHint": null,
+      "startLine": 41301,
+      "endLine": 41360,
+      "bytes": 1701,
+      "sha256": "4e4002a11dcf579e5f3495f06c9a718fe2eb6c64b81da33bb76f808d99e6c29b"
+    },
+    {
+      "filePath": "scripts/ci/approval-health.ts",
+      "languageHint": null,
+      "startLine": 41361,
+      "endLine": 41420,
+      "bytes": 1455,
+      "sha256": "884d4f5c16737281059bf4223e18c0f5155c7f1b48d8079be6fcb552b6daa0e1"
+    },
+    {
+      "filePath": "scripts/ci/rollback.ts",
+      "languageHint": null,
+      "startLine": 41421,
+      "endLine": 41454,
+      "bytes": 999,
+      "sha256": "3bc9a473bd27a9ff917ac12e2b373e1bae8493df8a75375507ecb4cf0015edbe"
+    },
+    {
+      "filePath": "scripts/deploy/deploy-local.ts",
+      "languageHint": null,
+      "startLine": 41455,
+      "endLine": 41469,
+      "bytes": 310,
+      "sha256": "a4bbd2ba6b89f516f719473290c93ec830de610668ef9a7f9203fdbcad6b349b"
+    },
+    {
+      "filePath": "scripts/deploy/deploy-single-node.ts",
+      "languageHint": null,
+      "startLine": 41470,
+      "endLine": 41511,
+      "bytes": 1203,
+      "sha256": "3f9519931a2cb7dc7ee4269e3701421c973c995f3cc6b2c4f09f7203c4e43809"
+    },
+    {
+      "filePath": "scripts/deploy/deploy-managed.ts",
+      "languageHint": null,
+      "startLine": 41512,
+      "endLine": 45782,
+      "bytes": 167301,
+      "sha256": "a215b622cf78d887d210df425bc62b3b1ba70a8a72b75b39e3d376812a6785f6"
+    },
+    {
+      "filePath": "memory/MEMORY.md",
+      "languageHint": null,
+      "startLine": 45784,
+      "endLine": 47238,
+      "bytes": 50677,
+      "sha256": "626abc9b0dc6f151b8806be3a640acca062f2502366d0e2380f446b91007169e"
+    },
+    {
+      "filePath": "roles/CEO.md",
+      "languageHint": null,
+      "startLine": 47239,
+      "endLine": 47290,
+      "bytes": 2343,
+      "sha256": "861587d56fdf3e4fe1af0e4cef63b365f0479778d025579392cabd71c9b96375"
+    },
+    {
+      "filePath": "roles/Engineer.md",
+      "languageHint": null,
+      "startLine": 47291,
+      "endLine": 47325,
+      "bytes": 1492,
+      "sha256": "55be163eb16e3aadb4aca83d27f8bb52c76c1fe755bdeca9e09c672fc5f3d8c9"
+    },
+    {
+      "filePath": "roles/Critic.md",
+      "languageHint": null,
+      "startLine": 47326,
+      "endLine": 47364,
+      "bytes": 1786,
+      "sha256": "fc3d9cda3417c271d5d1f397e919a91a26c77d2bda2c98a6c92ff9077cc35936"
+    },
+    {
+      "filePath": "roles/Archivist.md",
+      "languageHint": null,
+      "startLine": 47365,
+      "endLine": 47400,
+      "bytes": 1512,
+      "sha256": "863a7e6270cc1be8c1ae07430c19fa89a96ef515b9ffe14cfe9fd9aad98c8b6b"
+    },
+    {
+      "filePath": "roles/DevilsAdvocate.md",
+      "languageHint": null,
+      "startLine": 47401,
+      "endLine": 47434,
+      "bytes": 1499,
+      "sha256": "38b4ad859f55657a729b5c48a11e1541e4f86724abc6a5780b3bb36bf4b02891"
+    },
+    {
+      "filePath": "roles/RatchetJudge.md",
+      "languageHint": null,
+      "startLine": 47435,
+      "endLine": 47527,
+      "bytes": 3921,
+      "sha256": "82969f81ed8524aa1f3e2f89f0de5675117e7bcd2b80fc750fba0e65b29475d9"
+    },
+    {
+      "filePath": "roles/DreamAgent.md",
+      "languageHint": null,
+      "startLine": 47528,
+      "endLine": 49723,
+      "bytes": 72911,
+      "sha256": "6261b2133769e7cf88edef0861d979fefde76a343796d8d9db34702ab02c1dc3"
+    },
+    {
+      "filePath": "src/db/migrate-phase5.ts",
+      "languageHint": null,
+      "startLine": 49732,
+      "endLine": 49735,
+      "bytes": 82,
+      "sha256": "57f60091a3fe5c7edb12e13b6a51ef6453ef68c31e8367e549f1760d2012bd9f"
+    },
+    {
+      "filePath": "src/db/migrate-phase7.ts",
+      "languageHint": null,
+      "startLine": 49740,
+      "endLine": 51903,
+      "bytes": 77303,
+      "sha256": "e38812fb91b709f33c05e1d8a0095b1cc08d6124324cc3e83c3c1a28a16e0c5f"
+    },
+    {
+      "filePath": "src/whatever.ts",
+      "languageHint": "TypeScript",
+      "startLine": 51904,
+      "endLine": 52844,
+      "bytes": 30219,
+      "sha256": "9c364ab65415fb3cc1fec61241cddec886d3eac23b600b833fa14adac95689a5"
+    }
+  ]
+}
