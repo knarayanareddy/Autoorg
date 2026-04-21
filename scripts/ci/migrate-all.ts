@@ -9,28 +9,23 @@ const checkSchema = args.includes('--check-schema');
 
 const MIGRATIONS = [
   'src/db/migrate.ts',
-  'src/db/migrate-phase5.ts',
-  'src/db/migrate-phase5_1.ts',
-  'src/db/migrate-phase6.ts',
-  'src/db/migrate-phase6_1.ts',
-  'src/db/migrate-phase7.ts',
-  'src/db/migrate-phase8.ts',
-  'src/db/migrate-phase9.ts',
-  'src/db/migrate-phase10.ts',
-  'src/db/migrate-phase12.ts', // Phase 12 included
 ];
 
-// Enterprise-tier tables that MUST exist for a healthy platform
+// Core tables that MUST exist for a healthy platform (Phase 0-15 consolidated)
 const REQUIRED_TABLES = [
   'runs',
-  'approvals',
-  'action_ledger',
-  'benchmark_cases',
-  'portfolio_runs',
-  'tenants',
-  'learning_cycles',
-  'improvement_proposals',
-  'prompt_versions',
+  'cycles',
+  'agent_executions',
+  'mailbox_messages',
+  'facts',
+  'contradictions',
+  'kg_nodes',
+  'kg_edges',
+  'feature_flags',
+  'llm_providers',
+  'llm_models',
+  'benchmark_suites',
+  'benchmark_cases'
 ];
 
 async function main() {
@@ -51,7 +46,7 @@ async function main() {
 
   if (verify || checkSchema) {
     console.log(chalk.cyan('\n🔍 Verifying schema integrity...\n'));
-    const { getDb } = await import('../../src/db/migrate.js');
+    const { getDb } = await import('../../src/db/migrate.ts');
     const db = getDb();
 
     for (const table of REQUIRED_TABLES) {

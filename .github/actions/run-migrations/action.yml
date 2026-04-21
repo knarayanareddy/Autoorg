@@ -4,45 +4,9 @@ description: Run all AutoOrg DB migrations in order.
 runs:
   using: composite
   steps:
-    - name: Base migration
+    - name: Run Consolidated Migration
       shell: bash
       run: bun run src/db/migrate.ts
-
-    - name: Phase 5 migration
-      shell: bash
-      run: bun run src/db/migrate-phase5.ts
-
-    - name: Phase 6 migration
-      shell: bash
-      run: bun run src/db/migrate-phase6.ts
-
-    - name: Phase 6.1 migration
-      shell: bash
-      run: bun run src/db/migrate-phase6_1.ts
-
-    - name: Phase 7 migration
-      shell: bash
-      run: bun run src/db/migrate-phase7.ts
-
-    - name: Phase 8 migration
-      shell: bash
-      run: bun run src/db/migrate-phase8.ts
-
-    - name: Phase 9 migration
-      shell: bash
-      run: bun run src/db/migrate-phase9.ts
-
-    - name: Phase 10 migration (Swarm)
-      shell: bash
-      run: bun run src/db/migrate-phase10.ts
-
-    - name: Phase 11 migration (Platform)
-      shell: bash
-      run: bun run src/db/migrate-phase11.ts
-
-    - name: Phase 12 migration (Learning)
-      shell: bash
-      run: bun run src/db/migrate-phase12.ts
 
     - name: Verify DB integrity
       shell: bash
