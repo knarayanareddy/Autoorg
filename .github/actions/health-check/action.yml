@@ -5,7 +5,7 @@ inputs:
   api-url:
     description: AutoOrg API base URL
     required: false
-    default: http://localhost:3000
+    default: http://localhost:3001
   timeout-seconds:
     description: Total timeout for health check
     required: false
