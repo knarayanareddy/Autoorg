@@ -182,6 +182,7 @@ CREATE TABLE IF NOT EXISTS kg_nodes (
   confidence      REAL DEFAULT 0.5,
   canonical_form  TEXT,
   embedding       BLOB,
+  extraction_id   TEXT,
   created_at      DATETIME DEFAULT (datetime('now')),
   updated_at      DATETIME DEFAULT (datetime('now'))
 );
@@ -197,11 +198,25 @@ CREATE TABLE IF NOT EXISTS kg_edges (
   properties      TEXT DEFAULT '{}',
   confidence      REAL DEFAULT 0.5,
   source_text     TEXT,
+  extraction_id   TEXT,
   created_at      DATETIME DEFAULT (datetime('now')),
   updated_at      DATETIME DEFAULT (datetime('now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_kge_run ON kg_edges(run_id);
+
+CREATE TABLE IF NOT EXISTS kg_extractions (
+  id              TEXT PRIMARY KEY,
+  run_id          TEXT NOT NULL,
+  extraction_type TEXT NOT NULL,
+  source_hash     TEXT NOT NULL,
+  nodes_extracted INTEGER DEFAULT 0,
+  edges_extracted INTEGER DEFAULT 0,
+  cost_usd        REAL DEFAULT 0.0,
+  duration_ms     INTEGER,
+  started_at      DATETIME DEFAULT (datetime('now')),
+  ended_at        DATETIME
+);
 
 -- ────────────────────────────────────────────────────────────
 -- TABLE: facts
@@ -483,6 +498,28 @@ CREATE TABLE IF NOT EXISTS simulation_runs (
   candidate_score REAL,
   delta_json TEXT DEFAULT '{}',
   status TEXT DEFAULT 'pending',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: swarm economics (Phase 10)
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS org_wallets (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  balance_credits REAL NOT NULL DEFAULT 0.0,
+  total_spent REAL NOT NULL DEFAULT 0.0,
+  total_earned REAL NOT NULL DEFAULT 0.0,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS swarm_ledgers (
+  id TEXT PRIMARY KEY,
+  from_wallet_id TEXT REFERENCES org_wallets(id),
+  to_wallet_id TEXT REFERENCES org_wallets(id),
+  amount REAL NOT NULL,
+  transaction_type TEXT NOT NULL,
+  memo TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
