@@ -8,7 +8,7 @@ async function main() {
 
   await mkdir('test-results', { recursive: true });
 
-  const result = await $`bun test tests/ --timeout 30000 --reporter junit --reporter-output test-results/junit.xml`.nothrow();
+  const result = await $`bun test tests/ --timeout 30000 --reporter junit --reporter-outfile test-results/junit.xml`.nothrow();
 
   if (result.exitCode !== 0) {
     console.error(chalk.red('Unit tests failed'));
