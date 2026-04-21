@@ -13,7 +13,9 @@ const adapters = new Map<string, LLMAdapter>();
  */
 export function getAdapter(config: ModelConfig | { provider: LLMProvider; model?: string }): LLMAdapter {
   const providerType = config.provider;
-  const cacheKey = `${providerType}:${config.apiKey ?? 'default'}:${config.baseUrl ?? 'default'}`;
+  const apiKey = (config as ModelConfig).apiKey;
+  const baseUrl = (config as ModelConfig).baseUrl;
+  const cacheKey = `${providerType}:${apiKey ?? 'default'}:${baseUrl ?? 'default'}`;
 
   if (adapters.has(cacheKey)) {
     return adapters.get(cacheKey)!;
@@ -40,7 +42,7 @@ export function getAdapter(config: ModelConfig | { provider: LLMProvider; model?
   }
 
   // Fallback to environment variables (Legacy/Phase 1-14 mode)
-  const adapter = createAdapter(providerType, config.apiKey, config.baseUrl);
+  const adapter = createAdapter(providerType, apiKey, baseUrl);
   adapters.set(cacheKey, adapter);
   return adapter;
 }

@@ -10,7 +10,7 @@ export class OpenAIAdapter extends BaseAdapter {
 
   constructor(apiKey?: string) {
     super();
-    const key = apiKey ?? process.env.AUTOORG_API_KEY_OPENAI || process.env.OPENAI_API_KEY;
+    const key = apiKey ?? (process.env.AUTOORG_API_KEY_OPENAI || process.env.OPENAI_API_KEY);
     if (!key) throw new Error('OpenAI API key is not set');
     this.client = new OpenAI({ apiKey: key });
   }

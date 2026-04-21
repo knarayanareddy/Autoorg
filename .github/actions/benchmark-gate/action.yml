@@ -23,7 +23,7 @@ runs:
       env:
         BENCHMARK_SUITE: ${{ inputs.suite }}
         BENCHMARK_FAIL_ON_REGRESSION: ${{ inputs.fail-on-regression }}
-      run: bun run src/evals/benchmark-ci.ts
+      run: bun run src/evals/benchmark-runner.ts
 
     - name: Upload benchmark report
       if: inputs.upload-report == 'true' && always()
