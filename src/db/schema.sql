@@ -525,9 +525,10 @@ CREATE INDEX IF NOT EXISTS idx_ghe_processed ON github_events(processed) WHERE p
 -- FEATURE FLAGS (Absolute Seeding)
 -- ────────────────────────────────────────────────────────────
 INSERT OR IGNORE INTO feature_flags (flag_name, enabled, description) VALUES
-  ('knowledgeGraph', 0, 'Knowledge Graph extraction and storage (Phase 4)'),
+  ('knowledgeGraph', 1, 'Knowledge Graph extraction and storage (Phase 4)'),
   ('factStore', 1, 'Structured Tier-2 memory fact store (Phase 3)'),
   ('coordinatorHierarchy', 1, 'CEO -> Team leads -> workers hierarchy (Phase 5)'),
+  ('graphRag', 1, 'Knowledge Graph RAG grounding for agent context (Phase 4)'),
   ('daemonMode', 1, 'Persistent background daemon (Phase 5)'),
   ('scheduler', 1, 'Job scheduler for background tasks (Phase 5)'),
   ('benchmarkLab', 1, 'Benchmark suite execution (Phase 7)'),

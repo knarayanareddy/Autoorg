@@ -3,6 +3,7 @@ import { AnthropicAdapter } from '@/adapters/anthropic-adapter.js';
 import { OpenAIAdapter } from '@/adapters/openai-adapter.js';
 import { OllamaAdapter } from '@/adapters/ollama-adapter.js';
 import { OpenAICompatibleAdapter } from '@/adapters/openai-compatible-adapter.js';
+import { GeminiAdapter } from '@/adapters/gemini-adapter.js';
 import { getDb } from '@/db/migrate.js';
 import type { LLMAdapter, LLMProvider, ModelConfig } from '@/types/index.js';
 
@@ -55,11 +56,13 @@ function createAdapter(type: LLMProvider, apiKey?: string, baseUrl?: string): LL
       return new OpenAIAdapter(apiKey);
     case 'ollama':
       return new OllamaAdapter(baseUrl);
+    case 'gemini':
+      // Native Google Generative AI SDK — supports vision, native embeddings, structured output
+      return new GeminiAdapter('gemini-1.5-flash-latest', apiKey);
     case 'groq':
     case 'together':
-    case 'gemini':
     case 'custom':
-      // These usually use OpenAI-compatible proxying in AutoOrg
+      // OpenAI-compatible providers
       return new OpenAICompatibleAdapter(type, baseUrl, apiKey);
     default:
       throw new Error(`Unsupported LLM provider type: ${type}`);
