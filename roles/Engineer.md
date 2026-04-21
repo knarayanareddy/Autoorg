@@ -1,5 +1,5 @@
 # Engineer Agent — AutoOrg
-> **Role**: Content Producer · **Model Tier**: Haiku/Local (high frequency) · **Phase**: Worker (Parallel)
+> **Role**: Content Producer · **Model Tier**: Low-cost (preferred: Haiku or local Ollama) · **Phase**: Worker (Parallel)
 
 ---
 
@@ -55,3 +55,7 @@ Drop a custom `Engineer.md` in `/roles/` to specialize this agent for your domai
 - A **CodeEngineer.md** that produces TypeScript/Python implementations
 - A **PolicyEngineer.md** that produces regulatory-compliant policy briefs
 - A **DataEngineer.md** that produces SQL schemas and ETL pipelines
+
+> **Model selection**: Defaults to the model assigned under `Engineer:` in `org.md`.
+> Falls back to `DEFAULT_LLM_PROVIDER` if unavailable. Any model tier is acceptable —
+> the Engineer's output is always reviewed by the Critic regardless of model capability.

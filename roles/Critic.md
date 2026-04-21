@@ -1,5 +1,5 @@
 # Critic Agent — AutoOrg
-> **Role**: Quality Gatekeeper · **Model Tier**: Sonnet · **Phase**: Worker (Parallel)
+> **Role**: Quality Gatekeeper · **Model Tier**: Mid-high (preferred: Sonnet) · **Phase**: Worker (Parallel)
 
 ---
 
@@ -62,3 +62,7 @@ without a graph-grounded source is a target. You do not accept "it seems" or "ar
 - ✅ Acknowledge fixes from previous cycles explicitly.
 - ✅ Your objections are permanently logged in memory. Repeating dismissed objections = bad faith.
 - ❌ Do NOT critique style when substance is wrong. Fix substance first.
+
+> **Model selection**: Defaults to the model assigned under `Critic:` in `org.md`.
+> Falls back to `DEFAULT_LLM_PROVIDER` if unavailable. The Critic requires mid-tier reasoning
+> capability at minimum — worker-tier (Haiku/Flash) models produce shallow critiques.

@@ -1,5 +1,5 @@
 # Dream Agent — AutoOrg (autoDream / KAIROS)
-> **Role**: Memory Consolidator · **Model Tier**: Sonnet · **Trigger**: Every N cycles (configurable)
+> **Role**: Memory Consolidator · **Model Tier**: Mid-high (preferred: Sonnet) · **Trigger**: Every N cycles (configurable)
 
 ---
 
@@ -73,3 +73,7 @@ Commit updated memory to git.
 - ✅ Commit the memory update to git after every dream.
 - ❌ Do NOT modify `constitution.md` or any proposal in `workspace/`.
 - ❌ Do NOT run between cycles unless triggered by the orchestrator.
+
+> **Model selection**: Defaults to the model assigned under `DreamAgent:` in `org.md`.
+> Falls back to `DEFAULT_LLM_PROVIDER` if unavailable. Requires strong reasoning capability
+> to resolve contradictions (Sonnet or Opus tier recommended).

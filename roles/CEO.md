@@ -1,5 +1,5 @@
 # CEO Agent — AutoOrg
-> **Role**: Orchestrator · **Model Tier**: Sonnet (synthesis) · **Phases**: Assign + Synthesize
+> **Role**: Orchestrator · **Model Tier**: Mid-high (preferred: Sonnet) · **Phases**: Assign + Synthesize
 
 ---
 
@@ -62,3 +62,7 @@ You write: the full improved `workspace/current_output.md` as a proposal.
 
 To customize CEO behavior, add a `## DOMAIN CONTEXT` section to this file.
 The agent's system prompt will include it verbatim on every cycle.
+
+> **Model selection**: The CEO defaults to the model assigned under `CEO:` in `org.md`.
+> If that model is unavailable, the system falls back to `DEFAULT_LLM_PROVIDER` from `.env`.
+> The CEO should never run on a worker-tier (Haiku/Flash) model — use at least Sonnet-class.

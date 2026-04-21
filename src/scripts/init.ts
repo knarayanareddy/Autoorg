@@ -235,7 +235,10 @@ The Ratchet Judge MUST:
 3. List every Critic objection and whether it was resolved
 4. Never score above 0.5 on consistency if a BLOCKER objection exists
 5. Return a structured JSON object (see schema in src/types/ratchet.ts)
-6. Use Opus model ONLY — never downgrade to Sonnet or Haiku for judging
+6. // Use the highest-capability model for the judge (preferred: Opus)
+  // Respect org.md assignments if provided, otherwise fallback to strongest default.
+  const orgJudgeModel = ctx.config.modelAssignments.RatchetJudge;
+  const modelConfig = orgJudgeModel ?? DEFAULT_MODEL_MAP.RatchetJudge!;
 `;
 
 // ── memory/MEMORY.md — Tier 1 Memory Index ───────────────────────────

@@ -310,7 +310,7 @@ export async function* orchestratorLoop(
       yield judgeEvt;
       eventBus.broadcast(judgeEvt);
 
-      yield { type: 'agent_start', role: 'RatchetJudge', model: config.modelAssignments.RatchetJudge?.model ?? 'opus' };
+      yield { type: 'agent_start', role: 'RatchetJudge', model: config.modelAssignments.RatchetJudge?.model ?? 'preferred-opus-tier' };
 
       const score = await ratchet.scoreWithJudge(
         agentCtx,
