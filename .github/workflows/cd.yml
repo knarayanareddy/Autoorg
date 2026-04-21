@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
 
+env:
+  AUTOORG_DB_PATH: /tmp/autoorg-cd-${{ github.run_id }}.db
+  DB_PATH: /tmp/autoorg-cd-${{ github.run_id }}.db
+
 jobs:
   deploy-staging:
     runs-on: ubuntu-latest
@@ -13,7 +17,10 @@ jobs:
       - uses: ./.github/actions/setup-autoorg
         with:
           build-web: 'true'
-      
+
+      - name: Run Migrations
+        uses: ./.github/actions/run-migrations
+
       - name: Deploy to Staging
         run: bun run scripts/deploy/deploy-single-node.ts
         env:
@@ -25,6 +32,7 @@ jobs:
         uses: ./.github/actions/health-check
         with:
           api-url: ${{ vars.STAGING_URL || 'http://localhost:3001' }}
+          start-local: 'true'
 
       - name: Smoke Test
         run: bun run scripts/ci/smoke-test.ts

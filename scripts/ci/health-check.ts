@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import chalk from 'chalk';
 
-const API_URL = process.env.AUTOORG_API_URL ?? 'http://localhost:3000';
+const API_URL = process.env.AUTOORG_API_URL ?? 'http://localhost:3001';
 
 async function main() {
   console.log(chalk.cyan(`\n🔍 Probing health of ${API_URL}/health...\n`));

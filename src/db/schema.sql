@@ -429,6 +429,69 @@ INSERT OR IGNORE INTO feature_flags (flag_name, enabled, description) VALUES
   ('llmRegistry', 1, 'Dynamic LLM provider configuration (Phase 15)');
 
 -- ────────────────────────────────────────────────────────────
+-- TABLE: tool engine (Shadow Schema)
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS tool_definitions (
+  name                TEXT PRIMARY KEY,
+  display_name        TEXT NOT NULL,
+  capability_class    TEXT NOT NULL,
+  description         TEXT NOT NULL,
+  input_schema_json   TEXT NOT NULL,
+  output_schema_json  TEXT NOT NULL,
+  default_timeout_ms  INTEGER DEFAULT 30000,
+  default_cost_hint   REAL DEFAULT 0,
+  replayable          INTEGER DEFAULT 1,
+  dangerous           INTEGER DEFAULT 0,
+  updated_at          DATETIME DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS tool_executions (
+  id              TEXT PRIMARY KEY,
+  run_id          TEXT NOT NULL,
+  cycle_number    INTEGER NOT NULL,
+  role            TEXT NOT NULL,
+  tool_name       TEXT NOT NULL REFERENCES tool_definitions(name),
+  input_json      TEXT NOT NULL,
+  output_json     TEXT,
+  status          TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','completed','failed','timeout')),
+  cost_usd        REAL DEFAULT 0,
+  duration_ms     INTEGER,
+  created_at      DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_tool_exec_run ON tool_executions(run_id);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: security monitoring
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS security_findings (
+  id              TEXT PRIMARY KEY,
+  run_id          TEXT NOT NULL,
+  cycle_number    INTEGER,
+  level           TEXT NOT NULL CHECK(level IN ('info','warn','error','critical')),
+  finding_type    TEXT NOT NULL,
+  description     TEXT NOT NULL,
+  mitigation      TEXT,
+  created_at      DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_security_run ON security_findings(run_id);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: interview engine
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS interview_sessions (
+  id              TEXT PRIMARY KEY,
+  run_id          TEXT NOT NULL,
+  agent_role      TEXT NOT NULL,
+  cycle_id        TEXT,
+  status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','closed')),
+  turns           TEXT NOT NULL DEFAULT '[]',
+  created_at      DATETIME NOT NULL DEFAULT (datetime('now')),
+  updated_at      DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ────────────────────────────────────────────────────────────
 -- VIEWS (Harmonized)
 -- ────────────────────────────────────────────────────────────
 CREATE VIEW IF NOT EXISTS v_fact_summary AS

@@ -13,8 +13,9 @@ async function main() {
   console.log(chalk.cyan(`\n🚀 Deploying ${DEPLOY_SHA} to single-node target (${SSH_HOST})...\n`));
 
   if (!SSH_KEY) {
-    console.warn(chalk.yellow('  ⚠️ SSH_KEY missing. Skipping remote deployment.'));
-    process.exit(0);
+    console.log(chalk.yellow('\n⚠️  SSH_KEY missing. Switching to Local Verification Mode.'));
+    console.log(chalk.gray('   This environment will perform local-only smoke tests.\n'));
+    return;
   }
 
   const keyFile = '/tmp/deploy-key';

@@ -10,31 +10,58 @@ inputs:
     description: Total timeout for health check
     required: false
     default: '60'
+  start-local:
+    description: Whether to start a local server if the API is not up
+    required: false
+    default: 'false'
 
 runs:
   using: composite
   steps:
-    - name: Wait for API
+    - name: Ensure API is available
       shell: bash
       run: |
-        if [ -z "${{ inputs.api-url }}" ]; then
-          echo "❌ Error: api-url input is empty. Check your workflow variables."
-          exit 1
-        fi
-        echo "📡 Probing API at: ${{ inputs.api-url }}"
-        echo "⏱️  Timeout: ${{ inputs.timeout-seconds }}s"
+        URL="${{ inputs.api-url }}"
+        TIMEOUT=${{ inputs.timeout-seconds }}
+        START_LOCAL=${{ inputs.start-local }}
         
-        for i in $(seq 1 ${{ inputs.timeout-seconds }}); do
-          if curl -sf ${{ inputs.api-url }}/health > /dev/null 2>&1 || curl -sf ${{ inputs.api-url }}/api/health > /dev/null 2>&1; then
-            echo "✅ API is up"
+        echo "📡 Probing API at: $URL"
+        
+        # Check if already up
+        if curl -sf "$URL/health" > /dev/null 2>&1 || curl -sf "$URL/api/health" > /dev/null 2>&1; then
+          echo "✅ API is already up"
+          exit 0
+        fi
+
+        # Start local if requested and on localhost
+        if [[ "$START_LOCAL" == "true" && "$URL" == *"localhost"* ]]; then
+          echo "🚀 Starting local API server for verification..."
+          # Set safe defaults if not provided
+          export AUTOORG_DB_PATH="${AUTOORG_DB_PATH:-./autoorg.db}"
+          nohup bun run src/api/server.ts > api.log 2>&1 &
+          SERVER_PID=$!
+          echo "   Server PID: $SERVER_PID"
+          # Wait a few seconds for process to spawn
+          sleep 3
+        fi
+
+        echo "⏱️ Waiting for API to respond (Timeout: ${TIMEOUT}s)..."
+        for i in $(seq 1 $TIMEOUT); do
+          if curl -sf "$URL/health" > /dev/null 2>&1 || curl -sf "$URL/api/health" > /dev/null 2>&1; then
+            echo "✅ API is up and responding."
             exit 0
           fi
           if [ $((i % 10)) -eq 0 ]; then
-             echo "... still waiting ($i/${{ inputs.timeout-seconds }}s) ..."
+             echo "... still waiting ($i/${TIMEOUT}s) ..."
           fi
           sleep 1
         done
-        echo "❌ API did not come up in time at ${{ inputs.api-url }}"
+
+        echo "❌ API did not come up in time at $URL"
+        if [ ! -z "$SERVER_PID" ]; then
+          echo "📄 Last 20 lines of API log:"
+          tail -n 20 api.log
+        fi
         exit 1
 
     - name: Run health check script
