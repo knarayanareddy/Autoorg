@@ -79,7 +79,8 @@ if (!existsSync('./autoorg.db')) {
 // ── Run the orchestrator ───────────────────────────────────────────────
 import { orchestratorLoop } from './runtime/orchestrator.js';
 import { parseOrgMd } from './config/org-parser.js';
-import { Dashboard } from './ui/terminal/Dashboard.js';
+// Import directly from .tsx to avoid the .ts stub circular-definition issue
+import { Dashboard } from './ui/terminal/Dashboard.tsx';
 
 async function main() {
   const config = parseOrgMd(orgMdPath);
@@ -110,10 +111,19 @@ async function main() {
     // ── FULL UI MODE ───────────────────────────────────────────────
     const { unmount } = render(
       React.createElement(Dashboard, {
-        events,
-        runId: `run_${Date.now()}`,
-        maxCycles: config.maxCycles,
-        budget: config.maxApiSpendUsd,
+        runId:        `run_${Date.now()}`,
+        cycle:        0,
+        maxCycles:    config.maxCycles,
+        bestScore:    0,
+        currentScore: null,
+        agents:       [],
+        mailbox:      [],
+        memoryLines:  0,
+        lastDream:    0,
+        budgetUsed:   0,
+        budgetMax:    config.maxApiSpendUsd,
+        phase:        'Initializing',
+        isRunning:    true,
       })
     );
     
