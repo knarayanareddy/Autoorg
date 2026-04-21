@@ -165,63 +165,281 @@ CREATE TABLE IF NOT EXISTS score_history (
 );
 
 -- ────────────────────────────────────────────────────────────
--- TABLE: knowledge_graph_nodes
--- Flat representation of the graph (Phase 0-3, Neo4j in Phase 4)
+-- TABLE: kg_nodes
+-- Knowledge Graph Nodes (Phase 4 consolidated)
 -- ────────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS knowledge_graph_nodes (
-  id            TEXT PRIMARY KEY,
-  run_id        TEXT NOT NULL,
-  node_type     TEXT NOT NULL,              -- 'entity'|'concept'|'constraint'|'relationship'
-  label         TEXT NOT NULL,
-  properties    TEXT NOT NULL DEFAULT '{}', -- JSON
-  embedding     BLOB,                       -- float32 array (for vector search in Phase 4)
-  created_at    DATETIME NOT NULL DEFAULT (datetime('now')),
-  source_chunk  TEXT                        -- which chunk of seed material spawned this
+CREATE TABLE IF NOT EXISTS kg_nodes (
+  id              TEXT PRIMARY KEY,
+  run_id          TEXT NOT NULL,
+  label           TEXT NOT NULL,
+  node_type       TEXT NOT NULL,
+  properties      TEXT NOT NULL DEFAULT '{}',
+  source_text     TEXT,
+  confidence      REAL DEFAULT 0.5,
+  canonical_form  TEXT,
+  embedding       BLOB,
+  created_at      DATETIME DEFAULT (datetime('now')),
+  updated_at      DATETIME DEFAULT (datetime('now'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_kgn_run ON knowledge_graph_nodes(run_id);
-CREATE INDEX IF NOT EXISTS idx_kgn_type ON knowledge_graph_nodes(node_type);
+CREATE INDEX IF NOT EXISTS idx_kgn_run ON kg_nodes(run_id);
 
-CREATE TABLE IF NOT EXISTS knowledge_graph_edges (
+CREATE TABLE IF NOT EXISTS kg_edges (
+  id              TEXT PRIMARY KEY,
+  run_id          TEXT NOT NULL,
+  from_node_id    TEXT NOT NULL REFERENCES kg_nodes(id),
+  to_node_id      TEXT NOT NULL REFERENCES kg_nodes(id),
+  relationship    TEXT NOT NULL,
+  properties      TEXT DEFAULT '{}',
+  confidence      REAL DEFAULT 0.5,
+  source_text     TEXT,
+  created_at      DATETIME DEFAULT (datetime('now')),
+  updated_at      DATETIME DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_kge_run ON kg_edges(run_id);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: facts
+-- Structured Fact Store (Phase 3-5 consolidated)
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS facts (
+  id              TEXT PRIMARY KEY,
+  run_id          TEXT NOT NULL,
+  statement       TEXT NOT NULL,
+  category        TEXT NOT NULL CHECK(category IN (
+    'validated_decision', 'failed_approach', 'domain_knowledge',
+    'pattern', 'anti_pattern', 'constraint', 'agent_behavior'
+  )),
+  source_cycle    INTEGER NOT NULL,
+  source_type     TEXT NOT NULL,
+  evidence        TEXT,
+  confidence      REAL NOT NULL DEFAULT 0.5,
+  confirmation_count INTEGER DEFAULT 1,
+  contradiction_count INTEGER DEFAULT 0,
+  active          INTEGER NOT NULL DEFAULT 1,
+  superseded_by   TEXT REFERENCES facts(id),
+  last_confirmed  INTEGER,
+  embedding       BLOB,
+  created_at      DATETIME NOT NULL DEFAULT (datetime('now')),
+  updated_at      DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_facts_run ON facts(run_id);
+
+CREATE TABLE IF NOT EXISTS contradictions (
   id            TEXT PRIMARY KEY,
   run_id        TEXT NOT NULL,
-  from_node_id  TEXT NOT NULL REFERENCES knowledge_graph_nodes(id),
-  to_node_id    TEXT NOT NULL REFERENCES knowledge_graph_nodes(id),
-  relationship  TEXT NOT NULL,              -- 'RELATES_TO'|'SUPPORTS'|'CONTRADICTS'|etc.
-  weight        REAL DEFAULT 1.0,
-  properties    TEXT DEFAULT '{}',
+  fact_a_id     TEXT NOT NULL REFERENCES facts(id),
+  fact_b_id     TEXT NOT NULL REFERENCES facts(id),
+  description   TEXT NOT NULL,
+  resolution    TEXT,
+  resolved      INTEGER DEFAULT 0,
+  detected_cycle INTEGER NOT NULL,
+  resolved_cycle INTEGER,
   created_at    DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_kge_from ON knowledge_graph_edges(from_node_id);
-CREATE INDEX IF NOT EXISTS idx_kge_to ON knowledge_graph_edges(to_node_id);
+-- ────────────────────────────────────────────────────────────
+-- TABLE: llm_providers & llm_models (Phase 15 consolidated)
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS llm_providers (
+  id              TEXT PRIMARY KEY,
+  name            TEXT NOT NULL,
+  provider_type   TEXT NOT NULL,
+  base_url        TEXT,
+  api_key         TEXT,
+  is_enabled      INTEGER DEFAULT 1,
+  is_default      INTEGER DEFAULT 0,
+  metadata_json   TEXT DEFAULT '{}',
+  created_at      DATETIME NOT NULL DEFAULT (datetime('now')),
+  updated_at      DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS llm_models (
+  id              TEXT PRIMARY KEY,
+  provider_id     TEXT NOT NULL REFERENCES llm_providers(id) ON DELETE CASCADE,
+  model_name      TEXT NOT NULL,
+  alias           TEXT,
+  context_window  INTEGER,
+  is_active       INTEGER DEFAULT 1,
+  created_at      DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: benchmark suite (Phase 7 consolidated)
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS benchmark_suites (
+  id TEXT PRIMARY KEY,
+  suite_name TEXT NOT NULL UNIQUE,
+  description TEXT NOT NULL,
+  tags_json TEXT NOT NULL DEFAULT '[]',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS benchmark_cases (
+  id TEXT PRIMARY KEY,
+  suite_id TEXT NOT NULL REFERENCES benchmark_suites(id) ON DELETE CASCADE,
+  case_name TEXT NOT NULL,
+  category TEXT NOT NULL,
+  difficulty TEXT NOT NULL CHECK(difficulty IN ('easy','medium','hard','stress')),
+  org_path TEXT NOT NULL,
+  constitution_path TEXT NOT NULL,
+  gold_path TEXT,
+  case_config_json TEXT NOT NULL DEFAULT '{}',
+  acceptance_json TEXT NOT NULL DEFAULT '{}',
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS benchmark_runs (
+  id TEXT PRIMARY KEY,
+  suite_id TEXT NOT NULL REFERENCES benchmark_suites(id) ON DELETE CASCADE,
+  run_label TEXT NOT NULL,
+  mode TEXT NOT NULL CHECK(mode IN ('manual','ci','ab_test','bakeoff','replay')),
+  git_head TEXT,
+  started_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  finished_at DATETIME,
+  status TEXT NOT NULL DEFAULT 'running' CHECK(status IN ('running','completed','failed','cancelled')),
+  summary_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS benchmark_attempts (
+  id TEXT PRIMARY KEY,
+  benchmark_run_id TEXT NOT NULL REFERENCES benchmark_runs(id) ON DELETE CASCADE,
+  case_id TEXT NOT NULL REFERENCES benchmark_cases(id) ON DELETE CASCADE,
+  autoorg_run_id TEXT,
+  status TEXT NOT NULL DEFAULT 'running' CHECK(status IN ('running','completed','failed','cancelled')),
+  started_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  finished_at DATETIME
+);
+
+CREATE TABLE IF NOT EXISTS benchmark_metrics (
+  id TEXT PRIMARY KEY,
+  attempt_id TEXT NOT NULL REFERENCES benchmark_attempts(id) ON DELETE CASCADE,
+  score REAL NOT NULL DEFAULT 0,
+  latency_ms INTEGER NOT NULL DEFAULT 0,
+  cost_usd REAL NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: hardening & operational tables (Phase 5/5.1 consolidated)
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS teams (
+  id              TEXT PRIMARY KEY,
+  run_id          TEXT NOT NULL,
+  name            TEXT NOT NULL,
+  lead_role       TEXT NOT NULL,
+  mission         TEXT NOT NULL,
+  active          INTEGER NOT NULL DEFAULT 1,
+  created_cycle   INTEGER NOT NULL,
+  parent_team_id  TEXT REFERENCES teams(id),
+  created_at      DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS team_members (
+  id          TEXT PRIMARY KEY,
+  team_id      TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  role         TEXT NOT NULL,
+  created_at   DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS approvals (
+  id              TEXT PRIMARY KEY,
+  run_id          TEXT NOT NULL,
+  cycle_number    INTEGER,
+  approval_type   TEXT NOT NULL CHECK(approval_type IN ('commit','push','merge','ultraplan','daemon_action','job')),
+  subject         TEXT NOT NULL,
+  requested_by    TEXT NOT NULL,
+  status          TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected','expired')),
+  summary         TEXT NOT NULL,
+  details_json    TEXT NOT NULL DEFAULT '{}',
+  requested_at    DATETIME NOT NULL DEFAULT (datetime('now')),
+  decided_at      DATETIME,
+  decided_by      TEXT
+);
+
+CREATE TABLE IF NOT EXISTS pending_actions (
+  id TEXT PRIMARY KEY,
+  approval_id TEXT NOT NULL REFERENCES approvals(id) ON DELETE CASCADE,
+  run_id TEXT NOT NULL,
+  action_type TEXT NOT NULL CHECK(action_type IN ('commit','push','merge','ultraplan_apply','job')),
+  status TEXT NOT NULL DEFAULT 'staged' CHECK(status IN ('staged','approved','materialized','rejected','expired','failed')),
+  artifact_path TEXT NOT NULL,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  materialized_at DATETIME
+);
+
+CREATE TABLE IF NOT EXISTS daemon_state (
+  id                TEXT PRIMARY KEY,
+  instance_name     TEXT NOT NULL DEFAULT 'default',
+  status            TEXT NOT NULL DEFAULT 'stopped' CHECK(status IN ('starting','running','stopped','error','paused')),
+  pid               INTEGER,
+  last_heartbeat    DATETIME,
+  current_run_id    TEXT,
+  metadata_json     TEXT NOT NULL DEFAULT '{}',
+  updated_at        DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: memory infrastructure
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS embeddings_cache (
+  content_hash  TEXT PRIMARY KEY,
+  model         TEXT NOT NULL,
+  embedding     BLOB NOT NULL,
+  dimensions    INTEGER NOT NULL,
+  created_at    DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS transcript_index (
+  id            TEXT PRIMARY KEY,
+  run_id        TEXT NOT NULL,
+  cycle_number  INTEGER NOT NULL,
+  role          TEXT NOT NULL,
+  action        TEXT NOT NULL,
+  content       TEXT NOT NULL,
+  content_hash  TEXT NOT NULL,
+  embedding     BLOB,
+  created_at    DATETIME NOT NULL DEFAULT (datetime('now'))
+);
 
 -- ────────────────────────────────────────────────────────────
 -- TABLE: feature_flags
--- Runtime feature flag state (overrides config/feature-flags.ts)
+-- Runtime feature flag state
 -- ────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS feature_flags (
   flag_name     TEXT PRIMARY KEY,
-  enabled       INTEGER NOT NULL DEFAULT 0,  -- boolean
+  enabled       INTEGER NOT NULL DEFAULT 0,
   description   TEXT,
   updated_at    DATETIME DEFAULT (datetime('now'))
 );
 
 -- ────────────────────────────────────────────────────────────
--- TABLE: system_prompts
--- Versioned system prompt storage (deduped by hash)
+-- FEATURE FLAGS (Sync Phase 5/5.1/7/15)
 -- ────────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS system_prompts (
-  hash          TEXT PRIMARY KEY,           -- SHA-256 of the prompt content
-  role          TEXT NOT NULL,
-  version       INTEGER NOT NULL DEFAULT 1,
-  content       TEXT NOT NULL,
-  created_at    DATETIME NOT NULL DEFAULT (datetime('now'))
-);
+INSERT OR IGNORE INTO feature_flags (flag_name, enabled, description) VALUES
+  ('knowledgeGraph', 0, 'Knowledge Graph extraction and storage (Phase 4)'),
+  ('factStore', 1, 'Structured Tier-2 memory fact store (Phase 3)'),
+  ('coordinatorHierarchy', 1, 'CEO -> Team leads -> workers hierarchy (Phase 5)'),
+  ('daemonMode', 1, 'Persistent background daemon (Phase 5)'),
+  ('benchmarkLab', 1, 'Benchmark suite execution (Phase 7)'),
+  ('llmRegistry', 1, 'Dynamic LLM provider configuration (Phase 15)');
 
 -- ────────────────────────────────────────────────────────────
--- VIEWS
+-- VIEWS (Harmonized)
 -- ────────────────────────────────────────────────────────────
+CREATE VIEW IF NOT EXISTS v_fact_summary AS
+SELECT
+  run_id,
+  category,
+  COUNT(*)                                      AS total,
+  COUNT(CASE WHEN active=1 THEN 1 END)          AS active_count,
+  AVG(CASE WHEN active=1 THEN confidence END)   AS avg_confidence
+FROM facts
+GROUP BY run_id, category;
 
 CREATE VIEW IF NOT EXISTS v_cycle_summary AS
 SELECT
@@ -231,10 +449,8 @@ SELECT
   c.decision,
   c.duration_ms,
   c.cycle_cost_usd,
-  c.dream_ran,
   COUNT(ae.id) as agent_count,
-  SUM(ae.cost_usd) as total_agent_cost,
-  c.proposal_summary
+  SUM(ae.cost_usd) as total_agent_cost
 FROM cycles c
 LEFT JOIN agent_executions ae ON ae.cycle_id = c.id
 GROUP BY c.id
@@ -249,8 +465,6 @@ SELECT
   r.best_score,
   r.total_cost_usd,
   COUNT(DISTINCT c.id) as cycles_completed,
-  COUNT(CASE WHEN c.decision = 'COMMIT' THEN 1 END) as commits,
-  COUNT(CASE WHEN c.decision = 'REVERT' THEN 1 END) as reverts,
   AVG(c.score_composite) as avg_score
 FROM runs r
 LEFT JOIN cycles c ON c.run_id = r.id

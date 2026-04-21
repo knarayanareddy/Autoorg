@@ -49,10 +49,12 @@ describe('FactStore', () => {
   let store: FactStore;
 
   beforeAll(async () => {
-    // Standardize database for tests
-    process.env.AUTOORG_DB_PATH = `/tmp/autoorg-test-${Date.now()}.db`;
+    // Standardize database for tests — must be set before classes are instantiated
+    const testDbPath = `/tmp/autoorg-dream-test-${Date.now()}.db`;
+    process.env.AUTOORG_DB_PATH = testDbPath;
+    
     const { migrate } = await import('../src/db/migrate.js');
-    await (migrate as any)(); // Cast as any because it's not exported as a function normally, wait.
+    await migrate();
     
     store = new FactStore(TEST_RUN);
   });

@@ -21,7 +21,9 @@ runs:
           echo "❌ Error: api-url input is empty. Check your workflow variables."
           exit 1
         fi
-        echo "Probing API at ${{ inputs.api-url }}..."
+        echo "📡 Probing API at: ${{ inputs.api-url }}"
+        echo "⏱️  Timeout: ${{ inputs.timeout-seconds }}s"
+        
         for i in $(seq 1 ${{ inputs.timeout-seconds }}); do
           if curl -sf ${{ inputs.api-url }}/health > /dev/null 2>&1 || curl -sf ${{ inputs.api-url }}/api/health > /dev/null 2>&1; then
             echo "✅ API is up"

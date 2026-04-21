@@ -9,11 +9,14 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import chalk from 'chalk';
 
-const DB_PATH = process.env.AUTOORG_DB_PATH || process.env.DB_PATH || './autoorg.db';
+export function getDbPath(): string {
+  return process.env.AUTOORG_DB_PATH || process.env.DB_PATH || './autoorg.db';
+}
+
 const SCHEMA_PATH = path.join(import.meta.dir, 'schema.sql');
 
 export function getDb(): Database {
-  const db = new Database(DB_PATH);
+  const db = new Database(getDbPath());
   
   // Performance settings
   db.run('PRAGMA journal_mode = WAL');
@@ -25,7 +28,7 @@ export function getDb(): Database {
 }
 
 export async function migrate() {
-  console.log(chalk.cyan(`\n🗄️  Running AutoOrg database migrations [${DB_PATH}]...\n`));
+  console.log(chalk.cyan(`\n🗄️  Running AutoOrg database migrations [${getDbPath()}]...\n`));
   
   const db = getDb();
   const schema = readFileSync(SCHEMA_PATH, 'utf-8');
@@ -71,7 +74,7 @@ export async function migrate() {
   });
   seedMany();
   
-  console.log(chalk.green(`  ✓ Schema applied to: ${DB_PATH}`));
+  console.log(chalk.green(`  ✓ Schema applied to: ${getDbPath()}`));
   console.log(chalk.green(`  ✓ Seeded ${flags.length} feature flags`));
   
   // Verify tables
