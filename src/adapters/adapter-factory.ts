@@ -1,27 +1,67 @@
 // src/adapters/adapter-factory.ts
 import { AnthropicAdapter } from '@/adapters/anthropic-adapter.js';
 import { OpenAIAdapter } from '@/adapters/openai-adapter.js';
+import { OllamaAdapter } from '@/adapters/ollama-adapter.js';
+import { OpenAICompatibleAdapter } from '@/adapters/openai-compatible-adapter.js';
+import { getDb } from '@/db/migrate.js';
 import type { LLMAdapter, LLMProvider, ModelConfig } from '@/types/index.js';
 
-const adapters = new Map<LLMProvider, LLMAdapter>();
+const adapters = new Map<string, LLMAdapter>();
 
+/**
+ * Resolves an LLM adapter, prioritizing database configuration (Phase 15).
+ */
 export function getAdapter(config: ModelConfig | { provider: LLMProvider; model?: string }): LLMAdapter {
-  const provider = config.provider;
+  const providerType = config.provider;
+  const cacheKey = `${providerType}:${config.apiKey ?? 'default'}:${config.baseUrl ?? 'default'}`;
 
-  if (!adapters.has(provider)) {
-    switch (provider) {
-      case 'anthropic':
-        adapters.set('anthropic', new AnthropicAdapter());
-        break;
-      case 'openai':
-        adapters.set('openai', new OpenAIAdapter());
-        break;
-      default:
-        throw new Error(`Unknown LLM provider: ${provider}`);
-    }
+  if (adapters.has(cacheKey)) {
+    return adapters.get(cacheKey)!;
   }
 
-  return adapters.get(provider)!;
+  // Phase 15: Try to find a dynamic configuration in the database
+  try {
+    const db = getDb();
+    const dbProv = db.prepare(`
+      SELECT * FROM llm_providers 
+      WHERE provider_type = ? AND is_enabled = 1
+      ORDER BY is_default DESC, created_at DESC 
+      LIMIT 1
+    `).get(providerType) as any;
+
+    if (dbProv) {
+      const adapter = createAdapter(dbProv.provider_type as LLMProvider, dbProv.api_key, dbProv.base_url);
+      adapters.set(cacheKey, adapter);
+      return adapter;
+    }
+  } catch (err) {
+    // If DB fails (e.g. table doesn't exist yet), fallback to env-only mode
+    console.debug(`[AdapterFactory] Dynamic provider lookup failed, using environment fallbacks. error=${err}`);
+  }
+
+  // Fallback to environment variables (Legacy/Phase 1-14 mode)
+  const adapter = createAdapter(providerType, config.apiKey, config.baseUrl);
+  adapters.set(cacheKey, adapter);
+  return adapter;
+}
+
+function createAdapter(type: LLMProvider, apiKey?: string, baseUrl?: string): LLMAdapter {
+  switch (type) {
+    case 'anthropic':
+      return new AnthropicAdapter(apiKey);
+    case 'openai':
+      return new OpenAIAdapter(apiKey);
+    case 'ollama':
+      return new OllamaAdapter(baseUrl);
+    case 'groq':
+    case 'together':
+    case 'gemini':
+    case 'custom':
+      // These usually use OpenAI-compatible proxying in AutoOrg
+      return new OpenAICompatibleAdapter(type, baseUrl, apiKey);
+    default:
+      throw new Error(`Unsupported LLM provider type: ${type}`);
+  }
 }
 
 export function getAdapterForModel(model: string): LLMAdapter {

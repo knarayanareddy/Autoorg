@@ -8,11 +8,11 @@ export class AnthropicAdapter extends BaseAdapter {
   provider: LLMProvider = 'anthropic';
   private client: Anthropic;
 
-  constructor() {
+  constructor(apiKey?: string) {
     super();
-    const apiKey = process.env.AUTOORG_API_KEY_ANTHROPIC;
-    if (!apiKey) throw new Error('AUTOORG_API_KEY_ANTHROPIC is not set');
-    this.client = new Anthropic({ apiKey });
+    const key = apiKey ?? process.env.AUTOORG_API_KEY_ANTHROPIC;
+    if (!key) throw new Error('Anthropic API key is not set');
+    this.client = new Anthropic({ apiKey: key });
   }
 
   async run(opts: LLMRunOptions): Promise<LLMResponse> {

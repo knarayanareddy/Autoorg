@@ -27,6 +27,7 @@ import {
   getOpenObjections, getAllObjections,
   getMailboxForCycle, getAgentExecutionsForCycle,
   getDashboardSummary, getFeatureFlags,
+  getKnowledgeGraph,
 } from '@/db/queries.js';
 import { registerRoute, matchRoute, json, notFound, serverError } from './route-utils.js';
 import { getDb } from '@/db/migrate.js';
@@ -137,10 +138,16 @@ async function handleRequest(req: Request): Promise<Response> {
       return json(getCyclesForRun(params.id!));
     }
 
-    // GET /api/runs/:id/cost
-    params = matchRoute(url, method, '/api/runs/:id/cost', 'GET');
+    // GET /api/runs/:id/cost (and /costs)
+    params = matchRoute(url, method, '/api/runs/:id/cost', 'GET') || matchRoute(url, method, '/api/runs/:id/costs', 'GET');
     if (params) {
       return json(getCostBreakdownByRole(params.id!));
+    }
+
+    // GET /api/runs/:id/graph
+    params = matchRoute(url, method, '/api/runs/:id/graph', 'GET');
+    if (params) {
+      return json(getKnowledgeGraph(params.id!));
     }
 
     // GET /api/runs/:id/objections

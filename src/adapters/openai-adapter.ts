@@ -8,11 +8,11 @@ export class OpenAIAdapter extends BaseAdapter {
   provider: LLMProvider = 'openai';
   private client: OpenAI;
 
-  constructor() {
+  constructor(apiKey?: string) {
     super();
-    const apiKey = process.env.AUTOORG_API_KEY_OPENAI;
-    if (!apiKey) throw new Error('AUTOORG_API_KEY_OPENAI is not set');
-    this.client = new OpenAI({ apiKey });
+    const key = apiKey ?? process.env.AUTOORG_API_KEY_OPENAI || process.env.OPENAI_API_KEY;
+    if (!key) throw new Error('OpenAI API key is not set');
+    this.client = new OpenAI({ apiKey: key });
   }
 
   async run(opts: LLMRunOptions): Promise<LLMResponse> {

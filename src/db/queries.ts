@@ -229,3 +229,35 @@ export function getDashboardSummary(runId: string): DashboardSummary | null {
 
   return { run, cycles, scoreHistory, costByRole, openObjections, latestCycle };
 }
+// ── Knowledge Graph queries ──────────────────────────────────────────
+export interface GraphData {
+  nodes: Array<{ id: string; label: string; type: string }>;
+  links: Array<{ id: string; source: string; target: string; type: string }>;
+}
+
+export function getKnowledgeGraph(runId: string): GraphData {
+  const db = getDb();
+  
+  // Get nodes associated with this run
+  // Logic: Nodes are linked to extractions, extractions are linked to cycles, cycles are linked to runs.
+  const nodes = db.prepare(`
+    SELECT DISTINCT n.id, n.label, n.type
+    FROM kg_nodes n
+    JOIN kg_extractions e ON e.id = n.extraction_id
+    JOIN cycles c ON c.id = e.cycle_id
+    WHERE c.run_id = ?
+  `).all(runId) as any[];
+
+  // Get links between these nodes
+  const links = db.prepare(`
+    SELECT DISTINCT edge.id, edge.source_id as source, edge.target_id as target, edge.type
+    FROM kg_edges edge
+    JOIN kg_nodes n1 ON n1.id = edge.source_id
+    JOIN kg_extractions e ON e.id = n1.extraction_id
+    JOIN cycles c ON c.id = e.cycle_id
+    WHERE c.run_id = ?
+  `).all(runId) as any[];
+
+  db.close();
+  return { nodes, links };
+}
