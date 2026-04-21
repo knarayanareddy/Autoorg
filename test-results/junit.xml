@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="bun test" tests="64" assertions="119" failures="0" skipped="0" time="1.721832">
+  <testsuite name="tests/ratchet.test.ts" file="tests/ratchet.test.ts" tests="5" assertions="7" failures="0" skipped="0" time="0" hostname="Macbooks-MacBook-Pro.local">
+    <testsuite name="RatchetEngine (Phase 0 — Mock)" file="tests/ratchet.test.ts" line="5" tests="5" assertions="7" failures="0" skipped="0" time="0" hostname="Macbooks-MacBook-Pro.local">
+      <testcase name="should return a score between 0 and 1" classname="RatchetEngine (Phase 0 — Mock)" time="0.000797" file="tests/ratchet.test.ts" line="8" assertions="2" />
+      <testcase name="should return COMMIT when score &gt; previousBest" classname="RatchetEngine (Phase 0 — Mock)" time="0.00015" file="tests/ratchet.test.ts" line="14" assertions="1" />
+      <testcase name="should return REVERT when score &lt;= previousBest" classname="RatchetEngine (Phase 0 — Mock)" time="0.000136" file="tests/ratchet.test.ts" line="20" assertions="1" />
+      <testcase name="should have valid dimension weights summing to composite" classname="RatchetEngine (Phase 0 — Mock)" time="0.000052" file="tests/ratchet.test.ts" line="26" assertions="1" />
+      <testcase name="should include a justification string" classname="RatchetEngine (Phase 0 — Mock)" time="0.00015" file="tests/ratchet.test.ts" line="36" assertions="2" />
+    </testsuite>
+  </testsuite>
+  <testsuite name="tests/objection-tracker.test.ts" file="tests/objection-tracker.test.ts" tests="6" assertions="13" failures="0" skipped="0" time="0" hostname="Macbooks-MacBook-Pro.local">
+    <testsuite name="ObjectionTracker" file="tests/objection-tracker.test.ts" line="7" tests="6" assertions="13" failures="0" skipped="0" time="0.006" hostname="Macbooks-MacBook-Pro.local">
+      <testcase name="starts with no objections" classname="ObjectionTracker" time="0.000884" file="tests/objection-tracker.test.ts" line="33" assertions="2" />
+      <testcase name="raises new objections from Critic output" classname="ObjectionTracker" time="0.002712" file="tests/objection-tracker.test.ts" line="39" assertions="4" />
+      <testcase name="returns open blockers correctly" classname="ObjectionTracker" time="0.000558" file="tests/objection-tracker.test.ts" line="52" assertions="2" />
+      <testcase name="resolves objections correctly" classname="ObjectionTracker" time="0.001405" file="tests/objection-tracker.test.ts" line="58" assertions="2" />
+      <testcase name="formats objections as context string" classname="ObjectionTracker" time="0.000649" file="tests/objection-tracker.test.ts" line="69" assertions="2" />
+      <testcase name="processCriticOutput raises and resolves in one call" classname="ObjectionTracker" time="0.003655" file="tests/objection-tracker.test.ts" line="75" assertions="1" />
+    </testsuite>
+  </testsuite>
+  <testsuite name="tests/pipeline.test.ts" file="tests/pipeline.test.ts" tests="3" assertions="11" failures="0" skipped="0" time="0" hostname="Macbooks-MacBook-Pro.local">
+    <testsuite name="Pipeline (Phase 2)" file="tests/pipeline.test.ts" line="3" tests="3" assertions="11" failures="0" skipped="0" time="0.003" hostname="Macbooks-MacBook-Pro.local">
+      <testcase name="pipeline module exists and exports runCyclePipeline" classname="Pipeline (Phase 2)" time="0.001927" file="tests/pipeline.test.ts" line="4" assertions="1" />
+      <testcase name="CycleContextBuilder exports correct methods" classname="Pipeline (Phase 2)" time="0.00011" file="tests/pipeline.test.ts" line="9" assertions="7" />
+      <testcase name="storeCycleContext and loadCycleContext round-trip" classname="Pipeline (Phase 2)" time="0.002985" file="tests/pipeline.test.ts" line="21" assertions="3" />
+    </testsuite>
+  </testsuite>
+  <testsuite name="tests/org-parser.test.ts" file="tests/org-parser.test.ts" tests="6" assertions="14" failures="0" skipped="0" time="0" hostname="Macbooks-MacBook-Pro.local">
+    <testsuite name="OrgMd Parser" file="tests/org-parser.test.ts" line="35" tests="6" assertions="14" failures="0" skipped="0" time="0.001" hostname="Macbooks-MacBook-Pro.local">
+      <testcase name="should parse mission correctly" classname="OrgMd Parser" time="0.001649" file="tests/org-parser.test.ts" line="46" assertions="1" />
+      <testcase name="should parse model assignments" classname="OrgMd Parser" time="0.000195" file="tests/org-parser.test.ts" line="51" assertions="4" />
+      <testcase name="should parse stopping criteria" classname="OrgMd Parser" time="0.000106" file="tests/org-parser.test.ts" line="59" assertions="4" />
+      <testcase name="should parse constraints" classname="OrgMd Parser" time="0.000109" file="tests/org-parser.test.ts" line="67" assertions="2" />
+      <testcase name="should parse cycle settings" classname="OrgMd Parser" time="0.000055" file="tests/org-parser.test.ts" line="73" assertions="2" />
+      <testcase name="should generate content hash" classname="OrgMd Parser" time="0.000197" file="tests/org-parser.test.ts" line="79" assertions="1" />
+    </testsuite>
+  </testsuite>
+  <testsuite name="tests/memory-manager.test.ts" file="tests/memory-manager.test.ts" tests="3" assertions="4" failures="0" skipped="0" time="0" hostname="Macbooks-MacBook-Pro.local">
+    <testsuite name="MemoryManager" file="tests/memory-manager.test.ts" line="7" tests="3" assertions="4" failures="0" skipped="0" time="0" hostname="Macbooks-MacBook-Pro.local">
+      <testcase name="reads memory index (or returns placeholder)" classname="MemoryManager" time="0.000633" file="tests/memory-manager.test.ts" line="10" assertions="2" />
+      <testcase name="enforces 150-line cap (internal logic)" classname="MemoryManager" time="0.000011" file="tests/memory-manager.test.ts" line="16" assertions="1" />
+      <testcase name="gets recent transcript summary without crashing" classname="MemoryManager" time="0.000205" file="tests/memory-manager.test.ts" line="23" assertions="1" />
+    </testsuite>
+  </testsuite>
+  <testsuite name="tests/dream-engine.test.ts" file="tests/dream-engine.test.ts" tests="16" assertions="29" failures="0" skipped="0" time="0" hostname="Macbooks-MacBook-Pro.local">
+    <testsuite name="shouldTriggerDream" file="tests/dream-engine.test.ts" line="8" tests="5" assertions="8" failures="0" skipped="0" time="0" hostname="Macbooks-MacBook-Pro.local">
+      <testcase name="triggers on interval" classname="shouldTriggerDream" time="0" file="tests/dream-engine.test.ts" line="14" assertions="2" />
+      <testcase name="triggers on plateau" classname="shouldTriggerDream" time="0.000234" file="tests/dream-engine.test.ts" line="20" assertions="2" />
+      <testcase name="triggers on memory critical" classname="shouldTriggerDream" time="0.000025" file="tests/dream-engine.test.ts" line="26" assertions="2" />
+      <testcase name="does NOT trigger when not interval and no plateau" classname="shouldTriggerDream" time="0.000025" file="tests/dream-engine.test.ts" line="36" assertions="1" />
+      <testcase name="respects cooldown after recent dream" classname="shouldTriggerDream" time="0.000012" file="tests/dream-engine.test.ts" line="41" assertions="1" />
+    </testsuite>
+    <testsuite name="FactStore" file="tests/dream-engine.test.ts" line="48" tests="5" assertions="8" failures="0" skipped="0" time="0.032" hostname="Macbooks-MacBook-Pro.local">
+      <testcase name="adds a fact and retrieves it" classname="FactStore" time="0.019602" file="tests/dream-engine.test.ts" line="62" assertions="3" />
+      <testcase name="confirms a fact (raises confidence)" classname="FactStore" time="0.002341" file="tests/dream-engine.test.ts" line="78" assertions="1" />
+      <testcase name="contradicts a fact (lowers confidence)" classname="FactStore" time="0.003152" file="tests/dream-engine.test.ts" line="90" assertions="1" />
+      <testcase name="exports facts as markdown" classname="FactStore" time="0.000572" file="tests/dream-engine.test.ts" line="103" assertions="2" />
+      <testcase name="detects potential contradictions" classname="FactStore" time="0.008983" file="tests/dream-engine.test.ts" line="109" assertions="1" />
+    </testsuite>
+    <testsuite name="Embeddings" file="tests/dream-engine.test.ts" line="125" tests="4" assertions="9" failures="0" skipped="0" time="0" hostname="Macbooks-MacBook-Pro.local">
+      <testcase name="computes a local TF-IDF embedding" classname="Embeddings" time="0.000203" file="tests/dream-engine.test.ts" line="126" assertions="2" />
+      <testcase name="serializes and deserializes embedding correctly" classname="Embeddings" time="0.000274" file="tests/dream-engine.test.ts" line="133" assertions="5" />
+      <testcase name="cosine similarity is 1.0 for identical vectors" classname="Embeddings" time="0.000338" file="tests/dream-engine.test.ts" line="143" assertions="1" />
+      <testcase name="cosine similarity is ~0 for orthogonal vectors" classname="Embeddings" time="0.000047" file="tests/dream-engine.test.ts" line="149" assertions="1" />
+    </testsuite>
+    <testsuite name="BM25 Search" file="tests/dream-engine.test.ts" line="157" tests="1" assertions="3" failures="0" skipped="0" time="0" hostname="Macbooks-MacBook-Pro.local">
+      <testcase name="BM25 module exports indexTranscriptEntry and searchBM25" classname="BM25 Search" time="0.000086" file="tests/dream-engine.test.ts" line="158" assertions="3" />
+    </testsuite>
+    <testsuite name="DreamOutputSchema" file="tests/dream-engine.test.ts" line="166" tests="1" assertions="1" failures="0" skipped="0" time="0.001" hostname="Macbooks-MacBook-Pro.local">
+      <testcase name="validates a well-formed dream output" classname="DreamOutputSchema" time="0.001821" file="tests/dream-engine.test.ts" line="167" assertions="1" />
+    </testsuite>
+  </testsuite>
+  <testsuite name="tests/mailman.test.ts" file="tests/mailman.test.ts" tests="5" assertions="8" failures="0" skipped="0" time="0" hostname="Macbooks-MacBook-Pro.local">
+    <testsuite name="MailMan (Filesystem IPC)" file="tests/mailman.test.ts" line="8" tests="5" assertions="8" failures="0" skipped="0" time="0.005" hostname="Macbooks-MacBook-Pro.local">
+      <testcase name="delivers a task to inbox" classname="MailMan (Filesystem IPC)" time="0.005185" file="tests/mailman.test.ts" line="30" assertions="1" />
+      <testcase name="reads the delivered task" classname="MailMan (Filesystem IPC)" time="0.00057" file="tests/mailman.test.ts" line="35" assertions="3" />
+      <testcase name="posts a reply to outbox" classname="MailMan (Filesystem IPC)" time="0.000446" file="tests/mailman.test.ts" line="42" assertions="1" />
+      <testcase name="reads replies for a cycle" classname="MailMan (Filesystem IPC)" time="0.000253" file="tests/mailman.test.ts" line="57" assertions="2" />
+      <testcase name="cleans cycle mailbox" classname="MailMan (Filesystem IPC)" time="0.000439" file="tests/mailman.test.ts" line="63" assertions="1" />
+    </testsuite>
+  </testsuite>
+  <testsuite name="tests/graph-engine.test.ts" file="tests/graph-engine.test.ts" tests="4" assertions="11" failures="0" skipped="0" time="0" hostname="Macbooks-MacBook-Pro.local">
+    <testsuite name="Graph Engine (Phase 4)" file="tests/graph-engine.test.ts" line="7" tests="4" assertions="11" failures="0" skipped="0" time="0.014" hostname="Macbooks-MacBook-Pro.local">
+      <testcase name="should create and connect to a graph database" classname="Graph Engine (Phase 4)" time="0.002116" file="tests/graph-engine.test.ts" line="21" assertions="2" />
+      <testcase name="should create nodes and find them" classname="Graph Engine (Phase 4)" time="0.005239" file="tests/graph-engine.test.ts" line="27" assertions="4" />
+      <testcase name="should create edges and find neighbors" classname="Graph Engine (Phase 4)" time="0.004064" file="tests/graph-engine.test.ts" line="45" assertions="2" />
+      <testcase name="should validate claims using grounding validator" classname="Graph Engine (Phase 4)" time="0.003502" file="tests/graph-engine.test.ts" line="65" assertions="3" />
+    </testsuite>
+  </testsuite>
+  <testsuite name="tests/agent-runner.test.ts" file="tests/agent-runner.test.ts" tests="12" assertions="17" failures="0" skipped="0" time="0" hostname="Macbooks-MacBook-Pro.local">
+    <testsuite name="StructuredOutput Parser" file="tests/agent-runner.test.ts" line="7" tests="5" assertions="6" failures="0" skipped="0" time="0" hostname="Macbooks-MacBook-Pro.local">
+      <testcase name="parses clean JSON" classname="StructuredOutput Parser" time="0.00012" file="tests/agent-runner.test.ts" line="13" assertions="2" />
+      <testcase name="parses JSON in code block" classname="StructuredOutput Parser" time="0.000339" file="tests/agent-runner.test.ts" line="19" assertions="1" />
+      <testcase name="parses JSON embedded in prose" classname="StructuredOutput Parser" time="0.000084" file="tests/agent-runner.test.ts" line="25" assertions="1" />
+      <testcase name="throws StructuredOutputError on unparseable output" classname="StructuredOutput Parser" time="0.000083" file="tests/agent-runner.test.ts" line="31" assertions="1" />
+      <testcase name="validates schema — rejects wrong types" classname="StructuredOutput Parser" time="0.000277" file="tests/agent-runner.test.ts" line="35" assertions="1" />
+    </testsuite>
+    <testsuite name="Retry Utility" file="tests/agent-runner.test.ts" line="42" tests="3" assertions="6" failures="0" skipped="0" time="1.479" hostname="Macbooks-MacBook-Pro.local">
+      <testcase name="succeeds on first attempt" classname="Retry Utility" time="0.000408" file="tests/agent-runner.test.ts" line="43" assertions="2" />
+      <testcase name="retries on failure and eventually succeeds" classname="Retry Utility" time="0.521364" file="tests/agent-runner.test.ts" line="50" assertions="2" />
+      <testcase name="throws RetryError after max retries" classname="Retry Utility" time="0.958689" file="tests/agent-runner.test.ts" line="61" assertions="2" />
+    </testsuite>
+    <testsuite name="Token Counter" file="tests/agent-runner.test.ts" line="70" tests="2" assertions="3" failures="0" skipped="0" time="0" hostname="Macbooks-MacBook-Pro.local">
+      <testcase name="estimates reasonable token count for English text" classname="Token Counter" time="0.000382" file="tests/agent-runner.test.ts" line="71" assertions="2" />
+      <testcase name="returns 0 for empty string" classname="Token Counter" time="0.000062" file="tests/agent-runner.test.ts" line="79" assertions="1" />
+    </testsuite>
+    <testsuite name="Critic Output Schema" file="tests/agent-runner.test.ts" line="84" tests="1" assertions="1" failures="0" skipped="0" time="0.002" hostname="Macbooks-MacBook-Pro.local">
+      <testcase name="validates correct critic output" classname="Critic Output Schema" time="0.002971" file="tests/agent-runner.test.ts" line="85" assertions="1" />
+    </testsuite>
+    <testsuite name="Judge Output Schema" file="tests/agent-runner.test.ts" line="104" tests="1" assertions="1" failures="0" skipped="0" time="0.001" hostname="Macbooks-MacBook-Pro.local">
+      <testcase name="validates a complete judge output" classname="Judge Output Schema" time="0.001253" file="tests/agent-runner.test.ts" line="105" assertions="1" />
+    </testsuite>
+  </testsuite>
+  <testsuite name="tests/event-bus.test.ts" file="tests/event-bus.test.ts" tests="4" assertions="5" failures="0" skipped="0" time="0" hostname="Macbooks-MacBook-Pro.local">
+    <testsuite name="EventBus" file="tests/event-bus.test.ts" line="4" tests="4" assertions="5" failures="0" skipped="0" time="0.001" hostname="Macbooks-MacBook-Pro.local">
+      <testcase name="starts with zero clients" classname="EventBus" time="0.000253" file="tests/event-bus.test.ts" line="5" assertions="1" />
+      <testcase name="adds and removes clients" classname="EventBus" time="0.000073" file="tests/event-bus.test.ts" line="9" assertions="2" />
+      <testcase name="broadcasts without crashing when no clients connected" classname="EventBus" time="0.000045" file="tests/event-bus.test.ts" line="17" assertions="1" />
+      <testcase name="setRunId updates the run context" classname="EventBus" time="0.001025" file="tests/event-bus.test.ts" line="21" assertions="1" />
+    </testsuite>
+  </testsuite>
+</testsuites>

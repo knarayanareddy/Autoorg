@@ -1,0 +1,375 @@
+{
+  "nodes": [
+    {
+      "id": "node_h4QdVqIU",
+      "label": "Local",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_i0fNHgFR",
+      "label": "Large",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_GFJjhUSO",
+      "label": "Language",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node__tHAAs-9",
+      "label": "Models",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_rgtGuN_n",
+      "label": "Llama",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_IInYVjMG",
+      "label": "entirely",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_ffozVmlc",
+      "label": "on-premises",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_nKAyw42t",
+      "label": "using",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_gwOFxYF7",
+      "label": "tools",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_Y7DR9TyR",
+      "label": "Ollama",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_T1paY7MS",
+      "label": "Unlike",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_h5GyqGNN",
+      "label": "cloud-based",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_8MR6-CKL",
+      "label": "OpenAI",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_0AOOLcMh",
+      "label": "Anthropic",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_Ymod68lR",
+      "label": "execution",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_1frfcPgH",
+      "label": "ensures",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_sarkbUHD",
+      "label": "sensitive",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_R16LeHqt",
+      "label": "never",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_yJfjQ4TL",
+      "label": "leaves",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_yKjzwmWS",
+      "label": "organization",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_J0GeeOb7",
+      "label": "firewall",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_O4s5Jo4Z",
+      "label": "critical",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_qPnjA-VM",
+      "label": "industries",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_DtXfSQrD",
+      "label": "healthcare",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_tcB7Rp0x",
+      "label": "defense",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_rozkOkNa",
+      "label": "finance",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_UmsQk-EU",
+      "label": "However",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_XkWON4eC",
+      "label": "often",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_3cUHrrxx",
+      "label": "smaller",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_qzrnYQY9",
+      "label": "parameter",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_gRe6scD1",
+      "label": "counts",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_WqkTx4i1",
+      "label": "compared",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_CMpD7gsk",
+      "label": "cloud",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_Pw9xlcNI",
+      "label": "giants",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_BApnA520",
+      "label": "which",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_qAZYgWzz",
+      "label": "lower",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_7MBhWU9H",
+      "label": "reasoning",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_jKGJDA8W",
+      "label": "capabilities",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_KUnF8fV3",
+      "label": "complex",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_S9ygJBFA",
+      "label": "planning",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    },
+    {
+      "id": "node_vECN9ALm",
+      "label": "tasks",
+      "kind": "concept",
+      "weight": 1,
+      "metadata": {
+        "source": "seed"
+      }
+    }
+  ],
+  "edges": [],
+  "version": 1
+}

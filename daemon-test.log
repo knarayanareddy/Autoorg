@@ -1,0 +1,60 @@
+
+🗄️  Running AutoOrg database migrations [test-daemon.db]...
+
+  ✓ Schema applied to: test-daemon.db
+  ✓ Seeded 20 feature flags
+
+  Tables created (38):
+    · agent_executions
+    · approvals
+    · benchmark_attempts
+    · benchmark_cases
+    · benchmark_metrics
+    · benchmark_runs
+    · benchmark_suites
+    · contradictions
+    · cycles
+    · daemon_state
+    · embeddings_cache
+    · facts
+    · feature_flags
+    · github_events
+    · improvement_proposals
+    · interview_sessions
+    · kg_edges
+    · kg_nodes
+    · learning_cycles
+    · learning_lineage
+    · llm_models
+    · llm_providers
+    · mailbox_messages
+    · memory_snapshots
+    · pattern_reports
+    · pending_actions
+    · prompt_versions
+    · redaction_events
+    · runs
+    · scheduled_jobs
+    · score_history
+    · security_findings
+    · simulation_runs
+    · team_members
+    · teams
+    · tool_definitions
+    · tool_executions
+    · transcript_index
+
+✅ Database ready.
+
+
+🤖 AutoOrg Daemon started
+PID: 41617
+Press Ctrl+C to stop.
+
+[daemon] Running job github_sync (job_sync_test)
+[daemon] Syncing with GitHub Issues/PRs...
+[daemon] Found 1 new GitHub events to process.
+[daemon] Processing push (ghe_test_push)...
+[daemon] Push to main detected. Triggering autonomous mission run.
+
+Stopping daemon...

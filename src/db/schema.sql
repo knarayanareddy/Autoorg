@@ -159,6 +159,10 @@ CREATE TABLE IF NOT EXISTS score_history (
   run_id        TEXT NOT NULL,
   cycle_number  INTEGER NOT NULL,
   composite     REAL NOT NULL,
+  groundedness  REAL DEFAULT 0,
+  novelty       REAL DEFAULT 0,
+  consistency   REAL DEFAULT 0,
+  alignment     REAL DEFAULT 0,
   decision      TEXT NOT NULL,
   recorded_at   DATETIME NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (run_id, cycle_number)
@@ -483,6 +487,41 @@ CREATE TABLE IF NOT EXISTS simulation_runs (
 );
 
 -- ────────────────────────────────────────────────────────────
+-- TABLE: background scheduler
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS scheduled_jobs (
+  id              TEXT PRIMARY KEY,
+  run_id          TEXT,
+  job_type        TEXT NOT NULL CHECK(job_type IN ('org_run','dream','graph_rebuild','health_check','github_sync')),
+  cron_expr       TEXT NOT NULL,
+  payload_json    TEXT NOT NULL DEFAULT '{}',
+  enabled         INTEGER DEFAULT 1,
+  next_run_at     DATETIME,
+  last_run_at     DATETIME,
+  status          TEXT NOT NULL DEFAULT 'idle' CHECK(status IN ('idle','running','error')),
+  last_error      TEXT,
+  created_at      DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_scheduled_next ON scheduled_jobs(next_run_at) WHERE enabled = 1;
+
+-- ────────────────────────────────────────────────────────────
+-- TABLE: github event log
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS github_events (
+  id              TEXT PRIMARY KEY,
+  event_type      TEXT NOT NULL,
+  repo_full_name  TEXT,
+  delivery_id     TEXT,
+  action          TEXT,
+  payload_json    TEXT NOT NULL,
+  processed       INTEGER DEFAULT 0,
+  created_at      DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_ghe_processed ON github_events(processed) WHERE processed = 0;
+
+-- ────────────────────────────────────────────────────────────
 -- FEATURE FLAGS (Absolute Seeding)
 -- ────────────────────────────────────────────────────────────
 INSERT OR IGNORE INTO feature_flags (flag_name, enabled, description) VALUES
@@ -490,6 +529,7 @@ INSERT OR IGNORE INTO feature_flags (flag_name, enabled, description) VALUES
   ('factStore', 1, 'Structured Tier-2 memory fact store (Phase 3)'),
   ('coordinatorHierarchy', 1, 'CEO -> Team leads -> workers hierarchy (Phase 5)'),
   ('daemonMode', 1, 'Persistent background daemon (Phase 5)'),
+  ('scheduler', 1, 'Job scheduler for background tasks (Phase 5)'),
   ('benchmarkLab', 1, 'Benchmark suite execution (Phase 7)'),
   ('llmRegistry', 1, 'Dynamic LLM provider configuration (Phase 15)');
 

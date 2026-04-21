@@ -82,15 +82,19 @@ export function getCycle(cycleId: string): CycleRow | null {
 export function getScoreHistory(runId: string): Array<{
   cycle_number: number;
   composite:    number;
+  groundedness: number;
+  novelty:      number;
+  consistency:  number;
+  alignment:    number;
   decision:     string;
 }> {
   const db   = getDb();
   const rows = db.prepare(`
-    SELECT cycle_number, composite, decision
+    SELECT cycle_number, composite, groundedness, novelty, consistency, alignment, decision
     FROM score_history
     WHERE run_id = ?
     ORDER BY cycle_number ASC
-  `).all(runId) as Array<{ cycle_number: number; composite: number; decision: string }>;
+  `).all(runId) as any[];
   db.close();
   return rows;
 }
@@ -260,4 +264,31 @@ export function getKnowledgeGraph(runId: string): GraphData {
 
   db.close();
   return { nodes, links };
+}
+
+// ── GitHub Event Queries ────────────────────────────────────────────────
+export interface GitHubEventRow {
+  id:              string;
+  event_type:      string;
+  repo_full_name:  string | null;
+  delivery_id:     string | null;
+  action:          string | null;
+  payload_json:    string;
+  processed:       number;
+  created_at:      string;
+}
+
+export function getUnprocessedGitHubEvents(): GitHubEventRow[] {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT * FROM github_events WHERE processed = 0 ORDER BY created_at ASC
+  `).all() as GitHubEventRow[];
+  db.close();
+  return rows;
+}
+
+export function markGitHubEventProcessed(id: string) {
+  const db = getDb();
+  db.prepare(`UPDATE github_events SET processed = 1 WHERE id = ?`).run(id);
+  db.close();
 }

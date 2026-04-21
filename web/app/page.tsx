@@ -16,7 +16,10 @@ interface RunSummary {
     best_score: number; total_cost_usd: number;
     started_at: string; stop_reason: string | null;
   };
-  scoreHistory:    Array<{ cycle_number: number; composite: number; decision: string }>;
+  scoreHistory:    Array<{ 
+    cycle_number: number; composite: number; decision: string;
+    groundedness: number; novelty: number; consistency: number; alignment: number;
+  }>;
   costByRole:      Array<{ agent_role: string; total_cost: number; total_tokens: number; exec_count: number }>;
   openObjections:  Array<{ id: string; severity: string; description: string; proposed_fix: string; cycle_raised: number; resolved: number }>;
   latestCycle:     { cycle_number: number; decision: string | null; score_composite: number | null; duration_ms: number | null } | null;
@@ -243,11 +246,11 @@ export default function DashboardPage() {
                   <tr key={row.cycle_number} className="border-b border-gray-800 hover:bg-gray-800/50 transition-colors">
                     <td className="px-4 py-2 text-gray-400">{row.cycle_number}</td>
                     <td className="px-4 py-2 font-bold text-white">{(row.composite * 100).toFixed(1)}%</td>
-                    <td className="px-4 py-2 text-gray-500">—</td>
-                    <td className="px-4 py-2 text-gray-500">—</td>
-                    <td className="px-4 py-2 text-gray-500">—</td>
-                    <td className="px-4 py-2 text-gray-500">—</td>
-                    <td className="px-4 py-2">
+                    <td className="px-4 py-2 text-gray-500">{(row.groundedness * 100).toFixed(0)}%</td>
+                    <td className="px-4 py-2 text-gray-500">{(row.novelty * 100).toFixed(0)}%</td>
+                    <td className="px-4 py-2 text-gray-500">{(row.consistency * 100).toFixed(0)}%</td>
+                    <td className="px-4 py-2 text-gray-500">{(row.alignment * 100).toFixed(0)}%</td>
+                    <td className="px-4 py-2 text-right">
                       <span className={`px-2 py-0.5 rounded text-xs font-bold ${
                         row.decision === 'COMMIT'  ? 'bg-green-900 text-green-300' :
                         row.decision === 'REVERT'  ? 'bg-red-900 text-red-300' :

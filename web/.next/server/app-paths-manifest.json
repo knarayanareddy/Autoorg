@@ -1,0 +1,15 @@
+{
+  "/_not-found/page": "app/_not-found/page.js",
+  "/agents/page": "app/agents/page.js",
+  "/swarm/page": "app/swarm/page.js",
+  "/graph/page": "app/graph/page.js",
+  "/benchmarks/page": "app/benchmarks/page.js",
+  "/workspaces/page": "app/workspaces/page.js",
+  "/platform/providers/page": "app/platform/providers/page.js",
+  "/run/[id]/page": "app/run/[id]/page.js",
+  "/page": "app/page.js",
+  "/learning/page": "app/learning/page.js",
+  "/leaderboard/page": "app/leaderboard/page.js",
+  "/portfolio/page": "app/portfolio/page.js",
+  "/interview/page": "app/interview/page.js"
+}

@@ -3,6 +3,8 @@ import chalk from 'chalk';
 import { ServiceState } from './service-state.js';
 import { Scheduler } from './scheduler.js';
 import { featureFlag, loadFeatureFlags } from '@/config/feature-flags.js';
+import { getUnprocessedGitHubEvents, markGitHubEventProcessed } from '@/db/queries.js';
+import { nanoid } from 'nanoid';
 
 const state = new ServiceState();
 const scheduler = new Scheduler();
@@ -28,6 +30,7 @@ async function runDueJobs() {
           break;
         case 'github_sync':
           console.log(chalk.yellow(`[daemon] Syncing with GitHub Issues/PRs...`));
+          await syncGitHubEvents();
           break;
         case 'org_run':
           console.log(chalk.blue(`[daemon] Starting scheduled organization mission run...`));
@@ -38,6 +41,37 @@ async function runDueJobs() {
     } catch (err) {
       console.error(chalk.red(`[daemon] Job ${job.id} failed:`), err);
       scheduler.markError(job.id, String(err), job.cron_expr);
+    }
+  }
+}
+
+async function syncGitHubEvents() {
+  const events = getUnprocessedGitHubEvents();
+  if (events.length === 0) return;
+
+  console.log(chalk.gray(`[daemon] Found ${events.length} new GitHub events to process.`));
+
+  for (const event of events) {
+    try {
+      console.log(chalk.gray(`[daemon] Processing ${event.event_type} (${event.id})...`));
+      
+      const payload = JSON.parse(event.payload_json);
+
+      // Trigger Logic: push to main
+      if (event.event_type === 'push' && payload.ref === 'refs/heads/main') {
+        console.log(chalk.green(`[daemon] Push to main detected. Triggering autonomous mission run.`));
+        
+        // Schedule an immediate org_run
+        scheduler.createJob({
+          jobType: 'org_run',
+          cronExpr: 'every_1m', // dummy cron, will be deleted/marked done
+          payload: { trigger_event: event.id, source: 'github_push' }
+        });
+      }
+
+      markGitHubEventProcessed(event.id);
+    } catch (err) {
+      console.error(chalk.red(`[daemon] Failed to process event ${event.id}:`), err);
     }
   }
 }
