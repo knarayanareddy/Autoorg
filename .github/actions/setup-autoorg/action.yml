@@ -32,10 +32,17 @@ runs:
       shell: bash
       run: bunx playwright install --with-deps chromium
 
+    - name: Install web dependencies
+      shell: bash
+      run: |
+        if [ -d "web" ]; then
+          cd web
+          bun install
+        fi
+
     - name: Build web dashboard
       if: inputs.build-web == 'true'
       shell: bash
       run: |
         cd web
-        bun install
         bun run build
