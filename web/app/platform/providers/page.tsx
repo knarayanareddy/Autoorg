@@ -101,7 +101,7 @@ export default function ProvidersPage() {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {providers?.map((provider) => (
+          {providers?.map((provider: ProviderConfig) => (
             <div 
               key={provider.id}
               className="bg-[#121214] border border-white/5 p-6 rounded-2xl group hover:border-indigo-500/40 transition-all duration-300 shadow-xl"

@@ -46,7 +46,7 @@ export function ScoreChart({ data, width = 600, height = 180 }: ScoreChartProps)
       .data([0.25, 0.5, 0.75, 1.0])
       .enter().append('line')
       .attr('x1', 0).attr('x2', W)
-      .attr('y1', d => yScale(d)).attr('y2', d => yScale(d))
+      .attr('y1', (d: number) => yScale(d)).attr('y2', (d: number) => yScale(d))
       .attr('stroke', '#374151').attr('stroke-dasharray', '4,4');
 
     // Target score line (0.85 default)
@@ -62,9 +62,9 @@ export function ScoreChart({ data, width = 600, height = 180 }: ScoreChartProps)
 
     // Area fill
     const area = d3.area<ScorePoint>()
-      .x(d  => xScale(d.cycle_number))
+      .x((d: ScorePoint)  => xScale(d.cycle_number))
       .y0(H)
-      .y1(d => yScale(d.composite))
+      .y1((d: ScorePoint) => yScale(d.composite))
       .curve(d3.curveMonotoneX);
 
     const gradient = svg.append('defs').append('linearGradient')
@@ -79,8 +79,8 @@ export function ScoreChart({ data, width = 600, height = 180 }: ScoreChartProps)
 
     // Line
     const line = d3.line<ScorePoint>()
-      .x(d => xScale(d.cycle_number))
-      .y(d => yScale(d.composite))
+      .x((d: ScorePoint) => xScale(d.cycle_number))
+      .y((d: ScorePoint) => yScale(d.composite))
       .curve(d3.curveMonotoneX);
 
     g.append('path')
@@ -95,20 +95,20 @@ export function ScoreChart({ data, width = 600, height = 180 }: ScoreChartProps)
       .data(data)
       .enter().append('circle')
       .attr('class', 'dot')
-      .attr('cx', d => xScale(d.cycle_number))
-      .attr('cy', d => yScale(d.composite))
+      .attr('cx', (d: ScorePoint) => xScale(d.cycle_number))
+      .attr('cy', (d: ScorePoint) => yScale(d.composite))
       .attr('r', 3)
-      .attr('fill', d => d.decision === 'COMMIT' ? '#4ade80' : '#f87171');
+      .attr('fill', (d: ScorePoint) => d.decision === 'COMMIT' ? '#4ade80' : '#f87171');
 
     // X axis
     g.append('g')
       .attr('transform', `translate(0,${H})`)
-      .call(d3.axisBottom(xScale).ticks(Math.min(data.length, 10)).tickFormat(d => `C${d}`))
+      .call(d3.axisBottom(xScale).ticks(Math.min(data.length, 10)).tickFormat((d: any) => `C${d}`))
       .attr('color', '#6b7280');
 
     // Y axis
     g.append('g')
-      .call(d3.axisLeft(yScale).ticks(5).tickFormat(d => `${(+d * 100).toFixed(0)}%`))
+      .call(d3.axisLeft(yScale).ticks(5).tickFormat((d: any) => `${(+d * 100).toFixed(0)}%`))
       .attr('color', '#6b7280');
 
   }, [data, width, height]);
