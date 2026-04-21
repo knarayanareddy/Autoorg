@@ -24,12 +24,12 @@ jobs:
       - name: Health Check
         uses: ./.github/actions/health-check
         with:
-          api-url: ${{ vars.STAGING_URL }}
+          api-url: ${{ vars.STAGING_URL || 'http://localhost:3001' }}
 
       - name: Smoke Test
         run: bun run scripts/ci/smoke-test.ts
         env:
-          AUTOORG_API_URL: ${{ vars.STAGING_URL }}
+          AUTOORG_API_URL: ${{ vars.STAGING_URL || 'http://localhost:3001' }}
 
       - name: Rollback on Failure
         if: failure()

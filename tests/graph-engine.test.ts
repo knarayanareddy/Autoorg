@@ -9,7 +9,13 @@ describe('Graph Engine (Phase 4)', () => {
   
   beforeAll(async () => {
     process.env.AUTOORG_FLAG_knowledgeGraph = 'true';
+    const { loadFeatureFlags } = await import('../src/config/feature-flags.js');
     await loadFeatureFlags();
+    
+    // Standardize database for tests
+    process.env.AUTOORG_DB_PATH = `/tmp/autoorg-graph-test-${Date.now()}.db`;
+    const { migrate } = await import('../src/db/migrate.js');
+    await migrate();
   });
 
   it('should create and connect to a graph database', async () => {

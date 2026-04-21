@@ -49,30 +49,11 @@ describe('FactStore', () => {
   let store: FactStore;
 
   beforeAll(async () => {
-    // Ensure facts table exists
-    const db = getDb();
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS facts (
-        id TEXT PRIMARY KEY, run_id TEXT NOT NULL,
-        statement TEXT NOT NULL, category TEXT NOT NULL,
-        source_cycle INTEGER NOT NULL, source_type TEXT NOT NULL,
-        evidence TEXT, confidence REAL DEFAULT 0.5,
-        confirmation_count INTEGER DEFAULT 1, contradiction_count INTEGER DEFAULT 0,
-        active INTEGER DEFAULT 1, superseded_by TEXT, last_confirmed INTEGER,
-        embedding BLOB, created_at DATETIME DEFAULT (datetime('now')),
-        updated_at DATETIME DEFAULT (datetime('now'))
-      )
-    `);
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS contradictions (
-        id TEXT PRIMARY KEY, run_id TEXT NOT NULL,
-        fact_a_id TEXT NOT NULL, fact_b_id TEXT NOT NULL,
-        description TEXT NOT NULL, resolution TEXT, resolved INTEGER DEFAULT 0,
-        detected_cycle INTEGER NOT NULL, resolved_cycle INTEGER,
-        created_at DATETIME DEFAULT (datetime('now'))
-      )
-    `);
-    db.close();
+    // Standardize database for tests
+    process.env.AUTOORG_DB_PATH = `/tmp/autoorg-test-${Date.now()}.db`;
+    const { migrate } = await import('../src/db/migrate.js');
+    await (migrate as any)(); // Cast as any because it's not exported as a function normally, wait.
+    
     store = new FactStore(TEST_RUN);
   });
 

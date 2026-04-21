@@ -17,6 +17,10 @@ runs:
     - name: Wait for API
       shell: bash
       run: |
+        if [ -z "${{ inputs.api-url }}" ]; then
+          echo "❌ Error: api-url input is empty. Check your workflow variables."
+          exit 1
+        fi
         echo "Probing API at ${{ inputs.api-url }}..."
         for i in $(seq 1 ${{ inputs.timeout-seconds }}); do
           if curl -sf ${{ inputs.api-url }}/health > /dev/null 2>&1 || curl -sf ${{ inputs.api-url }}/api/health > /dev/null 2>&1; then

@@ -13,6 +13,7 @@ concurrency:
 env:
   BUN_ENV: test
   AUTOORG_DB_PATH: /tmp/autoorg-ci-${{ github.run_id }}.db
+  DB_PATH: /tmp/autoorg-ci-${{ github.run_id }}.db
   AUTOORG_SIGNING_SECRET: ci-test-signing-secret
 
 jobs:

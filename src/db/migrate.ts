@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import chalk from 'chalk';
 
-const DB_PATH = process.env.DB_PATH ?? './autoorg.db';
+const DB_PATH = process.env.AUTOORG_DB_PATH || process.env.DB_PATH || './autoorg.db';
 const SCHEMA_PATH = path.join(import.meta.dir, 'schema.sql');
 
 export function getDb(): Database {
@@ -24,8 +24,8 @@ export function getDb(): Database {
   return db;
 }
 
-async function migrate() {
-  console.log(chalk.cyan('\n🗄️  Running AutoOrg database migrations...\n'));
+export async function migrate() {
+  console.log(chalk.cyan(`\n🗄️  Running AutoOrg database migrations [${DB_PATH}]...\n`));
   
   const db = getDb();
   const schema = readFileSync(SCHEMA_PATH, 'utf-8');
@@ -48,6 +48,8 @@ async function migrate() {
     ['constitutionLock',    true,  'Terminate agents that modify constitution.md'],
     ['maxCostGuard',        true,  'Hard stop when API budget exceeded'],
     ['resultsTsv',          true,  'Write results.tsv log every cycle'],
+    ['dreamOnPlateau',      true,  'Trigger memory consolidation when scores plateau'],
+    ['memoryHealthMonitor', true,  'Trigger memory consolidation on line cap approach'],
     
     // Experimental (off by default)
     ['ultraplan',           false, 'Spawn Opus for 30-min deep planning on plateau (ULTRAPLAN)'],
