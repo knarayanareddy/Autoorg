@@ -108,6 +108,7 @@ describe('Judge Output Schema', () => {
       groundedness: { score: 0.75, reasoning: 'Good', grounded_claims: 8, total_claims: 10, ungrounded_examples: [] },
       novelty:      { score: 0.60, reasoning: 'Some repetition', overlap_with_previous: 'Minor', novel_elements: ['new angle'] },
       consistency:  { score: 0.85, reasoning: 'No blockers', blocker_objections: [], major_objections: [], internal_contradictions: [] },
+      evidence:     { score: 0.90, reasoning: 'Strong support', supported_claims: ['A', 'B'], unsupported_claims: [] },
       alignment:    { score: 0.70, reasoning: 'Mostly aligned', mission_elements_covered: ['main goal'], mission_elements_missing: [] },
       composite:    0.726,
       decision:     'COMMIT',
