@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AutoOrg | The Autonomous Research Organization Engine</title>
+  <meta name="description" content="You write the mission. The agents run the company. AutoOrg orchestrates specialist AI agents to solve complex research problems autonomously.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="glow glow-1"></div>
+  <div class="glow glow-2"></div>
+
+  <nav>
+    <div class="logo">Auto<span>Org</span></div>
+    <div class="nav-links">
+      <a href="#pillars">The Pillars</a>
+      <a href="#agents">Our Agents</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#roadmap">Roadmap</a>
+      <button class="btn-github">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
+        GitHub
+      </button>
+    </div>
+  </nav>
+
+  <section class="hero">
+    <div class="hero-content animate">
+      <h1>Infinite Cycles. <span>Validated Decisions.</span></h1>
+      <p>Transform your mission.md into a fully autonomous research company. A coordinated swarm of specialist agents debating, building, and scoring against your constitution.</p>
+      <div class="hero-btns">
+        <a href="#pillars" class="btn-primary">Explore Infrastructure</a>
+        <a href="#architecture" class="btn-secondary">View the Code</a>
+      </div>
+    </div>
+
+    <div class="hero-visual animate">
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <div class="dot red"></div>
+          <div class="dot yellow"></div>
+          <div class="dot green"></div>
+        </div>
+        <div class="terminal-body" id="terminal-content">
+          <div class="line"><span class="prefix">➜</span> <span class="cmd">bun run autoorg init mission.md</span></div>
+          <div class="line"><span class="output">Initializing mission...</span></div>
+          <div class="line"><span class="output">Building Knowledge Graph from seed... [84 nodes, 192 edges]</span></div>
+          <div class="line"><span class="prefix">➜</span> <span class="cmd">bun run start</span></div>
+          <div class="line"><span class="highlight">═══ CYCLE 06 ═══</span></div>
+          <div class="line"><span class="output">[CEO] Assigning tasks to specialist swarm...</span></div>
+          <div class="line"><span class="output">[Engineer] Drafting Proposal v6.2 (Current Score: 0.842)</span></div>
+          <div class="line"><span class="output">[Critic] Identifying 2 BLOCKER objections...</span></div>
+          <div class="line"><span class="output">[Judge] Composite score: 0.891 (+0.049)</span></div>
+          <div class="line"><span class="highlight">✅ COMMIT — cycle-06: score=0.891</span></div>
+          <div class="line"><span class="comment">// Keeping improvement. Discarding failures.</span></div>
+          <div class="line"><span class="prefix">➜</span> <span class="cmd">_</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="stats-bar">
+    <div class="stat-item">
+      <span class="stat-val">100%</span>
+      <span class="stat-label">Autonomous</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-val">50+</span>
+      <span class="stat-label">Model Adapters</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-val">44</span>
+      <span class="stat-label">Feature Flags</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-val">∞</span>
+      <span class="stat-label">Potential Cycles</span>
+    </div>
+  </div>
+
+  <section id="pillars" class="features">
+    <div class="section-header animate">
+      <h2>The Philosophical Pillars</h2>
+      <p>AutoOrg is built on the synthesis of the three most powerful multi-agent paradigms.</p>
+    </div>
+
+    <div class="feature-grid">
+      <div class="feature-card animate">
+        <div class="feature-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+        </div>
+        <h3>The Karpathy Constraint</h3>
+        <p>Instructions, constraints, and stopping criteria carried simultaneously in one plain-Markdown file. Agents operate within a strictly defined sandbox of your design.</p>
+      </div>
+
+      <div class="feature-card animate">
+        <div class="feature-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M5 12h14"></path></svg>
+        </div>
+        <h3>The Ratchet Principle</h3>
+        <p>A relentless keep-or-revert scoring loop. Every single agent output must clear the judge's gate. Only validated improvements are committed to the Git audit trail.</p>
+      </div>
+
+      <div class="feature-card animate">
+        <div class="feature-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11h16M4 19h16M7 22l-3-3 3-3M17 3l3 3-3 3"></path></svg>
+        </div>
+        <h3>MiroFish Grounding</h3>
+        <p>No hallucinated drift. Agents operate within a dynamically updated knowledge graph reflecting actual entities, relationships, and pressure points.</p>
+      </div>
+
+      <div class="feature-card animate">
+        <div class="feature-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+        </div>
+        <h3>The KAIROS Memory System</h3>
+        <p>A three-tier memory architecture (Always-Loaded Index, On-Demand Fact Files, Search-Only Transcripts) designed for infinite scaling without context window fatigue.</p>
+      </div>
+
+      <div class="feature-card animate">
+        <div class="feature-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+        </div>
+        <h3>Swarm Economics</h3>
+        <p>Phase 10 integration with internal wallets and credit-based task delegation. Org-to-Org settlements for autonomous specialist subcontracting.</p>
+      </div>
+
+      <div class="feature-card animate">
+        <div class="feature-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+        </div>
+        <h3>Model Agnostic & Local-First</h3>
+        <p>Native support for Ollama, Anthropic, OpenAI, and Gemini. Run your entire research organization locally for maximum privacy and zero latency.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="agents" class="features">
+    <div class="section-header animate">
+      <h2>Specialist Personas</h2>
+      <p>An organization is only as strong as its specialists. Each with a unique cognitive bias.</p>
+    </div>
+
+    <div class="feature-grid">
+      <div class="feature-card animate">
+        <h3>CEO</h3>
+        <p>The Orchestrator. Coordinates task assignments via the flat-file mailbox. Integrates agent outputs into higher-order syntheses.</p>
+      </div>
+      <div class="feature-card animate">
+        <h3>Engineer</h3>
+        <p>The Producer. Directly drafts section contents, code, and structured data. Highly creative but grounded by Critic feedback.</p>
+      </div>
+      <div class="feature-card animate">
+        <h3>Critic</h3>
+        <p>The Glass-Half-Empty. Use "Steel Man then Destroy" methodology. Finds the single most fatal flaw in every proposal.</p>
+      </div>
+      <div class="feature-card animate">
+        <h3>DevilsAdvocate</h3>
+        <p>The Divergent Thinker. Argues against consensus. Prevents premature closure and corporate groupthink.</p>
+      </div>
+      <div class="feature-card animate">
+        <h3>Archivist</h3>
+        <p>The Memory. Prevents reinventing the wheel. Queries failed experiments to ensure the team learns from every revert.</p>
+      </div>
+      <div class="feature-card animate">
+        <h3>RatchetJudge</h3>
+        <p>The Authority. Scores against the immutable constitution.md. Decision is final. Uses highest-tier models only.</p>
+      </div>
+      <div class="feature-card animate">
+        <h3>DreamAgent</h3>
+        <p>The Synthesizer. Operates during the autoDream phase to resolve contradictions and distill ephemeral observations into absolute facts.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="roadmap" class="roadmap">
+    <div class="section-header">
+      <h2>The Evolution</h2>
+      <p>Our journey toward full organizational autonomy.</p>
+    </div>
+
+    <div class="roadmap-container">
+      <div class="roadmap-item completed">
+        <div class="roadmap-dot"></div>
+        <div class="roadmap-content">
+          <h3>Phase 1: Bootstrapping</h3>
+          <p>Orchestrator core, Ratchet loop, and basic personas implemented. Git audit trail active.</p>
+        </div>
+      </div>
+      <div class="roadmap-item completed">
+        <div class="roadmap-dot"></div>
+        <div class="roadmap-content">
+          <h3>Phase 2: Grounding</h3>
+          <p>MiroFish GraphRAG integration. Knowledge graph entity extraction from seed material.</p>
+        </div>
+      </div>
+      <div class="roadmap-item">
+        <div class="roadmap-dot"></div>
+        <div class="roadmap-content">
+          <h3>Phase 3: Deep Consolidation</h3>
+          <p>KAIROS autoDream engine. Memory auto-compaction and contradiction resolution.</p>
+        </div>
+      </div>
+      <div class="roadmap-item">
+        <div class="roadmap-dot"></div>
+        <div class="roadmap-content">
+          <h3>Phase 4: Swarm Expansion</h3>
+          <p>Hierarchical team spawning. Parallelized sub-orgs for massive-scale research.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer style="padding: 60px 5%; border-top: 1px solid var(--border-color); text-align: center; color: var(--text-secondary); font-size: 0.9rem;">
+    <p>&copy; 2026 AutoOrg Protocol. Built with deep knowledge and infinite cycles.</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
