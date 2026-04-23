@@ -2,6 +2,8 @@
 
 **Autonomous Mission Orchestration & Hardened Agentic Infrastructure.**
 
+[**🌐 View Live Project Page**](https://knarayanareddy.github.io/Autoorg/)
+
 AutoOrg is a production-grade platform designed to manage complex, multi-cycle autonomous research missions. Built for resilience and transparency, it bridges the gap between raw LLM inference and a durable, audit-ready organizational runtime.
 
 ---
