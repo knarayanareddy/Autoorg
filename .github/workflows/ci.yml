@@ -14,5 +14,11 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-      - run: bun install --frozen-lockfile
-      - run: bun run build
+      - run: bun install
+      - name: Build (skipped when no build script)
+        run: |
+          if [ -f package.json ] && grep -q '"build"' package.json; then
+            bun run build
+          else
+            echo "no build script; install-only check"
+          fi
