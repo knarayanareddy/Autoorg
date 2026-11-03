@@ -1,7 +1,7 @@
 import { nanoid } from 'nanoid';
 import { getDb } from '@/db/migrate.js';
 import { getAdapter } from '@/adapters/adapter-factory.js';
-import { parseStructuredOutputLenient } from '@/utils/structured-output.js';
+import { parseStructuredOutput } from '@/utils/structured-output.js';
 import { z } from 'zod';
 import { buildUltraPlanSystemPrompt, buildUltraPlanUserPrompt } from '@/prompts/ultraplan.js';
 import type { ModelConfig, OrgConfig, LLMProvider } from '@/types/index.js';
@@ -82,23 +82,7 @@ export class UltraPlanner {
       temperature: 0.35,
     });
 
-    const fallback: UltraPlanResult = {
-      diagnosis: 'The organization has plateaued and needs strategic diversification.',
-      abandoned_paths: ['Repeating prior structure without changing evidence strategy'],
-      new_strategy: 'Pivot to a narrower, graph-cited, higher-evidence plan.',
-      five_cycle_plan: [
-        'Re-scope output structure around highest-confidence graph nodes.',
-        'Force all factual claims to include graph citations.',
-        'Elevate Critic grounding checks before synthesis.',
-        'Use Devil’s Advocate to attack the new framing.',
-        'Re-run ratchet with tightened novelty constraints.',
-      ],
-      risks: ['Overfitting to graph structure', 'Reduced creativity'],
-      approval_needed: true,
-      approval_reason: 'Strategic pivot affects future cycles.',
-    };
-
-    const parsed = parseStructuredOutputLenient(response.content, UltraPlanSchema, fallback);
+    const parsed = parseStructuredOutput(response.content, UltraPlanSchema);
 
     const db2 = getDb();
     db2.prepare(`

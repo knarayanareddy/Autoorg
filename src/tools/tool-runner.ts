@@ -25,6 +25,23 @@ export class ToolRunner {
     const tool = toolRegistry.get(toolName);
     const executionId = `tx_${nanoid(8)}`;
 
+    // 0. Input schema validation (OWASP A03/A04).
+    //
+    // `tool.execute(input)` used to receive whatever the LLM produced with no
+    // schema check at all. Validate BEFORE anything else — policy evaluation,
+    // ledger entries, execution rows — so malformed input can never reach a
+    // tool, and the error names the offending fields instead of failing
+    // mysteriously inside the tool (or worse, silently doing something else).
+    const parsedInput = tool.inputSchema.safeParse(input);
+    if (!parsedInput.success) {
+      const detail = parsedInput.error.issues
+        .slice(0, 3)
+        .map(issue => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
+        .join('; ');
+      throw new Error(`Invalid tool input for ${toolName}: ${detail}`);
+    }
+    input = parsedInput.data;
+
     // 0. Role → tool permission.
     //
     // `ToolPolicy.isAllowed()` existed but was never called, so the seeded

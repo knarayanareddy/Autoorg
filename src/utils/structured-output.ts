@@ -43,7 +43,3 @@ export function parseStructuredOutput<T>(text: string, schema: z.ZodType<T>): T 
   }
   throw new StructuredOutputError(text.slice(0, 500), `Tried ${candidates.length} extraction strategies. Errors: ${errors.slice(0, 2).join(' | ')}`);
 }
-
-export function parseStructuredOutputLenient<T>(text: string, schema: z.ZodType<T>, fallback: T): T {
-  try { return parseStructuredOutput(text, schema); } catch { return fallback; }
-}

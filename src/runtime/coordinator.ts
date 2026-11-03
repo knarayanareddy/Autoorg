@@ -1,5 +1,5 @@
 import { getAdapter } from '@/adapters/adapter-factory.js';
-import { parseStructuredOutputLenient } from '@/utils/structured-output.js';
+import { parseStructuredOutput } from '@/utils/structured-output.js';
 import { z } from 'zod';
 import { buildCoordinatorLeadSystemPrompt, buildCoordinatorLeadUserPrompt } from '@/prompts/coordinator-lead.js';
 import { TeamManager } from './team-manager.ts';
@@ -95,18 +95,7 @@ export class CoordinatorEngine {
         temperature: 0.4,
       });
 
-      const fallback: LeadAssignment = {
-        team_assessment: `${team.name} team proceeding with default assignment.`,
-        assignments: Object.fromEntries(
-          workerRoles.map(role => [role, {
-            task: `Contribute to ${team.name} mission.`,
-            success_criteria: 'Produce concrete, usable output.',
-          }])
-        ),
-        escalation_watch: 'Escalate blockers and missing evidence.',
-      };
-
-      const parsed = parseStructuredOutputLenient(response.content, LeadAssignmentSchema, fallback);
+      const parsed = parseStructuredOutput(response.content, LeadAssignmentSchema);
 
       for (const [role, value] of Object.entries(parsed.assignments)) {
         this.teams.createDelegatedTask({

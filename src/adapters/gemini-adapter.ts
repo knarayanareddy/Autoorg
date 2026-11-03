@@ -11,7 +11,7 @@
 
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
 import type { LLMAdapter, LLMProvider, LLMRunOptions, LLMResponse, LLMStructuredOptions } from '@/types/index.js';
-import { parseStructuredOutputLenient } from '@/utils/structured-output.js';
+import { parseStructuredOutput } from '@/utils/structured-output.js';
 import { providerApiKey } from '@/config/env.js';
 
 const SAFETY_SETTINGS = [
@@ -94,7 +94,7 @@ export class GeminiAdapter implements LLMAdapter {
 
     const result = await model.generateContent(userText);
     const raw    = result.response.text();
-    return parseStructuredOutputLenient(raw, opts.schema, null as unknown as T);
+    return parseStructuredOutput(raw, opts.schema);
   }
 
   // ── Native text embeddings ───────────────────────────────────────────────
