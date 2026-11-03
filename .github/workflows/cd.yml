@@ -36,7 +36,7 @@ jobs:
           AUTOORG_API_URL: http://localhost:3001
 
   deploy-staging:
-    name: Staging deployment (not implemented)
+    name: Deploy reference staging VM
     needs: verify-local
     if: ${{ vars.AUTOORG_ENABLE_STAGING_DEPLOY == 'true' }}
     runs-on: ubuntu-latest
@@ -46,5 +46,12 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.4
-      - name: Refuse unimplemented deployment
+      - name: Deploy reviewed release over pinned SSH
         run: bun run scripts/deploy/deploy-single-node.ts
+        env:
+          SSH_HOST: ${{ vars.STAGING_HOST }}
+          SSH_USER: ${{ vars.STAGING_USER }}
+          SSH_PORT: ${{ vars.STAGING_SSH_PORT || '22' }}
+          SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.STAGING_SSH_KNOWN_HOSTS }}
+          DEPLOY_SHA: ${{ github.sha }}

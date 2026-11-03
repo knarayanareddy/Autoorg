@@ -268,12 +268,10 @@ conventions.
 
 ## 📜 License
 MIT © 2026 AutoOrg Framework.
-### Deployment status
+### Staging deployment
 
-The CD workflow runs authenticated **local verification only**; it does not
-ship a release to staging or production. The previous deploy stub reported
-success without deploying and has been made fail-closed. A real deployment,
-verified host keys, health checks, and rollback procedure must be designed and
-validated for the target environment before enabling automated staging. Setting
-`AUTOORG_ENABLE_STAGING_DEPLOY` currently runs a step that deliberately fails;
-it does not deploy or roll back anything.
+The default CD workflow performs authenticated local verification only. An
+opt-in SSH/systemd reference deployment and code-only rollback are available
+for a pre-provisioned staging VM; they have not been validated on a real host.
+See [the staging runbook](docs/staging-reference.md) for setup, host-key
+verification, database backups, recovery limitations, and the opt-in controls.
