@@ -15,7 +15,7 @@ try {
   else console.warn('No database found at the configured path; database contents will not be cleaned.');
   const transcriptDir = path.join(process.env.AUTOORG_MEMORY_DIR ?? './memory', 'transcripts');
   const plan = planLegacyPrivacyCleanup(transcriptDir, db);
-  console.log(`${apply ? 'Applying' : 'Dry run:'} ${plan.files.length} transcript file(s), ${plan.indexedCount} indexed entries and ${plan.configs.length} run configuration(s).`);
+  console.log(`${apply ? 'Applying' : 'Dry run:'} ${plan.files.length} transcript file(s), ${plan.indexedCount} indexed entries and ${plan.configs.length} run configuration(s), ${plan.contextCount} cycle context(s), ${plan.executionCount} agent execution(s).`);
   if (apply) {
     applyLegacyPrivacyCleanup(plan, db);
     if (db) {

@@ -9,7 +9,7 @@ const ROLES = new Set(['CEO', 'Engineer', 'Critic', 'DevilsAdvocate', 'Archivist
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
 type FilePlan = { file: string; beforeHash: string; after: string };
 type ConfigPlan = { id: string; before: string; after: string };
-export interface LegacyPrivacyPlan { files: FilePlan[]; configs: ConfigPlan[]; indexedCount: number }
+export interface LegacyPrivacyPlan { files: FilePlan[]; configs: ConfigPlan[]; indexedCount: number; contextCount: number; executionCount: number }
 
 /** Pure planning step: validates input and makes no filesystem/database changes. */
 export function planLegacyPrivacyCleanup(transcriptsDir: string, db: Database | null): LegacyPrivacyPlan {
@@ -44,6 +44,8 @@ export function planLegacyPrivacyCleanup(transcriptsDir: string, db: Database | 
   }
   let configs: ConfigPlan[] = [];
   let indexedCount = 0;
+  let contextCount = 0;
+  let executionCount = 0;
   if (db) {
     const rows = db.query('SELECT id, config_json FROM runs').all() as Array<{ id: string; config_json: string }>;
     configs = rows.map(row => {
@@ -52,8 +54,10 @@ export function planLegacyPrivacyCleanup(transcriptsDir: string, db: Database | 
       return { id: row.id, before: row.config_json, after: JSON.stringify(sanitizeRunConfig(parsed)) };
     });
     indexedCount = (db.query('SELECT count(*) AS n FROM transcript_index').get() as { n: number }).n;
+    contextCount = (db.query('SELECT count(*) AS n FROM cycle_context').get() as { n: number }).n;
+    executionCount = (db.query('SELECT count(*) AS n FROM agent_executions').get() as { n: number }).n;
   }
-  return { files, configs, indexedCount };
+  return { files, configs, indexedCount, contextCount, executionCount };
 }
 
 /** Requires all AutoOrg processes stopped. Restartable, but not cross-resource atomic. */
@@ -71,6 +75,8 @@ export function applyLegacyPrivacyCleanup(plan: LegacyPrivacyPlan, db: Database 
         if (!current || current.config_json !== row.before) throw new Error('Run configuration changed since planning');
         update.run(row.after, row.id);
       }
+      db.query('UPDATE cycle_context SET system_prompt = ?, user_message = ?, response = ?').run(OMITTED_TRANSCRIPT_CONTENT, OMITTED_TRANSCRIPT_CONTENT, OMITTED_TRANSCRIPT_CONTENT);
+      db.run('UPDATE agent_executions SET system_prompt_hash = NULL, output_text = NULL');
       db.run('DELETE FROM transcript_index');
       db.run("INSERT INTO transcript_fts(transcript_fts) VALUES ('rebuild')");
     }).immediate();

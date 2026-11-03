@@ -19,6 +19,8 @@ import { existsSync }   from 'node:fs';
 import { createHash }   from 'node:crypto';
 import { getDb }        from '@/db/migrate.js';
 import { nanoid }       from 'nanoid';
+import { transcriptContentEnabled, OMITTED_TRANSCRIPT_CONTENT } from './transcript-privacy.js';
+import { RedactionFilter } from './redaction.js';
 import type { OrgConfig, AgentRole } from '@/types/index.js';
 import type { ObjectionTracker, Objection } from './objection-tracker.js';
 
@@ -36,11 +38,12 @@ export function storeCycleContext(
   response:  string
 ): void {
   const db = getDb();
+  const safe = (text: string) => transcriptContentEnabled() ? RedactionFilter.redactOnly(text).text : OMITTED_TRANSCRIPT_CONTENT;
   db.prepare(`
     INSERT OR REPLACE INTO cycle_context
       (id, cycle_id, run_id, agent_role, system_prompt, user_message, response)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(nanoid(8), cycleId, runId, role, context.systemPrompt, context.userMessage, response);
+  `).run(nanoid(8), cycleId, runId, role, safe(context.systemPrompt), safe(context.userMessage), safe(response));
   db.close();
 }
 
@@ -54,9 +57,9 @@ export function loadCycleContext(cycleId: string, role: AgentRole): AgentContext
 
   if (!row) return null;
   return {
-    systemPrompt: row.system_prompt,
-    userMessage:  row.user_message,
-    response:     row.response,
+    systemPrompt: transcriptContentEnabled() ? RedactionFilter.redactOnly(row.system_prompt).text : OMITTED_TRANSCRIPT_CONTENT,
+    userMessage:  transcriptContentEnabled() ? RedactionFilter.redactOnly(row.user_message).text : OMITTED_TRANSCRIPT_CONTENT,
+    response:     transcriptContentEnabled() ? RedactionFilter.redactOnly(row.response).text : OMITTED_TRANSCRIPT_CONTENT,
   };
 }
 

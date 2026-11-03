@@ -7,6 +7,8 @@
 
 import { getDb } from '@/db/migrate.js';
 import { sanitizeRunConfig } from '@/runtime/run-config.js';
+import { transcriptContentEnabled, OMITTED_TRANSCRIPT_CONTENT } from '@/runtime/transcript-privacy.js';
+import { RedactionFilter } from '@/runtime/redaction.js';
 
 // ── Run queries ────────────────────────────────────────────────────────
 export interface RunRow {
@@ -123,10 +125,11 @@ export interface AgentExecRow {
 export function getAgentExecutionsForCycle(cycleId: string): AgentExecRow[] {
   const db   = getDb();
   const rows = db.prepare(`
-    SELECT * FROM agent_executions WHERE cycle_id = ? ORDER BY started_at ASC
+    SELECT id, cycle_id, agent_role, provider, model, prompt_tokens, completion_tokens, cost_usd, duration_ms, status, output_text
+    FROM agent_executions WHERE cycle_id = ? ORDER BY started_at ASC
   `).all(cycleId) as AgentExecRow[];
   db.close();
-  return rows;
+  return rows.map(row => ({ ...row, output_text: row.output_text == null ? null : transcriptContentEnabled() ? RedactionFilter.redactOnly(row.output_text).text : OMITTED_TRANSCRIPT_CONTENT }));
 }
 
 export function getCostBreakdownByRole(runId: string): Array<{

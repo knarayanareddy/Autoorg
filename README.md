@@ -140,7 +140,8 @@ on restart and is not shared between processes.
 ### Transcript and search privacy
 
 By default, new transcript entries retain operational metadata but omit prompt,
-response and arbitrary metadata content. Legacy transcript retrieval and
+response and arbitrary metadata content. Stored cycle contexts and agent output
+are also withheld by default; post-run interviews lose that historical context. Legacy transcript retrieval and
 indexing are disabled in this mode. Repository search returns counts and line
 numbers but withholds queries, paths and snippets. This deliberately sacrifices
 search usefulness to avoid relying on secret-pattern detection.
@@ -196,8 +197,9 @@ bun run privacy:sanitize -- --apply  # destructive: stop all AutoOrg processes f
 
 The apply step replaces every JSONL transcript's contents with metadata-only
 records (including hashed legacy run IDs), deletes transcript search-index
-entries and embeddings, rebuilds the FTS index, and removes credential fields
-from saved run configs. It checkpoints the WAL and vacuums the database. It
+entries and embeddings, rebuilds the FTS index, clears stored agent prompt
+contexts, outputs and old reversible prompt hashes, and removes credential
+fields from saved run configs. It checkpoints the WAL and vacuums the database. It
 cannot sanitize unknown secrets in unrelated tables, files, logs or backups.
 It validates files first and can be rerun, but database and file updates are not
 one atomic transaction: if interrupted, rerun while offline. Malformed files

@@ -15,6 +15,10 @@ describe('legacy privacy cleanup', () => {
     const db = new Database(':memory:');
     db.run('CREATE TABLE runs (id TEXT PRIMARY KEY, config_json TEXT NOT NULL)');
     db.run('CREATE TABLE transcript_index (id TEXT PRIMARY KEY, content TEXT NOT NULL)');
+    db.run('CREATE TABLE cycle_context (system_prompt TEXT, user_message TEXT, response TEXT)');
+    db.run('CREATE TABLE agent_executions (system_prompt_hash TEXT, output_text TEXT)');
+    db.query('INSERT INTO cycle_context VALUES (?, ?, ?)').run(secret, secret, secret);
+    db.query('INSERT INTO agent_executions VALUES (?, ?)').run(Buffer.from(secret).toString('base64'), secret);
     db.run("CREATE VIRTUAL TABLE transcript_fts USING fts5(content, content='transcript_index', content_rowid='rowid')");
     db.query('INSERT INTO transcript_index VALUES (?, ?)').run('1', secret);
     db.query('INSERT INTO runs VALUES (?, ?)').run('run_abcd', JSON.stringify({ modelAssignments: { CEO: { apiKey: secret, model: 'm' } } }));
@@ -27,6 +31,9 @@ describe('legacy privacy cleanup', () => {
       expect(JSON.parse(readFileSync(file, 'utf8')).content).toBe('[CONTENT OMITTED]');
       expect((db.query('SELECT count(*) AS n FROM transcript_index').get() as any).n).toBe(0);
       expect(JSON.stringify(db.query('SELECT config_json FROM runs').get())).not.toContain(secret);
+      expect(JSON.stringify(db.query('SELECT * FROM cycle_context').get())).not.toContain(secret);
+      expect(JSON.stringify(db.query('SELECT * FROM agent_executions').get())).not.toContain(secret);
+      expect(JSON.stringify(db.query('SELECT * FROM agent_executions').get())).not.toContain(Buffer.from(secret).toString('base64'));
       const sanitized = readFileSync(file, 'utf8');
       applyLegacyPrivacyCleanup(planLegacyPrivacyCleanup(transcripts, db), db);
       expect(readFileSync(file, 'utf8')).toBe(sanitized);

@@ -22,7 +22,10 @@ describe('Pipeline (Phase 2)', () => {
     expect(typeof proto.forRatchetJudge).toBe('function');
   });
 
-  it('storeCycleContext and loadCycleContext round-trip', async () => {
+  it('storeCycleContext and loadCycleContext round-trip when content is enabled', async () => {
+    const previous = process.env.AUTOORG_TRANSCRIPT_CONTENT;
+    process.env.AUTOORG_TRANSCRIPT_CONTENT = '1';
+    try {
     const { storeCycleContext, loadCycleContext } = await import('../src/runtime/cycle-context-builder.js');
     const { getDb } = await import('../src/db/migrate.js');
 
@@ -44,5 +47,9 @@ describe('Pipeline (Phase 2)', () => {
     expect(loaded).not.toBeNull();
     expect(loaded?.systemPrompt).toBe('You are the Engineer');
     expect(loaded?.response).toBe('Here is section 1...');
+    } finally {
+      if (previous === undefined) delete process.env.AUTOORG_TRANSCRIPT_CONTENT;
+      else process.env.AUTOORG_TRANSCRIPT_CONTENT = previous;
+    }
   });
 });
