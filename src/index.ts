@@ -76,6 +76,17 @@ if (!existsSync('./autoorg.db')) {
   process.exit(1);
 }
 
+// ── Signing key (OWASP A08) ────────────────────────────────────────────
+// Artifact signing fails closed: refuse to start a run without a real key.
+import { assertSigningConfigured } from './runtime/artifact-signing.js';
+try {
+  assertSigningConfigured();
+} catch (err) {
+  console.error(chalk.red(`\n✗ ${err instanceof Error ? err.message : String(err)}`));
+  console.error(chalk.yellow('  Generate one with `openssl rand -hex 32` and put it in .env as AUTOORG_SIGNING_SECRET.'));
+  process.exit(1);
+}
+
 // ── Run the orchestrator ───────────────────────────────────────────────
 import { orchestratorLoop } from './runtime/orchestrator.js';
 import { parseOrgMd } from './config/org-parser.js';
