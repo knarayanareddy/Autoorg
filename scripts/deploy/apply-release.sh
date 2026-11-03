@@ -37,7 +37,7 @@ tar --no-same-owner --no-same-permissions -xf "$archive" -C "$stage"
 quiesced=1
 sudo -n systemctl stop autoorg-api.service autoorg-web.service
 export AUTOORG_DB_PATH="$root/shared/autoorg.db"
-if [[ -e "$AUTOORG_DB_PATH" ]]; then
+if [[ -e "$AUTOORG_DB_PATH" || -L "$AUTOORG_DB_PATH" ]]; then
   [[ -f "$AUTOORG_DB_PATH" && ! -L "$AUTOORG_DB_PATH" ]] || { echo 'Database must be a regular file.' >&2; exit 1; }
   backup="$root/shared/backups/${sha}-$(date -u +%Y%m%dT%H%M%SZ)-$$.db"
   (cd "$stage" && bun run scripts/deploy/backup-database.ts "$AUTOORG_DB_PATH" "$backup")

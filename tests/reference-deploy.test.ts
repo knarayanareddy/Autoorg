@@ -56,6 +56,15 @@ describe('reference deployment on an isolated filesystem', () => {
     expect(readlinkSync(path.join(root, 'current'))).toBe(path.join(root, 'releases', newSha));
     expect(readFileSync(log, 'utf8').match(/systemctl stop/g)).toHaveLength(2);
   });
+  it('refuses a dangling database symlink before migration', () => {
+    const { root, env, log } = setup();
+    const target = path.join(root, 'shared', 'should-not-exist.db');
+    symlinkSync(target, path.join(root, 'shared', 'autoorg.db'));
+    const result = spawnSync('bash', [apply, newSha], { env, encoding: 'utf8', timeout: 10000 });
+    expect(result.status).not.toBe(0);
+    expect(readFileSync(log, 'utf8')).not.toContain('db:migrate');
+    expect(require('node:fs').existsSync(target)).toBe(false);
+  });
   it('stops services again if restart fails', () => {
     const { env, log } = setup();
     const result = spawnSync('bash', [apply, newSha], { env: { ...env, FAIL_RESTART: '1' }, encoding: 'utf8', timeout: 10000 });
