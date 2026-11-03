@@ -53,3 +53,15 @@ describe('dependency audit gate', () => {
     expect(blocked.map(f => f.severity)).toEqual(['critical', 'high', 'moderate']);
   });
 });
+
+describe('dependency audit execution failures', () => {
+  test('fails closed on execution failures or unrecognized output', async () => {
+    const { validateAuditResult } = await import('../scripts/ci/dependency-audit.js');
+    expect(validateAuditResult(null, '', new Error('spawn failed'))).toBe(false);
+    expect(validateAuditResult(1, 'registry unavailable')).toBe(false);
+    expect(validateAuditResult(0, 'unexpected output')).toBe(false);
+    expect(validateAuditResult(2, SAMPLE)).toBe(false);
+    expect(validateAuditResult(0, 'No vulnerabilities found (checked 125 packages)')).toBe(true);
+    expect(validateAuditResult(1, SAMPLE)).toBe(true);
+  });
+});

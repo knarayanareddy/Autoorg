@@ -63,10 +63,23 @@ export function evaluateFindings(
   return { blocked, allowed };
 }
 
+/** Fail closed if bun could not audit or its output is not understood. */
+export function validateAuditResult(status: number | null, output: string, error?: Error): boolean {
+  if (error || status === null) return false;
+  const findings = parseAuditFindings(output);
+  if (status === 0) return findings.length === 0 && /No vulnerabilities found/i.test(output);
+  return status === 1 && findings.length > 0;
+}
+
 function main(): void {
   const failOn = (process.env.AUDIT_FAIL_ON ?? 'high').toLowerCase();
   const res = spawnSync('bun', ['audit'], { encoding: 'utf8' });
   const output = (res.stdout ?? '') + (res.stderr ?? '');
+
+  if (!validateAuditResult(res.status, output, res.error)) {
+    console.error('❌ Dependency audit could not be verified:', res.error?.message ?? output);
+    process.exit(1);
+  }
 
   // bun audit exits non-zero when anything is found; severity decides here.
   const findings = parseAuditFindings(output);
