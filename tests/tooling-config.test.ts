@@ -15,6 +15,13 @@ describe('tooling configuration', () => {
     expect(result.status).not.toBe(0);
     expect(result.stdout).toContain('no-debugger');
   });
+  it('drops unused fetch and markdown packages and declares the tested Bun baseline', () => {
+    const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+    expect(pkg.dependencies['node-fetch']).toBeUndefined();
+    expect(pkg.dependencies.marked).toBeUndefined();
+    expect(pkg.engines.bun).toBe('>=1.4.4');
+    expect(pkg.devDependencies['@types/bun']).not.toBe('latest');
+  });
   it('pins the Bun version used by CI', () => {
     const ci = readFileSync('.github/workflows/ci.yml', 'utf8');
     expect(ci).not.toContain('bun-version: latest');

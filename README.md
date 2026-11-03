@@ -38,7 +38,7 @@ AutoOrg is a production-grade platform designed to manage complex, multi-cycle a
 
 ### 2. Setup
 ```bash
-# Clone and install (Bun 1.1+ required)
+# Clone and install (Bun 1.4.4+ required)
 bun install
 bun run setup:hooks        # optional: commit-msg + secret checks
 
