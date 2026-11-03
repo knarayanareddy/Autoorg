@@ -101,6 +101,46 @@ GITHUB_WEBHOOK_SECRET=<secret>        # webhooks reject unsigned payloads
 The server **refuses to start** on a public interface without
 `AUTOORG_API_KEY`. CORS is an explicit allowlist — never `*`.
 
+### Remote deployment and TLS
+
+The Bun API does not terminate TLS. For remote use, put the dashboard and API
+behind a TLS-terminating reverse proxy or VPN; bind the API to `127.0.0.1` and
+set a strong `AUTOORG_API_KEY` **even on loopback** when a proxy can reach it.
+Forward `/api` to the API and `/ws` as a WebSocket upgrade to the API (preserve
+`Upgrade` and `Connection` headers). Serve both through HTTPS so the browser
+uses `wss://`; do not send API keys over plain HTTP or WebSocket connections.
+Configure proxy timeouts and body-size limits as appropriate. The API also
+limits request bodies to 1 MiB.
+
+**The API key protects mutations and WebSocket events, not HTTP GET routes.**
+Read endpoints can expose runs and approval details. Restrict access to the
+entire dashboard and API at the proxy or network layer (for example, VPN or
+proxy authentication); CORS is not authentication. Do not expose the dashboard's
+Next.js development server to the internet.
+
+For local development, the dashboard connects to `localhost:3001/ws` from port
+3000. For remote deployments it connects to `/ws` on the dashboard origin,
+which the proxy must forward. When a key is configured, use the dashboard's
+**Live key** control to enter it for the current tab; WebSocket browser clients
+send it in the URL query string because browser WebSocket APIs cannot set
+arbitrary headers. Treat URLs as secrets: disable or redact query strings in
+proxy/access logs, monitoring, and tracing; use WSS. Non-browser clients may
+instead send `x-api-key`. The Live key only authenticates the event stream;
+existing dashboard mutation requests do not yet supply an API key.
+
+Unkeyed WebSocket access is permitted only from loopback with a trusted browser
+origin; never rely on that exception behind a proxy, since proxied clients may
+appear to be loopback. Failed key attempts are throttled by the direct peer IP,
+not forwarded headers, so clients behind one proxy share a limit; enforce
+per-client throttling at a trusted proxy if needed. The in-memory limiter resets
+on restart and is not shared between processes.
+
+Redaction prevents recognized secret patterns from entering new transcripts
+and search results; it is not a substitute for rotating exposed keys or
+reviewing existing files. Older transcripts are not automatically sanitized.
+Provider API keys stored in the database remain plaintext, so protect database
+files and backups with filesystem permissions and encryption at rest.
+
 ### Development
 ```bash
 bun run typecheck   # tsc --noEmit
@@ -108,6 +148,7 @@ bun run test:ci     # unit tests
 bun run build       # bundle CLI + API
 bun run lint
 bun run security    # secrets, tracked build output, route-auth checks
+bun run audit       # root dependencies; also audit web/ separately in CI
 bun run api         # dashboard API on :3001
 ```
 
