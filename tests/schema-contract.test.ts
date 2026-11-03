@@ -70,6 +70,14 @@ describe('Schema ↔ code contract', () => {
     expect(report).toBe('');
   });
 
+  it('recognizes the FTS5 control column without weakening normal tables', () => {
+    const db = new Database(dbPath, { readonly: true });
+    const schema = readSchema(db);
+    db.close();
+    expect(schema.get('transcript_fts')?.columns.has('transcript_fts')).toBe(true);
+    expect(schema.get('runs')?.columns.has('runs')).toBe(false);
+  });
+
   // ── Checker self-tests: prove the guard actually catches drift ──────
   it('detects a missing table', () => {
     const schema = readSchema(new Database(dbPath, { readonly: true }));

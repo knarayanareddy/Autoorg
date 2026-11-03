@@ -182,6 +182,31 @@ accept the risk and provide your own OS-level isolation. Hash checks cannot
 prevent an independent host process from changing and restoring the file
 between checks; isolate the workspace from untrusted host processes as well.
 
+### Cleaning legacy private data
+
+Older transcript files, transcript search indexes and saved run configuration
+may already contain credentials. The application does not automatically
+rewrite historical data. To inspect the cleanup plan without changes, set
+`AUTOORG_DB_PATH` and `AUTOORG_MEMORY_DIR` as appropriate and run:
+
+```bash
+bun run privacy:sanitize             # dry run
+bun run privacy:sanitize -- --apply  # destructive: stop all AutoOrg processes first
+```
+
+The apply step replaces every JSONL transcript's contents with metadata-only
+records (including hashed legacy run IDs), deletes transcript search-index
+entries and embeddings, rebuilds the FTS index, and removes credential fields
+from saved run configs. It checkpoints the WAL and vacuums the database. It
+cannot sanitize unknown secrets in unrelated tables, files, logs or backups.
+It validates files first and can be rerun, but database and file updates are not
+one atomic transaction: if interrupted, rerun while offline. Malformed files
+and symlinks cause it to stop for manual review. Make a protected backup before
+applying, then securely retire old backups and snapshots where appropriate.
+Storage snapshots and flash media may retain old blocks; rotate previously
+exposed credentials even after cleanup. The command warns when no database is
+found; run it for every database and memory directory in use.
+
 ### Provider credentials at rest
 
 Provider seeding normally leaves database key fields empty and reads provider

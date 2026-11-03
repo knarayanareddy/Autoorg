@@ -6,6 +6,7 @@
  */
 
 import { getDb } from '@/db/migrate.js';
+import { sanitizeRunConfig } from '@/runtime/run-config.js';
 
 // ── Run queries ────────────────────────────────────────────────────────
 export interface RunRow {
@@ -20,25 +21,30 @@ export interface RunRow {
   config_json:   string;
 }
 
+function safeRunRow(row: RunRow): RunRow {
+  try { return { ...row, config_json: JSON.stringify(sanitizeRunConfig(JSON.parse(row.config_json))) }; }
+  catch { return { ...row, config_json: '{}' }; }
+}
+
 export function getRun(runId: string): RunRow | null {
   const db = getDb();
   const row = db.prepare(`SELECT * FROM runs WHERE id = ?`).get(runId) as RunRow | undefined;
   db.close();
-  return row ?? null;
+  return row ? safeRunRow(row) : null;
 }
 
 export function getLatestRun(): RunRow | null {
   const db = getDb();
   const row = db.prepare(`SELECT * FROM runs ORDER BY started_at DESC LIMIT 1`).get() as RunRow | undefined;
   db.close();
-  return row ?? null;
+  return row ? safeRunRow(row) : null;
 }
 
 export function getAllRuns(): RunRow[] {
   const db   = getDb();
   const rows = db.prepare(`SELECT * FROM runs ORDER BY started_at DESC`).all() as RunRow[];
   db.close();
-  return rows;
+  return rows.map(safeRunRow);
 }
 
 // ── Cycle queries ──────────────────────────────────────────────────────

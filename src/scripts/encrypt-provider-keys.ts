@@ -13,6 +13,8 @@ try {
     const checkpoint = db.query('PRAGMA wal_checkpoint(TRUNCATE)').get() as { busy: number } | null;
     if (checkpoint?.busy) throw new Error('WAL checkpoint was blocked; stop all processes and rerun the migration');
     db.run('VACUUM');
+    const finalCheckpoint = db.query('PRAGMA wal_checkpoint(TRUNCATE)').get() as { busy: number } | null;
+    if (finalCheckpoint?.busy) throw new Error('Final WAL checkpoint blocked; stop all processes and rerun');
     console.log(`Encrypted ${count} provider key(s). Checkpoint and vacuum completed.`);
   } finally { db.close(); }
 } catch (err) {
