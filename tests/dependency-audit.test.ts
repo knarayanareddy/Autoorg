@@ -55,6 +55,11 @@ describe('dependency audit gate', () => {
 });
 
 describe('dependency audit execution failures', () => {
+  test('recognizes the singular bun audit summary', async () => {
+    const { validateAuditResult } = await import('../scripts/ci/dependency-audit.js');
+    const single = 'example@1.0.0\n  moderate: one finding - https://example.test\n\n1 vulnerability (1 moderate)\n';
+    expect(validateAuditResult(1, single)).toBe(true);
+  });
   test('fails closed on execution failures or unrecognized output', async () => {
     const { validateAuditResult } = await import('../scripts/ci/dependency-audit.js');
     expect(validateAuditResult(null, '', new Error('spawn failed'))).toBe(false);
