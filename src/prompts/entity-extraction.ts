@@ -9,7 +9,7 @@ export const EntityExtractionSchema = z.object({
       'Location', 'TimeFrame', 'Resource', 'Standard', 'Regulation',
     ]),
     description: z.string(),
-    properties:  z.record(z.unknown()),
+    properties:  z.record(z.string(), z.unknown()),
     sourceText:  z.string(),
     confidence:  z.number().min(0).max(1),
     aliases:     z.array(z.string()).optional(),

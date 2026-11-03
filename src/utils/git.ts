@@ -7,7 +7,7 @@
  * "If the score improved, commit. If not, git reset --hard HEAD."
  */
 
-import simpleGit, { type SimpleGit } from 'simple-git';
+import { simpleGit, type SimpleGit } from 'simple-git';
 import chalk from 'chalk';
 
 let gitInstance: SimpleGit | null = null;

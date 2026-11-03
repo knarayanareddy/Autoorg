@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { nanoid } from 'nanoid';
-import simpleGit from 'simple-git';
+import { simpleGit } from 'simple-git';
 import { getDb } from '@/db/migrate.js';
 import { ImmutableArtifacts } from '@/runtime/immutable-artifacts.js';
 import { BenchmarkSuiteLoader } from './suite-loader.js';

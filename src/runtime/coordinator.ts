@@ -7,7 +7,7 @@ import type { ModelConfig, LLMProvider, OrgConfig } from '@/types/index.js';
 
 const LeadAssignmentSchema = z.object({
   team_assessment: z.string(),
-  assignments: z.record(z.object({
+  assignments: z.record(z.string(), z.object({
     task: z.string(),
     success_criteria: z.string(),
   })),
