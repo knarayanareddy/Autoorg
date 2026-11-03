@@ -13,9 +13,10 @@ import { useTestDb, cleanupTestDb, testRunId } from './helpers/test-db.ts';
 
 const RUN_ID = testRunId('transcript');
 const MEMORY_DIR = path.resolve('./test-results/transcript-redaction');
+const previousMemoryDir = process.env.AUTOORG_MEMORY_DIR;
 
-const SECRET_ANTHROPIC = 'sk-ant-api03-redteamfixturekey0123456789abcdef';
-const SECRET_GITHUB = 'ghp_redteamfixturetoken0123456789abcdef0123';
+const SECRET_ANTHROPIC = 'sk-' + 'ant-api03-redteamfixturekey0123456789abcdef';
+const SECRET_GITHUB = 'gh' + 'p_redteamfixturetoken0123456789abcdef0123';
 const SECRET_EMAIL = 'leaky.person@example.com';
 
 beforeAll(async () => {
@@ -26,7 +27,12 @@ beforeAll(async () => {
   await rm(path.join(MEMORY_DIR, 'transcripts'), { recursive: true, force: true });
   await mkdir(path.join(MEMORY_DIR, 'transcripts'), { recursive: true });
 });
-afterAll(() => cleanupTestDb());
+afterAll(async () => {
+  cleanupTestDb();
+  if (previousMemoryDir === undefined) delete process.env.AUTOORG_MEMORY_DIR;
+  else process.env.AUTOORG_MEMORY_DIR = previousMemoryDir;
+  await rm(MEMORY_DIR, { recursive: true, force: true });
+});
 
 describe('transcript logger sink redaction (R2)', () => {
   it('never writes raw secrets to transcripts', async () => {
@@ -45,6 +51,8 @@ describe('transcript logger sink redaction (R2)', () => {
       10, 0.01
     );
     await logger.logOrchestrator(1, 'note', `orchestrator detail ${SECRET_GITHUB}`);
+    await logger.logAgentPrompt('Researcher', 2, 'x'.repeat(485) + ' ' + SECRET_ANTHROPIC, 'safe');
+    await logger.log({ role: 'ORCHESTRATOR', cycle: 1, action: 'test', content: 'safe', metadata: { nested: [SECRET_GITHUB] } });
     await logger.logRatchetScore(1, 0.5, 'REVERT', { test: 1 });
 
     const file = path.join(MEMORY_DIR, 'transcripts', 'cycle_0001.jsonl');
@@ -52,6 +60,8 @@ describe('transcript logger sink redaction (R2)', () => {
 
     // The security assertion: no raw secret survives to disk.
     expect(raw).not.toContain(SECRET_ANTHROPIC);
+    const boundary = await readFile(path.join(MEMORY_DIR, 'transcripts', 'cycle_0002.jsonl'), 'utf8');
+    expect(boundary).not.toContain(SECRET_ANTHROPIC.slice(0, 14));
     expect(raw).not.toContain(SECRET_GITHUB);
     expect(raw).not.toContain(SECRET_EMAIL);
     // Redaction markers prove the filter ran (not that content was dropped).

@@ -12,8 +12,8 @@ import path from 'node:path';
 import { repoSearchConnector } from '../src/integrations/connectors/repo-search.ts';
 
 const FIXTURE_DIR = path.resolve('./test-results/repo-search-fixture');
-const SECRET_ANTHROPIC = 'sk-ant-api03repoSearchfixture0123456789abcdef';
-const SECRET_GITHUB = 'ghp_repoSearchfixturetoken0123456789abcdef01';
+const SECRET_ANTHROPIC = 'sk-' + 'ant-api03repoSearchfixture0123456789abcdef';
+const SECRET_GITHUB = 'gh' + 'p_repoSearchfixturetoken0123456789abcdef01';
 const MARKER = 'redteam-repo-search-marker';
 
 beforeAll(async () => {

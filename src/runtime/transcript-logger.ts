@@ -68,11 +68,21 @@ export class TranscriptLogger {
       { channel: 'transcript', cycleNumber: entry.cycle }
     );
 
+    // Metadata may contain nested strings from callers too.
+    const redactValue = (value: unknown): unknown => {
+      if (typeof value === 'string') return new RedactionFilter(this.runId || 'unknown').redact(value, { channel: 'transcript', cycleNumber: entry.cycle }).text;
+      if (Array.isArray(value)) return value.map(redactValue);
+      if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [RedactionFilter.redactOnly(k).text, redactValue(v)]));
+      return value;
+    };
+
     const fullEntry: TranscriptEntry = {
       ts:      new Date().toISOString(),
       run_id:  this.runId,
       ...entry,
+      action: RedactionFilter.redactOnly(entry.action).text,
       content: safeContent.slice(0, 2000), // Tier-3 truncation
+      metadata: entry.metadata ? redactValue(entry.metadata) as Record<string, unknown> : undefined,
     };
 
     const filePath = this.getFilePath(entry.cycle);
@@ -85,11 +95,15 @@ export class TranscriptLogger {
     systemPrompt: string,
     userMessage: string
   ): Promise<void> {
+    const filter = new RedactionFilter(this.runId || 'unknown');
+    const options = { channel: 'transcript' as const, cycleNumber: cycle };
+    const safeSystem = filter.redact(systemPrompt, options).text;
+    const safeUser = filter.redact(userMessage, options).text;
     await this.log({
       role,
       cycle,
       action:  'prompt',
-      content: `SYSTEM: ${systemPrompt.slice(0, 500)}...\n\nUSER: ${userMessage.slice(0, 500)}`,
+      content: `SYSTEM: ${safeSystem.slice(0, 500)}...\n\nUSER: ${safeUser.slice(0, 500)}`,
     });
   }
 
