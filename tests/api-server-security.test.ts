@@ -55,6 +55,16 @@ describe('API server security', () => {
     });
     expect(status).toBe(413);
   });
+  it('authorizes WebSocket upgrades before sending events', async () => {
+    const connect = (path: string) => new Promise<boolean>(resolve => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}${path}`);
+      ws.onopen = () => { ws.close(); resolve(true); };
+      ws.onerror = () => resolve(false);
+    });
+    expect(await connect('/ws')).toBe(false);
+    expect(await connect('/ws?token=integration-secret')).toBe(true);
+    expect(await connect('/other?token=integration-secret')).toBe(false);
+  });
   it('throttles failed authentication without throttling signed-webhook handling', async () => {
     for (let i = 0; i < 10; i++) {
       const res = await fetch(`http://127.0.0.1:${port}/api/interview`, { method: 'POST', headers: { 'x-api-key': 'wrong' }, body: '{}' });

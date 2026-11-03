@@ -78,6 +78,7 @@ export default function DashboardPage() {
   const [summary,     setSummary]     = useState<RunSummary | null>(null);
   const [liveEvent,   setLiveEvent]   = useState<LiveEvent | null>(null);
   const [wsConnected, setWsConnected] = useState(false);
+  const [wsKey, setWsKey] = useState('');
   const [activityLog, setActivityLog] = useState<string[]>([]);
   const [daemonStatus, setDaemonStatus] = useState<{ status: string; pid: number } | null>(null);
 
@@ -100,7 +101,12 @@ export default function DashboardPage() {
 
   // ── WebSocket connection ────────────────────────────────────────────
   useEffect(() => {
-    const ws = new WebSocket('ws://localhost:3001');
+    const localDashboard = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname) && window.location.port === '3000';
+    const url = new URL('/ws', window.location.href);
+    url.protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    if (localDashboard) url.port = '3001';
+    if (wsKey) url.searchParams.set('token', wsKey);
+    const ws = new WebSocket(url);
 
     ws.onopen = () => {
       setWsConnected(true);
@@ -132,7 +138,7 @@ export default function DashboardPage() {
     };
 
     return () => ws.close();
-  }, [fetchLatestRun]);
+  }, [fetchLatestRun, wsKey]);
 
   // ── Poll for updates every 10s ─────────────────────────────────────
   useEffect(() => {
@@ -177,6 +183,10 @@ export default function DashboardPage() {
           <LiveBadge event={liveEvent} />
           <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-400 animate-pulse' : 'bg-gray-600'}`} />
           <span className="text-xs text-gray-500">{wsConnected ? 'Live' : 'Disconnected'}</span>
+          <button className="text-xs text-cyan-400" onClick={() => {
+            const key = window.prompt('API key for live events (kept in this tab only):');
+            if (key !== null) setWsKey(key);
+          }}>Live key</button>
         </div>
       </div>
 

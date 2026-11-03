@@ -43,7 +43,7 @@ import { handleSwarmRoutes } from './swarm-routes.js';
 import { handlePlatformRoutes } from './platform-routes.js';
 import { handleLearningRoutes } from './learning-routes.js';
 import { handleApprovalDecision } from './approval-routes.js';
-import { authenticate, corsHeaders, checkBootSafety } from './auth.js';
+import { authenticate, corsHeaders, checkBootSafety, authorizeWsUpgrade } from './auth.js';
 import { AuthRateLimiter } from './rate-limit.js';
 
 dotenvLoad();
@@ -359,10 +359,21 @@ const server = Bun.serve({
   hostname: HOSTNAME,
   maxRequestBodySize: MAX_BODY_BYTES,
   fetch(req, server) {
-    // Upgrade WebSocket connections
-    if (req.headers.get('upgrade') === 'websocket') {
+    // Authenticate before upgrade: event streams may contain sensitive data.
+    if (req.headers.get('upgrade')?.toLowerCase() === 'websocket') {
+      if (new URL(req.url).pathname !== '/ws') return withCors(notFound(), req);
+      const peer = server.requestIP(req)?.address ?? null;
+      const key = peer ?? 'unknown';
+      const retry = authLimiter.retryAfter(key);
+      if (retry) return withCors(new Response('Too many authentication failures', { status: 429, headers: { 'Retry-After': String(retry) } }), req);
+      const auth = authorizeWsUpgrade(req, peer);
+      if (!auth.ok) {
+        authLimiter.recordFailure(key);
+        return withCors(json({ error: auth.error }, auth.status ?? 401), req);
+      }
+      authLimiter.recordSuccess(key);
       const success = server.upgrade(req);
-      return success ? undefined : new Response('WebSocket upgrade failed', { status: 400 });
+      return success ? undefined : withCors(new Response('WebSocket upgrade failed', { status: 400 }), req);
     }
     return handleRequest(req, server.requestIP(req)?.address ?? 'unknown').then(res => withCors(res, req));
   },
