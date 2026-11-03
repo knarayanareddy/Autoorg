@@ -39,6 +39,19 @@ afterAll(async () => {
 });
 
 describe('API server security', () => {
+  it('sends security headers on ordinary, preflight and error responses', async () => {
+    for (const [path, options] of [
+      ['/health', {}],
+      ['/api/interview', { method: 'OPTIONS' }],
+      ['/api/interview', { method: 'POST', body: '{}' }],
+    ] as const) {
+      const res = await fetch(`http://127.0.0.1:${port}${path}`, options);
+      expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+      expect(res.headers.get('x-frame-options')).toBe('DENY');
+      expect(res.headers.get('referrer-policy')).toBe('no-referrer');
+      expect(res.headers.get('content-security-policy')).toBe("default-src 'none'; frame-ancestors 'none'");
+    }
+  });
   it('returns 400 for malformed JSON without echoing input', async () => {
     const res = await fetch(`http://127.0.0.1:${port}/api/interview`, { method: 'POST', headers: { 'x-api-key': 'integration-secret' }, body: '{"private":"oops' });
     expect(res.status).toBe(400);

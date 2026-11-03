@@ -338,6 +338,10 @@ async function handleRequest(req: Request, peer: string): Promise<Response> {
 /** Attach per-request CORS headers to a response, replacing any baseline. */
 function withCors(res: Response, req: Request): Response {
   const headers = new Headers(res.headers);
+  headers.set('X-Content-Type-Options', 'nosniff');
+  headers.set('X-Frame-Options', 'DENY');
+  headers.set('Referrer-Policy', 'no-referrer');
+  headers.set('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
   // Drop any CORS headers a route may have set, then apply the allowlist.
   headers.delete('Access-Control-Allow-Origin');
   headers.delete('Access-Control-Allow-Credentials');
