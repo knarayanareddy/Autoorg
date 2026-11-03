@@ -59,7 +59,9 @@ bun run typecheck && bun run test:ci
 Only one provider is required. Set `DEFAULT_LLM_PROVIDER` and the matching key
 (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, or
 leave it on `ollama` for local inference). Keys may also be supplied as
-`AUTOORG_API_KEY_<PROVIDER>`.
+`AUTOORG_API_KEY_<PROVIDER>`. The Anthropic SDK v1 message API no longer exposes
+the `temperature` parameter, so Anthropic calls use the provider default even
+when a temperature is requested.
 
 ### 3. Launch a Mission
 Create a mission file (e.g., `mission.md`) and launch the orchestrator:

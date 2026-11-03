@@ -22,6 +22,8 @@ export class AnthropicAdapter extends BaseAdapter {
     const resolvedBaseUrl = providerBaseUrl('anthropic', baseUrl);
     this.client = new Anthropic({
       apiKey: key,
+      // Preserve the established Anthropic x-api-key contract for compatible proxies.
+      defaultHeaders: { 'x-api-key': key, authorization: null },
       maxRetries: 0, // Retry only through the budget-aware application layer.
       ...(resolvedBaseUrl ? { baseURL: resolvedBaseUrl } : {}),
     });
@@ -34,7 +36,7 @@ export class AnthropicAdapter extends BaseAdapter {
     const response = await this.client.messages.create({
       model: opts.model,
       max_tokens: opts.maxTokens ?? 4096,
-      temperature: opts.temperature ?? 0.2,
+      // Anthropic SDK v1 no longer exposes temperature in message requests.
       system: systemMessage?.content,
       messages: userMessages.map(m => ({
         role: m.role as 'user' | 'assistant',
