@@ -7,6 +7,7 @@
   "scripts": {
     "api": "bun run src/api/server.ts",
     "migrate": "bun run scripts/ci/migrate-all.ts",
+    "providers:encrypt": "bun run src/scripts/encrypt-provider-keys.ts",
     "migrate:verify": "bun run scripts/ci/migrate-all.ts --verify",
     "lint": "bun run scripts/ci/lint.ts",
     "typecheck": "bun run scripts/ci/typecheck.ts",

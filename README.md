@@ -140,8 +140,26 @@ on restart and is not shared between processes.
 Redaction prevents recognized secret patterns from entering new transcripts
 and search results; it is not a substitute for rotating exposed keys or
 reviewing existing files. Older transcripts are not automatically sanitized.
-Provider API keys stored in the database remain plaintext, so protect database
-files and backups with filesystem permissions and encryption at rest.
+### Provider credentials at rest
+
+Provider seeding normally leaves database key fields empty and reads provider
+keys from the process environment. To store provider keys in the database, set
+`AUTOORG_PROVIDER_ENCRYPTION_KEY` to a dedicated, random 32-byte hex key
+(`openssl rand -hex 32`) **outside** the database, then run the seeder. Keys
+are encrypted with AES-256-GCM and bound to their provider ID. Keep a secure
+backup of the encryption key: losing or changing it makes stored credentials
+unreadable. Never reuse the API key as the encryption key.
+
+Existing plaintext rows are refused by the adapter. To migrate, stop **all**
+AutoOrg processes, take a protected, consistent database backup, set the
+correct encryption key and `AUTOORG_DB_PATH`, then run `bun run providers:encrypt`.
+The migration checks existing ciphertext before updating rows, uses a
+transaction, checkpoints the WAL and vacuums the database; rerun it if a
+checkpoint was blocked. Securely handle or retire old backups, WAL/journal
+files and filesystem snapshots, which may retain plaintext. SQLite vacuum and
+secure deletion cannot guarantee erasure on all storage. Rotate credentials
+that may previously have been exposed. Keep database files and backups access
+controlled and encrypted at rest as defense in depth.
 
 ### Development
 ```bash

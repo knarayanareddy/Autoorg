@@ -5,6 +5,7 @@ import { OllamaAdapter } from '@/adapters/ollama-adapter.js';
 import { OpenAICompatibleAdapter } from '@/adapters/openai-compatible-adapter.js';
 import { GeminiAdapter } from '@/adapters/gemini-adapter.js';
 import { getDb } from '@/db/migrate.js';
+import { decryptProviderKey } from '@/config/provider-secrets.js';
 import type { LLMAdapter, LLMProvider, ModelConfig } from '@/types/index.js';
 
 const adapters = new Map<string, LLMAdapter>();
@@ -22,24 +23,26 @@ export function getAdapter(config: ModelConfig | { provider: LLMProvider; model?
     return adapters.get(cacheKey)!;
   }
 
-  // Phase 15: Try to find a dynamic configuration in the database
+  // A missing table may use environment fallback, but never swallow a failure
+  // to decrypt a configured credential and silently use a different provider key.
+  let dbProv: { id: string; provider_type: LLMProvider; api_key: string | null; base_url: string | null } | undefined;
   try {
     const db = getDb();
-    const dbProv = db.prepare(`
-      SELECT * FROM llm_providers 
-      WHERE provider_type = ? AND is_enabled = 1
-      ORDER BY is_default DESC, created_at DESC 
-      LIMIT 1
-    `).get(providerType) as any;
-
-    if (dbProv) {
-      const adapter = createAdapter(dbProv.provider_type as LLMProvider, dbProv.api_key, dbProv.base_url);
-      adapters.set(cacheKey, adapter);
-      return adapter;
-    }
+    try {
+      dbProv = db.prepare(`
+        SELECT id, provider_type, api_key, base_url FROM llm_providers
+        WHERE provider_type = ? AND is_enabled = 1
+        ORDER BY is_default DESC, created_at DESC LIMIT 1
+      `).get(providerType) as typeof dbProv;
+    } finally { db.close(); }
   } catch (err) {
-    // If DB fails (e.g. table doesn't exist yet), fallback to env-only mode
-    console.debug(`[AdapterFactory] Dynamic provider lookup failed, using environment fallbacks. error=${err}`);
+    if (!(err instanceof Error) || !err.message.includes('no such table: llm_providers')) throw err;
+  }
+  if (dbProv) {
+    const storedKey = dbProv.api_key ? decryptProviderKey(dbProv.api_key, dbProv.id) : undefined;
+    const adapter = createAdapter(dbProv.provider_type, storedKey ?? apiKey, dbProv.base_url ?? baseUrl);
+    adapters.set(cacheKey, adapter);
+    return adapter;
   }
 
   // Fallback to environment variables (Legacy/Phase 1-14 mode)
