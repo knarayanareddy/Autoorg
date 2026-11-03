@@ -44,6 +44,7 @@ import { handlePlatformRoutes } from './platform-routes.js';
 import { handleLearningRoutes } from './learning-routes.js';
 import { handleApprovalDecision } from './approval-routes.js';
 import { authenticate, corsHeaders, checkBootSafety } from './auth.js';
+import { AuthRateLimiter } from './rate-limit.js';
 
 dotenvLoad();
 
@@ -58,7 +59,9 @@ const HOSTNAME = process.env.API_HOST ?? '0.0.0.0';
 // ── Request handler ────────────────────────────────────────────────────
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
-async function handleRequest(req: Request): Promise<Response> {
+const authLimiter = new AuthRateLimiter();
+
+async function handleRequest(req: Request, peer: string): Promise<Response> {
   const url    = new URL(req.url);
   const method = req.method;
 
@@ -75,10 +78,14 @@ async function handleRequest(req: Request): Promise<Response> {
 
   // Auth gate: every mutating endpoint requires the API key once configured.
   if (!isWebhook && MUTATING.has(method)) {
+    const retry = authLimiter.retryAfter(peer);
+    if (retry) return new Response(JSON.stringify({ error: 'Too many authentication failures' }), { status: 429, headers: { 'Content-Type': 'application/json', 'Retry-After': String(retry) } });
     const auth = authenticate(req, true);
     if (!auth.ok) {
+      authLimiter.recordFailure(peer);
       return json({ error: auth.error }, { status: auth.status ?? 401 });
     }
+    authLimiter.recordSuccess(peer);
   }
 
   try {
@@ -357,7 +364,7 @@ const server = Bun.serve({
       const success = server.upgrade(req);
       return success ? undefined : new Response('WebSocket upgrade failed', { status: 400 });
     }
-    return handleRequest(req).then(res => withCors(res, req));
+    return handleRequest(req, server.requestIP(req)?.address ?? 'unknown').then(res => withCors(res, req));
   },
   websocket: {
     open(ws) {

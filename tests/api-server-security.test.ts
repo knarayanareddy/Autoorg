@@ -55,4 +55,16 @@ describe('API server security', () => {
     });
     expect(status).toBe(413);
   });
+  it('throttles failed authentication without throttling signed-webhook handling', async () => {
+    for (let i = 0; i < 10; i++) {
+      const res = await fetch(`http://127.0.0.1:${port}/api/interview`, { method: 'POST', headers: { 'x-api-key': 'wrong' }, body: '{}' });
+      expect(res.status).toBe(403);
+    }
+    const blocked = await fetch(`http://127.0.0.1:${port}/api/interview`, { method: 'POST', headers: { 'x-api-key': 'integration-secret' }, body: '{}' });
+    expect(blocked.status).toBe(429);
+    expect(Number(blocked.headers.get('retry-after'))).toBeGreaterThan(0);
+    const webhook = await fetch(`http://127.0.0.1:${port}/api/webhooks/github`, { method: 'POST', body: '{}' });
+    expect(webhook.status).not.toBe(429);
+  });
+
 });
