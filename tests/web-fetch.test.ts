@@ -10,6 +10,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'bun:test';
+import { createServer, get } from 'node:http';
 import {
   safeWebFetch,
   validateFetchUrl,
@@ -159,5 +160,61 @@ describe('safeWebFetch (end to end)', () => {
     const res = await safeWebFetch('https://registry.npmjs.org/-/ping', 200);
     expect(res.status).toBe(200);
     expect(res.summary).toContain('Fetched');
+  });
+});
+
+
+describe('SSRF regression: translated addresses and DNS rebinding', () => {
+  it('rejects IPv4-mapped and translation IPv6 forms', async () => {
+    for (const host of ['::ffff:7f00:1', '::ffff:127.0.0.1', '::ffff:a9fe:a9fe', '0:0:0:0:0:ffff:7f00:1', '2002:7f00:1::1']) {
+      expect(isPrivateAddress(host)).toBe(true);
+      await expect(validateFetchUrl(`http://[${host}]/`)).rejects.toThrow(FetchBlockedError);
+    }
+  });
+  it('pins the HTTP connection without resolving the hostname again', async () => {
+    let requests = 0;
+    const server = createServer((req, res) => {
+      requests++;
+      expect(req.headers.host).toContain('example.invalid');
+      res.end('pin-proof');
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const port = (server.address() as { port: number }).port;
+      // Exercise only the transport helper with a test-local address. The real
+      // resolver rejects loopback before passing any addresses to this helper.
+      const mod = await import('../src/integrations/connectors/web-fetch.ts');
+      const pin = (mod as any).pinnedAgent;
+      expect(typeof pin).toBe('function');
+      const url = new URL(`http://example.invalid:${port}/`);
+      const agent = pin(url, [{ address: '127.0.0.1', family: 4 }]);
+      const response = await new Promise<string>((resolve, reject) => {
+        get(url, { agent }, res => {
+          let body = ''; res.setEncoding('utf8'); res.on('data', chunk => body += chunk);
+          res.on('end', () => resolve(body));
+        }).on('error', reject);
+      });
+      expect(response).toBe('pin-proof');
+      expect(requests).toBe(1);
+    } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
+  });
+  it('rejects a DNS result containing a local address before connecting', async () => {
+    let lookups = 0;
+    const resolver = async () => { lookups++; return [{ address: '8.8.8.8', family: 4 }, { address: '127.0.0.1', family: 4 }]; };
+    const result = await safeWebFetch('http://example.invalid/', 200, resolver);
+    expect(result.status).toBe(400);
+    expect(lookups).toBe(1);
+  });
+});
+
+describe('web.fetch body bounds', () => {
+  it('aborts an oversized stream rather than collecting it in memory', async () => {
+    const { Readable } = await import('node:stream');
+    const webFetch = await import('../src/integrations/connectors/web-fetch.ts');
+    const readLimited = (webFetch as any).readLimitedBody;
+    expect(typeof readLimited).toBe('function');
+    const body = Readable.from([Buffer.alloc(700_000), Buffer.alloc(700_000)]);
+    await expect(readLimited(body)).rejects.toThrow(/large|limit/i);
+    expect(body.destroyed).toBe(true);
   });
 });

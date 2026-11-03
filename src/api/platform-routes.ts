@@ -1,12 +1,15 @@
 import { parseJsonBody } from './route-utils.js';
 import { getDb } from '@/db/migrate.js';
 import { handleGitHubWebhook } from './webhooks/github.js';
+import { featureFlag } from '@/config/feature-flags.js';
 
 export async function handlePlatformRoutes(url: URL, req: Request) {
   const method = req.method;
 
   // GitHub Webhook
   if (url.pathname === '/api/webhooks/github') {
+    if (method !== 'POST') return new Response('Method not allowed', { status: 405, headers: { Allow: 'POST' } });
+    if (!featureFlag('githubIntegration')) return new Response('GitHub integration disabled', { status: 403 });
     return handleGitHubWebhook(req);
   }
 

@@ -33,8 +33,6 @@ import { registerRoute, matchRoute, json, notFound, serverError, HttpError, pars
 import { getDb, withDb } from '@/db/migrate.js';
 import { ApprovalGate } from '@/runtime/approval-gate.js';
 import { ServiceState } from '@/runtime/service-state.js';
-import { verifyGitHubSignature, storeGitHubEvent } from '@/integrations/webhooks.js';
-import { featureFlag } from '@/config/feature-flags.js';
 import chalk from 'chalk';
 import { handleEvalRoutes } from './eval-routes.js';
 import { handlePortfolioRoutes } from './portfolio-routes.js';
@@ -230,43 +228,6 @@ async function handleRequest(req: Request, peer: string): Promise<Response> {
       return json(result.body, { status: result.status });
     }
 
-    // POST /api/webhooks/github
-    if (url.pathname === '/api/webhooks/github' && method === 'POST') {
-      if (!featureFlag('githubIntegration')) {
-        return json({ error: 'GitHub integration disabled' }, { status: 403 });
-      }
-
-      if (!process.env.GITHUB_WEBHOOK_SECRET) {
-        return json({ error: 'Webhook secret not configured' }, { status: 503 });
-      }
-
-      const body = await req.text();
-      const signature = req.headers.get('x-hub-signature-256');
-
-      if (!verifyGitHubSignature(body, signature)) {
-        return json({ error: 'Invalid signature' }, { status: 403 });
-      }
-
-      const event = req.headers.get('x-github-event') || 'unknown';
-
-      let payload: any;
-      try {
-        payload = JSON.parse(body);
-      } catch {
-        return json({ error: 'Malformed JSON' }, { status: 400 });
-      }
-
-      storeGitHubEvent({
-        eventType: event,
-        deliveryId: req.headers.get('x-github-delivery'),
-        action: payload.action,
-        repoFullName: payload.repository?.full_name,
-        payload
-      });
-
-      return json({ ok: true });
-    }
-
     // GET /api/tools/executions
     if (url.pathname === '/api/tools/executions' && method === 'GET') {
       const runId = url.searchParams.get('runId');
@@ -350,7 +311,7 @@ function withCors(res: Response, req: Request): Response {
 }
 
 // ── Boot safety ────────────────────────────────────────────────────────
-// Refuse to expose unauthenticated approval endpoints on a public interface.
+// Refuse to expose unauthenticated endpoints, including on loopback.
 const bootProblem = checkBootSafety(HOSTNAME);
 if (bootProblem) {
   console.error(chalk.red(`\n❌ Refusing to start: ${bootProblem}\n`));
@@ -407,7 +368,7 @@ console.log(chalk.white(`   HTTP:      http://localhost:${PORT}/api`));
 console.log(chalk.white(`   WebSocket: ws://localhost:${PORT}/ws`));
 console.log(chalk.white(`   Bind:      ${HOSTNAME}:${PORT}`));
 if (process.env.AUTOORG_API_KEY) {
-  console.log(chalk.green('   Auth:      API key required for POST endpoints'));
+  console.log(chalk.green('   Auth:      API key required for HTTP and WebSocket'));
 } else {
   console.log(chalk.yellow('   Auth:      DISABLED (AUTOORG_API_KEY unset) — loopback only'));
 }

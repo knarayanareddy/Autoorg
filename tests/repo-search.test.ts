@@ -75,3 +75,13 @@ describe('repo.search secret redaction (R3)', () => {
   });
 
 });
+
+describe('repo.search output bounds', () => {
+  it('fails safely rather than buffering an oversized match', async () => {
+    const marker = 'oversized-search-marker';
+    await writeFile(path.join(FIXTURE_DIR, 'oversized.txt'), marker + 'x'.repeat(2 * 1024 * 1024));
+    const result = await repoSearchConnector(marker, FIXTURE_DIR, 10);
+    expect(result.lines).toHaveLength(0);
+    expect(result.summary).toMatch(/limit|large/i);
+  });
+});

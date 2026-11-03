@@ -16,15 +16,9 @@ describe('WebSocket authorization', () => {
     expect(check(req('/ws?token=test-key'), null).ok).toBe(true);
     expect(check(req('/ws?token=wrong'), '127.0.0.1').ok).toBe(false);
   });
-  it('only allows unkeyed loopback clients and trusted origins', () => {
+  it('fails closed for unkeyed loopback clients', () => {
     delete process.env.AUTOORG_API_KEY;
-    delete process.env.AUTOORG_CORS_ORIGINS;
-    const check = authorizeWsUpgrade;
-    expect(check(req(), '127.0.0.1').ok).toBe(true);
-    expect(check(req(), '::ffff:127.0.0.1').ok).toBe(true);
-    expect(check(req(), null).ok).toBe(false);
-    expect(check(req(), '203.0.113.2').ok).toBe(false);
-    expect(check(req('/ws', { origin: 'https://attacker.example' }), '127.0.0.1').ok).toBe(false);
-    expect(check(req('/ws', { origin: 'http://localhost:3000' }), '127.0.0.1').ok).toBe(true);
+    expect(authorizeWsUpgrade(req(), '127.0.0.1').ok).toBe(false);
+    expect(authorizeWsUpgrade(req('/ws', { origin: 'http://localhost:3000' }), '127.0.0.1').ok).toBe(false);
   });
 });

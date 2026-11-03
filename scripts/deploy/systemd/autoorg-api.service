@@ -1,0 +1,19 @@
+[Unit]
+Description=AutoOrg API (reference staging)
+After=network.target
+
+[Service]
+Type=simple
+User=autoorg
+Group=autoorg
+WorkingDirectory=/opt/autoorg/current
+EnvironmentFile=/opt/autoorg/shared/autoorg.env
+ExecStart=/usr/bin/env API_HOST=127.0.0.1 API_PORT=3001 AUTOORG_DB_PATH=/opt/autoorg/shared/autoorg.db /usr/local/bin/bun run src/api/server.ts
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

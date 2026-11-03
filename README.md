@@ -38,12 +38,13 @@ AutoOrg is a production-grade platform designed to manage complex, multi-cycle a
 
 ### 2. Setup
 ```bash
-# Clone and install (Bun 1.1+ required)
+# Clone and install (Bun 1.4.4+ required)
 bun install
 bun run setup:hooks        # optional: commit-msg + secret checks
 
 # Configure credentials
-cp .env.example .env       # then fill in the keys you have
+cp .env.example .env       # then fill in the provider keys you have
+bun run api:key:init       # create a local API key without printing it
 
 # Create the database (idempotent; re-running is a no-op)
 bun run db:migrate
@@ -58,7 +59,16 @@ bun run typecheck && bun run test:ci
 Only one provider is required. Set `DEFAULT_LLM_PROVIDER` and the matching key
 (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, or
 leave it on `ollama` for local inference). Keys may also be supplied as
-`AUTOORG_API_KEY_<PROVIDER>`.
+`AUTOORG_API_KEY_<PROVIDER>`. The Anthropic SDK v1 message API no longer exposes
+the `temperature` parameter, so Anthropic calls use the provider default even
+when a temperature is requested.
+Gemini now uses the `@google/genai` SDK, a `gemini-2.5-flash` default, and
+`gemini-embedding-001` for embeddings. Existing explicitly configured model IDs
+are not rewritten; verify provider availability. Embeddings from the new model
+may not be compatible with older indexes: rebuild affected indexes rather than
+mixing vectors. `GeminiAdapter.startChat()` now returns the new SDK chat API
+(`sendMessage({ message })`). SDK compatibility is covered with mock providers;
+live provider access and pricing must be verified separately.
 
 ### 3. Launch a Mission
 Create a mission file (e.g., `mission.md`) and launch the orchestrator:
@@ -90,30 +100,33 @@ permissions (`repo.search`, `web.fetch`, `sandbox.exec`). Every artifact is
 signed and recorded in the **Action Ledger** for full deterministic
 auditability.
 
-**The API binds unauthenticated by default only on loopback.** The approval
-endpoints can commit code, so:
+**The API requires an API key on every interface, including loopback.** The
+approval endpoints can commit code, so:
 
 ```bash
-AUTOORG_API_KEY=<long-random-value>   # required for any non-loopback bind
+AUTOORG_API_KEY=<long-random-value>   # required on every interface
 AUTOORG_CORS_ORIGINS=https://your.dashboard
 GITHUB_WEBHOOK_SECRET=<secret>        # webhooks reject unsigned payloads
 ```
 
-The server **refuses to start** on a public interface without
-`AUTOORG_API_KEY`. CORS is an explicit allowlist — never `*`.
+The server **refuses to start** without `AUTOORG_API_KEY`, even on loopback.
+Run `bun run api:key:init` in the project directory to generate a random key in
+`.env` with owner-only permissions; it never replaces an existing key. Enter the
+key in the dashboard API key control when prompted. CORS is an explicit
+allowlist — never `*`.
 
 ### Remote deployment and TLS
 
 The Bun API does not terminate TLS. For remote use, put the dashboard and API
 behind a TLS-terminating reverse proxy or VPN; bind the API to `127.0.0.1` and
-set a strong `AUTOORG_API_KEY` **even on loopback** when a proxy can reach it.
+set a strong `AUTOORG_API_KEY`.
 Forward `/api` to the API and `/ws` as a WebSocket upgrade to the API (preserve
 `Upgrade` and `Connection` headers). Serve both through HTTPS so the browser
 uses `wss://`; do not send API keys over plain HTTP or WebSocket connections.
 Configure proxy timeouts and body-size limits as appropriate. The API also
 limits request bodies to 1 MiB.
 
-**The API key protects reads, mutations and WebSocket events when configured.**
+**The API key protects reads, mutations and WebSocket events.**
 The GitHub webhook instead requires its own HMAC signature. Restrict access to
 the dashboard and API at the proxy or network layer as defense in depth; CORS
 is not authentication. Do not expose the dashboard's
@@ -131,9 +144,7 @@ arbitrary headers. Treat URLs as secrets: disable or redact query strings in
 proxy/access logs, monitoring, and tracing; use WSS. Non-browser clients may
 instead send `x-api-key`.
 
-Unkeyed WebSocket access is permitted only from loopback with a trusted browser
-origin; never rely on that exception behind a proxy, since proxied clients may
-appear to be loopback. Failed key attempts are throttled by the direct peer IP,
+Unkeyed WebSocket access is not permitted. Failed key attempts are throttled by the direct peer IP,
 not forwarded headers, so clients behind one proxy share a limit; enforce
 per-client throttling at a trusted proxy if needed. The in-memory limiter resets
 on restart and is not shared between processes.
@@ -184,7 +195,10 @@ it changes or disappears before scoring/staging. Because the shell sandbox is
 not a filesystem isolation boundary, the lock blocks `sandbox.exec` and other
 non-allowlisted tools; only the built-in read-only search and web-fetch tools
 remain available. Set `FEATURE_CONSTITUTION_LOCK=0` only if you deliberately
-accept the risk and provide your own OS-level isolation. Hash checks cannot
+accept the risk and provide your own OS-level isolation. Sandbox execution is
+also disabled unless `AUTOORG_ALLOW_UNSAFE_SANDBOX=1` is explicitly set. Neither
+the command denylist nor Docker mode protects secrets in the mounted workspace;
+never enable it for untrusted commands without independently enforced isolation. Hash checks cannot
 prevent an independent host process from changing and restoring the file
 between checks; isolate the workspace from untrusted host processes as well.
 
@@ -261,3 +275,10 @@ conventions.
 
 ## 📜 License
 MIT © 2026 AutoOrg Framework.
+### Staging deployment
+
+The default CD workflow performs authenticated local verification only. An
+opt-in SSH/systemd reference deployment and code-only rollback are available
+for a pre-provisioned staging VM; they have not been validated on a real host.
+See [the staging runbook](docs/staging-reference.md) for setup, host-key
+verification, database backups, recovery limitations, and the opt-in controls.

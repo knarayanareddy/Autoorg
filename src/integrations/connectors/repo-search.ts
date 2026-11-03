@@ -13,16 +13,32 @@ export async function repoSearchConnector(query: string, cwd: string = process.c
     // Basic ripgrep command
     const child = spawn('rg', ['-n', '--hidden', '--glob', '!node_modules', '--glob', '!.git', '--', query, cwd]);
     
+    const maxBytes = 1024 * 1024;
+    const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(Math.trunc(limit), 100)) : 20;
     let stdout = '';
-    child.stdout.on('data', (data) => {
+    let bytes = 0;
+    let failure = '';
+    const timer = setTimeout(() => { failure = 'Search timed out'; child.kill(); }, 10000);
+    child.stdout.on('data', (data: Buffer) => {
+      bytes += data.length;
+      if (bytes > maxBytes) {
+        failure = 'Search output exceeded size limit';
+        child.kill();
+        return;
+      }
       stdout += data.toString();
     });
 
-    child.on('close', () => {
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (failure || (code !== 0 && code !== 1)) {
+        resolve({ summary: failure || 'Search failed', lines: [] });
+        return;
+      }
       const hits = stdout
         .split('\n')
         .filter(Boolean)
-        .slice(0, limit)
+        .slice(0, safeLimit)
         .map((line) => {
           const first = line.indexOf(':');
           const second = line.indexOf(':', first + 1);
@@ -46,6 +62,7 @@ export async function repoSearchConnector(query: string, cwd: string = process.c
     });
 
     child.on('error', () => {
+      clearTimeout(timer);
       resolve({ summary: includeContent ? `Search failed for "${RedactionFilter.redactOnly(query).text}"` : `Search failed`, lines: [] });
     });
   });

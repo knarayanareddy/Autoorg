@@ -1,0 +1,18 @@
+[Unit]
+Description=AutoOrg dashboard (reference staging)
+After=network.target autoorg-api.service
+
+[Service]
+Type=simple
+User=autoorg
+Group=autoorg
+WorkingDirectory=/opt/autoorg/current/web
+ExecStart=/usr/local/bin/bun run node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3000
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

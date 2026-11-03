@@ -2,11 +2,16 @@
 import chalk from 'chalk';
 
 const API_URL = process.env.AUTOORG_API_URL ?? 'http://localhost:3001';
+const API_KEY = process.env.AUTOORG_API_KEY ?? '';
 
 async function main() {
   console.log(chalk.cyan(`\n🔍 Probing health of ${API_URL}/health...\n`));
   try {
-    const res = await fetch(`${API_URL}/health`);
+    const res = await fetch(`${API_URL}/health`, {
+      headers: API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {},
+      redirect: 'error',
+      signal: AbortSignal.timeout(5000),
+    });
     const data = await res.json().catch(() => ({}));
 
     if (res.status !== 200) {

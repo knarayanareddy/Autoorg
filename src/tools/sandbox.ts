@@ -72,6 +72,51 @@ export function scrubbedSandboxEnv(extra?: Record<string, string>): Record<strin
   return env;
 }
 
+const MAX_OUTPUT_BYTES = 1024 * 1024;
+
+/** Bound combined output and terminate the process group on timeout or overflow. */
+async function runBounded(executable: string, args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv; timeout: number }): Promise<SandboxResult> {
+  return new Promise(resolve => {
+    const child = spawn(executable, args, {
+      cwd: opts.cwd, env: opts.env, stdio: 'pipe', detached: process.platform !== 'win32',
+    });
+    let stdout = '';
+    let stderr = '';
+    let bytes = 0;
+    let reason = '';
+    let settled = false;
+    const kill = () => {
+      try {
+        if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, 'SIGKILL');
+        else child.kill('SIGKILL');
+      } catch { child.kill('SIGKILL'); }
+    };
+    const timeout = Number.isFinite(opts.timeout) ? Math.max(1, Math.min(opts.timeout, 60_000)) : 30_000;
+    const timer = setTimeout(() => { reason = 'Command timed out'; kill(); }, timeout);
+    const capture = (which: 'stdout' | 'stderr', chunk: Buffer) => {
+      const remaining = Math.max(0, MAX_OUTPUT_BYTES - bytes);
+      const accepted = chunk.subarray(0, remaining);
+      bytes += accepted.length;
+      if (which === 'stdout') stdout += accepted.toString('utf8');
+      else stderr += accepted.toString('utf8');
+      if (chunk.length > remaining && !reason) { reason = 'Command output exceeded size limit'; kill(); }
+    };
+    child.stdout.on('data', (chunk: Buffer) => capture('stdout', chunk));
+    child.stderr.on('data', (chunk: Buffer) => capture('stderr', chunk));
+    child.on('error', error => {
+      if (settled) return;
+      settled = true; clearTimeout(timer);
+      resolve({ stdout, stderr: `${stderr}\n${error.message}`, exitCode: 1 });
+    });
+    child.on('close', code => {
+      if (settled) return;
+      settled = true; clearTimeout(timer);
+      if (reason) stderr += `\n${reason}`;
+      resolve({ stdout, stderr, exitCode: reason ? 1 : (code ?? 1) });
+    });
+  });
+}
+
 export class Sandbox {
   private mode: 'bun' | 'docker';
 
@@ -80,6 +125,11 @@ export class Sandbox {
   }
 
   async run(command: string, opts: { cwd?: string; env?: Record<string, string>; timeout?: number } = {}): Promise<SandboxResult> {
+    // Neither mode is a security boundary: host execution is unrestricted,
+    // and Docker mounts the workspace including any files it contains.
+    if (process.env.AUTOORG_ALLOW_UNSAFE_SANDBOX !== '1') {
+      return { stdout: '', stderr: 'Sandbox execution disabled: unsafe execution requires explicit opt-in and external isolation', exitCode: 126 };
+    }
     // Denylist FIRST — a blocked command must never reach a shell, in any mode.
     const denial = findDeniedCommand(command);
     if (denial) {
@@ -92,60 +142,19 @@ export class Sandbox {
     return this.runBun(command, opts);
   }
 
-  private async runBun(command: string, opts: any): Promise<SandboxResult> {
-    return new Promise((resolve) => {
-      const child = spawn('bash', ['-c', command], {
-        cwd: opts.cwd ?? process.cwd(),
-        env: scrubbedSandboxEnv(opts.env),
-        timeout: opts.timeout ?? 30000,
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      child.stdout.on('data', d => stdout += d);
-      child.stderr.on('data', d => stderr += d);
-
-      child.on('close', code => {
-        resolve({ stdout, stderr, exitCode: code ?? 0 });
-      });
-
-      child.on('error', err => {
-        resolve({ stdout, stderr: `${stderr}\n${err.message}`, exitCode: 1 });
-      });
+  private async runBun(command: string, opts: { cwd?: string; env?: Record<string, string>; timeout?: number }): Promise<SandboxResult> {
+    return runBounded('bash', ['-c', command], {
+      cwd: opts.cwd ?? process.cwd(), env: scrubbedSandboxEnv(opts.env), timeout: opts.timeout ?? 30000,
     });
   }
 
-  private async runDocker(command: string, opts: any): Promise<SandboxResult> {
-    // Hard isolation via Docker (requires docker to be installed on host)
-    // We mount the CWD into /workspace. The container starts with the image's
-    // own environment — no host variables are passed with -e.
+  private async runDocker(command: string, opts: { cwd?: string; timeout?: number }): Promise<SandboxResult> {
+    // Docker is not a security boundary for files in the mounted workspace.
     const cwd = opts.cwd ?? process.cwd();
-    const dockerCmd = [
-      'run', '--rm',
-      '-v', `${cwd}:/workspace`,
-      '-w', '/workspace',
-      'node:20-slim',
-      'bash', '-c', command
-    ];
-
-    return new Promise((resolve) => {
-      const child = spawn('docker', dockerCmd, { timeout: opts.timeout ?? 60000 });
-
-      let stdout = '';
-      let stderr = '';
-
-      child.stdout.on('data', d => stdout += d);
-      child.stderr.on('data', d => stderr += d);
-
-      child.on('close', code => {
-        resolve({ stdout, stderr, exitCode: code ?? 0 });
-      });
-
-      child.on('error', err => {
-        resolve({ stdout, stderr: `${stderr}\nDocker failed: ${err.message}`, exitCode: 1 });
-      });
-    });
+    return runBounded('docker', [
+      'run', '--rm', '-v', `${cwd}:/workspace`, '-w', '/workspace',
+      'node:24-slim', 'bash', '-c', command,
+    ], { timeout: opts.timeout ?? 60000 });
   }
 }
 

@@ -1,5 +1,8 @@
-import nodeFetch from 'node-fetch';
-import { isIP } from 'node:net';
+import { BlockList, isIP } from 'node:net';
+import { Agent as HttpAgent, request as httpRequest, type IncomingMessage } from 'node:http';
+import { Agent as HttpsAgent, request as httpsRequest } from 'node:https';
+import type { LookupFunction } from 'node:net';
+import type { Readable } from 'node:stream';
 import { lookup } from 'node:dns/promises';
 
 /**
@@ -55,24 +58,16 @@ export function isPrivateAddress(ip: string): boolean {
   }
 
   if (isIP(ip) === 6) {
-    const addr = ip.toLowerCase().split('%')[0]!;
-    if (addr === '::' || addr === '::1') return true;            // unspecified + loopback
-    // IPv4-mapped / NAT64 / 6to4 embed an IPv4 address — check that too.
-    const mapped = addr.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/)
-      ?? addr.match(/^64:ff9b::([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
-    if (mapped) {
-      if (mapped[1]!.includes('.')) return isPrivateAddress(mapped[1]!);
-      const hi = parseInt(mapped[1]!, 16);
-      const lo = parseInt(mapped[2]!, 16);
-      return isPrivateAddress(`${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`);
-    }
-    const hextet = parseInt(addr.replace(/^.*:/, '').replace(/:.*/, '') || '0', 16);
-    if (/^(f[cd])/.test(addr)) return true;                      // fc00::/7 unique local
-    if (/^fe[89ab]/.test(addr)) return true;                     // fe80::/10 link-local
-    if (/^ff/.test(addr)) return true;                           // ff00::/8 multicast
-    if (/^2001:db8:/.test(addr)) return true;                    // 2001:db8::/32 documentation
-    if (Number.isNaN(hextet)) return true;                       // unparseable → fail closed
-    return false;
+    // Only global unicast IPv6 is eligible. This intentionally rejects all
+    // IPv4-mapped, NAT64 and other translation forms, regardless of spelling.
+    // Also reject IETF special-purpose and 6to4 ranges within 2000::/3.
+    const global = new BlockList();
+    global.addSubnet('2000::', 3, 'ipv6');
+    const special = new BlockList();
+    special.addSubnet('2001::', 23, 'ipv6');
+    special.addSubnet('2001:db8::', 32, 'ipv6');
+    special.addSubnet('2002::', 16, 'ipv6');
+    return !global.check(ip, 'ipv6') || special.check(ip, 'ipv6');
   }
   return true; // not an IP at all → treat as unsafe
 }
@@ -102,7 +97,11 @@ function hostnameOf(url: URL): string {
  * DNS resolution. Throws `FetchBlockedError` on anything suspicious.
  * Exposed for tests; `safeWebFetch` also re-runs it for every redirect hop.
  */
-export async function validateFetchUrl(rawUrl: string): Promise<URL> {
+type Address = { address: string; family: number };
+type Resolver = (host: string) => Promise<Address[]>;
+const resolveHost: Resolver = host => lookup(host, { all: true });
+
+async function resolveFetchUrl(rawUrl: string, resolver: Resolver): Promise<{ url: URL; addresses: Address[] }> {
   let url: URL;
   try {
     url = new URL(rawUrl);
@@ -133,14 +132,14 @@ export async function validateFetchUrl(rawUrl: string): Promise<URL> {
     if (isPrivateAddress(hostname)) {
       throw new FetchBlockedError(`address '${hostname}' is private/loopback/link-local`);
     }
-    return url;
+    return { url, addresses: [{ address: hostname, family: isIP(hostname) }] };
   }
 
   // Hostname: resolve first so a public name rebound to an internal IP never
   // gets a connection. Fail closed when DNS cannot confirm the destination.
-  let addresses: Array<{ address: string }>;
+  let addresses: Address[];
   try {
-    addresses = await lookup(hostname, { all: true });
+    addresses = await resolver(hostname);
   } catch {
     throw new FetchBlockedError(`DNS resolution failed for host '${hostname}'`);
   }
@@ -154,35 +153,76 @@ export async function validateFetchUrl(rawUrl: string): Promise<URL> {
       );
     }
   }
-  return url;
+  return { url, addresses };
 }
 
-export async function safeWebFetch(url: string, maxChars = 8000): Promise<{ summary: string; text: string; status: number }> {
+export async function validateFetchUrl(rawUrl: string): Promise<URL> {
+  return (await resolveFetchUrl(rawUrl, resolveHost)).url;
+}
+
+/** Pin the connection to an already checked DNS result; preserve the URL host for TLS/SNI. */
+export function pinnedAgent(url: URL, addresses: Address[]): HttpAgent | HttpsAgent {
+  const pinnedLookup = ((_hostname: string, options: { all?: boolean; family?: number }, callback: Function) => {
+    const candidates = options.family ? addresses.filter(a => a.family === options.family) : addresses;
+    if (!candidates.length) { callback(new Error('No validated address for requested family')); return; }
+    if (options.all) callback(null, candidates);
+    else callback(null, candidates[0]!.address, candidates[0]!.family);
+  }) as LookupFunction;
+  return url.protocol === 'https:' ? new HttpsAgent({ lookup: pinnedLookup }) : new HttpAgent({ lookup: pinnedLookup });
+}
+
+export const MAX_FETCH_BYTES = 1024 * 1024;
+
+/** Read at most one MiB regardless of Content-Length or transfer encoding. */
+export async function readLimitedBody(stream: Readable): Promise<string> {
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  for await (const chunk of stream) {
+    const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    bytes += data.length;
+    if (bytes > MAX_FETCH_BYTES) {
+      stream.destroy();
+      throw new Error('Response body exceeds size limit');
+    }
+    chunks.push(data);
+  }
+  return Buffer.concat(chunks, bytes).toString('utf8');
+}
+
+export async function safeWebFetch(url: string, maxChars = 8000, resolver: Resolver = resolveHost): Promise<{ summary: string; text: string; status: number }> {
   try {
-    let current = await validateFetchUrl(url);
+    let target = await resolveFetchUrl(url, resolver);
+    let current = target.url;
 
     // Follow redirects manually so EVERY hop passes validateFetchUrl —
     // otherwise a public 302 to http://169.254.169.254/ bypasses the guard.
-    let res: import('node-fetch').Response;
+    let res: IncomingMessage;
     let hops = 0;
     for (;;) {
-      res = await nodeFetch(current.toString(), {
-        headers: { 'User-Agent': 'AutoOrg/1.0 (Phase6; Autonomous Research)' },
-        redirect: 'manual',
-        signal: AbortSignal.timeout(10000),
-      } as any);
+      res = await new Promise<IncomingMessage>((resolve, reject) => {
+        const request = current.protocol === 'https:' ? httpsRequest : httpRequest;
+        const req = request(current, {
+          headers: { 'User-Agent': 'AutoOrg/1.0 (Phase6; Autonomous Research)' },
+          agent: pinnedAgent(current, target.addresses),
+          signal: AbortSignal.timeout(10000),
+        }, resolve);
+        req.on('error', reject);
+        req.end();
+      });
 
-      const location = res.headers.get('location');
-      const isRedirect = [301, 302, 303, 307, 308].includes(res.status);
+      const location = res.headers.location;
+      const isRedirect = [301, 302, 303, 307, 308].includes(res.statusCode ?? 0);
       if (!isRedirect || !location) break;
 
+      res.destroy();
       if (++hops > MAX_REDIRECTS) {
         throw new FetchBlockedError(`too many redirects (> ${MAX_REDIRECTS})`);
       }
-      current = await validateFetchUrl(new URL(location, current).toString());
+      target = await resolveFetchUrl(new URL(location, current).toString(), resolver);
+      current = target.url;
     }
 
-    const body = await res.text();
+    const body = await readLimitedBody(res);
     const clean = body.replace(/<script[\s\S]*?<\/script>/gi, '')
                       .replace(/<style[\s\S]*?<\/style>/gi, '')
                       .replace(/<[^>]+>/g, ' ')
@@ -190,9 +230,9 @@ export async function safeWebFetch(url: string, maxChars = 8000): Promise<{ summ
                       .trim();
 
     return {
-      summary: `Fetched ${url} (${res.status})`,
-      text: clean.slice(0, maxChars),
-      status: res.status,
+      summary: `Fetched ${url} (${res.statusCode})`,
+      text: clean.slice(0, Number.isFinite(maxChars) ? Math.max(0, Math.min(Math.trunc(maxChars), 100_000)) : 8000),
+      status: res.statusCode ?? 500,
     };
   } catch (err) {
     if (err instanceof FetchBlockedError) {
