@@ -24,7 +24,34 @@ export class ToolRunner {
   async run(toolName: string, input: any, ctx: ToolExecutionContext) {
     const tool = toolRegistry.get(toolName);
     const executionId = `tx_${nanoid(8)}`;
-    
+
+    // 0. Role → tool permission.
+    //
+    // `ToolPolicy.isAllowed()` existed but was never called, so the seeded
+    // matrix (Critic may not sandbox.exec, Archivist may not fetch the web, …)
+    // was purely decorative and any role could run any tool. Enforce it here.
+    // `seedDefaults()` must have run for the run; if no policy row exists at all
+    // we fall through to the policy engine below rather than locking everyone out.
+    if (featureFlag('toolUse')) {
+      const decision = this.policy.check({ role: ctx.role, toolName, teamId: ctx.teamId });
+      if (!decision.allowed) {
+        this.ledger.propose({
+          cycleNumber: ctx.cycleNumber,
+          role: ctx.role,
+          teamId: ctx.teamId,
+          actionClass: 'EXECUTE',
+          targetKind: 'tool',
+          targetRef: toolName,
+          riskTier: 'high',
+          summary: `Denied: ${decision.reason}`,
+          input,
+          reversible: true,
+          policySnapshot: null,
+        });
+        throw new Error(decision.reason);
+      }
+    }
+
     // 1. HARDENING: Policy Engine check
     if (featureFlag('policyEngine')) {
       const decision = this.policies.evaluate({

@@ -159,12 +159,14 @@ CREATE INDEX IF NOT EXISTS idx_provenance_reports_run ON provenance_reports(run_
 
 -- ── Tooling ────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS tool_policies (
-  id TEXT PRIMARY KEY, run_id TEXT NOT NULL, team_id TEXT, role TEXT NOT NULL,
+  id TEXT PRIMARY KEY, run_id TEXT NOT NULL,
+  team_id TEXT NOT NULL DEFAULT '', role TEXT NOT NULL,
   tool_name TEXT NOT NULL, allowed INTEGER NOT NULL DEFAULT 1,
   max_calls_per_cycle INTEGER NOT NULL DEFAULT 4,
   max_calls_per_run INTEGER NOT NULL DEFAULT 30,
   require_evidence INTEGER NOT NULL DEFAULT 1,
-  created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+  created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(run_id, team_id, role, tool_name)
 );
 CREATE INDEX IF NOT EXISTS idx_tool_policies_run ON tool_policies(run_id, role, tool_name);
 
