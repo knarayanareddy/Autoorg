@@ -24,8 +24,24 @@ export function notFound(msg = 'Not found'): Response {
   return json({ error: msg }, 404);
 }
 
-export function serverError(msg: string): Response {
-  return json({ error: msg }, 500);
+export function serverError(): Response {
+  return json({ error: 'Internal server error' }, 500);
+}
+
+/** An explicitly safe client-facing error, never constructed from raw input. */
+export class HttpError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+  }
+}
+
+export async function parseJsonBody(req: Request): Promise<unknown> {
+  try {
+    return await req.json();
+  } catch (err) {
+    if (err instanceof SyntaxError) throw new HttpError(400, 'Invalid JSON');
+    throw err;
+  }
 }
 
 export function registerRoute(pattern: string, handler: (params: Record<string, string>) => Response) {

@@ -29,7 +29,7 @@ import {
   getDashboardSummary, getFeatureFlags,
   getKnowledgeGraph,
 } from '@/db/queries.js';
-import { registerRoute, matchRoute, json, notFound, serverError } from './route-utils.js';
+import { registerRoute, matchRoute, json, notFound, serverError, HttpError, parseJsonBody } from './route-utils.js';
 import { getDb, withDb } from '@/db/migrate.js';
 import { ApprovalGate } from '@/runtime/approval-gate.js';
 import { ServiceState } from '@/runtime/service-state.js';
@@ -282,7 +282,7 @@ async function handleRequest(req: Request): Promise<Response> {
 
     // POST /api/interview — Start an agent interview
     if (url.pathname === '/api/interview' && method === 'POST') {
-      const body = await req.json() as {
+      const body = await parseJsonBody(req) as {
         runId:     string;
         agentRole: string;
         cycleId?:  string;
@@ -299,7 +299,7 @@ async function handleRequest(req: Request): Promise<Response> {
     // POST /api/interview/:sessionId — Continue an interview
     params = matchRoute(url, method, '/api/interview/:sessionId', 'POST');
     if (params) {
-      const body = await req.json() as { message: string };
+      const body = await parseJsonBody(req) as { message: string };
       const { InterviewEngine } = await import('@/runtime/interview.js');
 
       // Load session from DB
@@ -317,9 +317,10 @@ async function handleRequest(req: Request): Promise<Response> {
 
     return notFound();
   } catch (err) {
+    if (err instanceof HttpError) return json({ error: err.message }, err.status);
     const msg = err instanceof Error ? err.message : String(err);
     console.error(chalk.red(`[API] Error: ${msg}`));
-    return withCors(serverError(msg), req);
+    return serverError();
   }
 }
 

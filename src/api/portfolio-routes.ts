@@ -1,3 +1,4 @@
+import { parseJsonBody } from './route-utils.js';
 import { getDb } from '@/db/migrate.js';
 import { PortfolioRunner } from '@/portfolio/portfolio-runner.js';
 
@@ -40,7 +41,7 @@ export async function handlePortfolioRoutes(url: URL, req: Request) {
 
   // POST /api/portfolio/run — Start a new portfolio mission
   if (url.pathname === '/api/portfolio/run' && method === 'POST') {
-    const body = await req.json() as any;
+    const body = await parseJsonBody(req) as any;
     const runner = new PortfolioRunner();
     runner.runMission(body).catch(err => console.error('Portfolio mission failed:', err));
     return json({ ok: true, message: 'Portfolio mission started.' });

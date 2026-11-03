@@ -1,3 +1,4 @@
+import { parseJsonBody } from './route-utils.js';
 import { getDb } from '@/db/migrate.js';
 import { BenchmarkRunner } from '@/evals/benchmark-runner.js';
 import { ReplayLab } from '@/evals/replay-lab.js';
@@ -30,7 +31,7 @@ export async function handleEvalRoutes(url: URL, req: Request) {
 
   // POST /api/benchmarks/run — Trigger a benchmark suite
   if (url.pathname === '/api/benchmarks/run' && method === 'POST') {
-    const body = await req.json() as any;
+    const body = await parseJsonBody(req) as any;
     const runner = new BenchmarkRunner();
     // Non-blocking run
     runner.runSuite(body).catch(err => console.error('Benchmark suite failed:', err));
@@ -56,7 +57,7 @@ export async function handleEvalRoutes(url: URL, req: Request) {
 
   // POST /api/replay — Replay a benchmark attempt
   if (url.pathname === '/api/replay' && method === 'POST') {
-    const body = await req.json() as { attemptId: string; mode?: any };
+    const body = await parseJsonBody(req) as { attemptId: string; mode?: any };
     const lab = new ReplayLab();
     const result = await lab.replayAttempt(body);
     return json({ ok: true, result });
@@ -64,7 +65,7 @@ export async function handleEvalRoutes(url: URL, req: Request) {
 
   // POST /api/constitution-ab — Compare constitutions
   if (url.pathname === '/api/constitution-ab' && method === 'POST') {
-    const body = await req.json() as any;
+    const body = await parseJsonBody(req) as any;
     const ab = new ConstitutionAB();
     const result = await ab.compare(body);
     return json({ ok: true, result });

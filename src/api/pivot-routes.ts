@@ -1,3 +1,4 @@
+import { parseJsonBody } from './route-utils.js';
 import { getDb } from '@/db/migrate.js';
 import { PivotEngine } from '@/runtime/pivot-engine.js';
 import { ObjectiveOptimizer } from '@/evals/objective-optimizer.js';
@@ -47,7 +48,7 @@ export async function handlePivotRoutes(url: URL, req: Request) {
   // POST /api/runs/:runId/objectives — Update objectives live
   if (url.pathname.startsWith('/api/runs/') && url.pathname.endsWith('/objectives') && method === 'POST') {
     const runId = url.pathname.split('/')[3];
-    const body = await req.json() as any;
+    const body = await parseJsonBody(req) as any;
     const optimizer = new ObjectiveOptimizer(runId);
     await optimizer.setObjectives({
       quality: body.quality ?? 1.0,

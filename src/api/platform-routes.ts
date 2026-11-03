@@ -1,3 +1,4 @@
+import { parseJsonBody } from './route-utils.js';
 import { getDb } from '@/db/migrate.js';
 import { handleGitHubWebhook } from './webhooks/github.js';
 
@@ -27,7 +28,7 @@ export async function handlePlatformRoutes(url: URL, req: Request) {
 
   // Submit Run (Hosted)
   if (url.pathname === '/api/hosted-runs' && method === 'POST') {
-     const body = await req.json() as any;
+     const body = await parseJsonBody(req) as any;
      const db = getDb();
      const id = `hr_${Math.random().toString(36).substr(2, 9)}`;
      db.prepare(`

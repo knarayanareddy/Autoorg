@@ -1,3 +1,4 @@
+import { parseJsonBody } from './route-utils.js';
 import { getDb } from '@/db/migrate.js';
 
 function json(data: unknown, status = 200) {
@@ -41,7 +42,7 @@ export async function handleSwarmRoutes(url: URL, req: Request) {
 
   // POST /api/swarm/transfer — Manual credit transfer
   if (url.pathname === '/api/swarm/transfer' && method === 'POST') {
-    const body = await req.json() as any;
+    const body = await parseJsonBody(req) as any;
     // (Logic simplified for brevity)
     return json({ ok: true, message: 'Transfer successful' });
   }
