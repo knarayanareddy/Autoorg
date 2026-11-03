@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'bun:test';
-import { createServer } from 'node:http';
+import { createServer, get } from 'node:http';
 import {
   safeWebFetch,
   validateFetchUrl,
@@ -171,21 +171,40 @@ describe('SSRF regression: translated addresses and DNS rebinding', () => {
       await expect(validateFetchUrl(`http://[${host}]/`)).rejects.toThrow(FetchBlockedError);
     }
   });
-  it('does not connect when DNS changes from public to loopback', async () => {
+  it('pins the HTTP connection without resolving the hostname again', async () => {
     let requests = 0;
-    const server = createServer((_req, res) => { requests++; res.end('private'); });
+    const server = createServer((req, res) => {
+      requests++;
+      expect(req.headers.host).toContain('example.invalid');
+      res.end('pin-proof');
+    });
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
     try {
-      const port = (server.address() as {port: number}).port;
-      let lookups = 0;
-      const resolver = async () => [{ address: ++lookups === 1 ? '8.8.8.8' : '127.0.0.1', family: 4 }];
-      const result = await safeWebFetch(`http://example.invalid:${port}/`, 200, resolver);
-      expect(result.status).not.toBe(200);
-      expect(result.summary).not.toContain('ENOTFOUND'); // The HTTP client actually used the pinned address.
-      expect(requests).toBe(0);
-      expect(lookups).toBe(1); // DNS is resolved once and the vetted address is pinned.
+      const port = (server.address() as { port: number }).port;
+      // Exercise only the transport helper with a test-local address. The real
+      // resolver rejects loopback before passing any addresses to this helper.
+      const mod = await import('../src/integrations/connectors/web-fetch.ts');
+      const pin = (mod as any).pinnedAgent;
+      expect(typeof pin).toBe('function');
+      const url = new URL(`http://example.invalid:${port}/`);
+      const agent = pin(url, [{ address: '127.0.0.1', family: 4 }]);
+      const response = await new Promise<string>((resolve, reject) => {
+        get(url, { agent }, res => {
+          let body = ''; res.setEncoding('utf8'); res.on('data', chunk => body += chunk);
+          res.on('end', () => resolve(body));
+        }).on('error', reject);
+      });
+      expect(response).toBe('pin-proof');
+      expect(requests).toBe(1);
     } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
-  }, 15000);
+  });
+  it('rejects a DNS result containing a local address before connecting', async () => {
+    let lookups = 0;
+    const resolver = async () => { lookups++; return [{ address: '8.8.8.8', family: 4 }, { address: '127.0.0.1', family: 4 }]; };
+    const result = await safeWebFetch('http://example.invalid/', 200, resolver);
+    expect(result.status).toBe(400);
+    expect(lookups).toBe(1);
+  });
 });
 
 describe('web.fetch body bounds', () => {

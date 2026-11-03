@@ -161,7 +161,7 @@ export async function validateFetchUrl(rawUrl: string): Promise<URL> {
 }
 
 /** Pin the connection to an already checked DNS result; preserve the URL host for TLS/SNI. */
-function pinnedAgent(url: URL, addresses: Address[]): HttpAgent | HttpsAgent {
+export function pinnedAgent(url: URL, addresses: Address[]): HttpAgent | HttpsAgent {
   const pinnedLookup = ((_hostname: string, options: { all?: boolean; family?: number }, callback: Function) => {
     const candidates = options.family ? addresses.filter(a => a.family === options.family) : addresses;
     if (!candidates.length) { callback(new Error('No validated address for requested family')); return; }
