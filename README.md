@@ -33,6 +33,7 @@ AutoOrg is a production-grade platform designed to manage complex, multi-cycle a
 
 ### 1. Prerequisites
 - **Runtime**: [Bun](https://bun.sh)
+- **Repository search**: [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) on `PATH` (also required by the repository search tests).
 - **Local Inference** (Optional): [Ollama](https://ollama.ai)
 
 ### 2. Setup
