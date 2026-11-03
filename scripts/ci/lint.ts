@@ -24,15 +24,12 @@ async function main() {
     return;
   }
 
-  // ESLint is optional until a flat config is committed. Fail loudly rather
-  // than silently downloading an arbitrary version at CI time.
-  if (!existsSync('eslint.config.js') && !existsSync('.eslintrc.json') && !existsSync('.eslintrc.cjs')) {
-    console.log(chalk.gray('  No ESLint config present — skipping (nothing to enforce).'));
-    console.log(chalk.green('✅ Lint check complete'));
-    return;
+  if (!existsSync('eslint.config.js')) {
+    console.error(chalk.red('Missing ESLint configuration'));
+    process.exit(1);
   }
 
-  const result = await $`bunx --bun eslint src/ web/app/ --max-warnings 0`.nothrow();
+  const result = await $`bun ./node_modules/eslint/bin/eslint.js src/ web/app/ web/components/ web/lib/ --max-warnings 0`.nothrow();
 
   if (result.exitCode !== 0) {
     console.error(chalk.red('\n❌ ESLint failed\n'));
