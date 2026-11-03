@@ -187,3 +187,15 @@ describe('SSRF regression: translated addresses and DNS rebinding', () => {
     } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
   }, 15000);
 });
+
+describe('web.fetch body bounds', () => {
+  it('aborts an oversized stream rather than collecting it in memory', async () => {
+    const { Readable } = await import('node:stream');
+    const webFetch = await import('../src/integrations/connectors/web-fetch.ts');
+    const readLimited = (webFetch as any).readLimitedBody;
+    expect(typeof readLimited).toBe('function');
+    const body = Readable.from([Buffer.alloc(700_000), Buffer.alloc(700_000)]);
+    await expect(readLimited(body)).rejects.toThrow(/large|limit/i);
+    expect(body.destroyed).toBe(true);
+  });
+});

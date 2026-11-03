@@ -2,6 +2,7 @@ import { BlockList, isIP } from 'node:net';
 import { Agent as HttpAgent, request as httpRequest, type IncomingMessage } from 'node:http';
 import { Agent as HttpsAgent, request as httpsRequest } from 'node:https';
 import type { LookupFunction } from 'node:net';
+import type { Readable } from 'node:stream';
 import { lookup } from 'node:dns/promises';
 
 /**
@@ -170,6 +171,24 @@ function pinnedAgent(url: URL, addresses: Address[]): HttpAgent | HttpsAgent {
   return url.protocol === 'https:' ? new HttpsAgent({ lookup: pinnedLookup }) : new HttpAgent({ lookup: pinnedLookup });
 }
 
+export const MAX_FETCH_BYTES = 1024 * 1024;
+
+/** Read at most one MiB regardless of Content-Length or transfer encoding. */
+export async function readLimitedBody(stream: Readable): Promise<string> {
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  for await (const chunk of stream) {
+    const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    bytes += data.length;
+    if (bytes > MAX_FETCH_BYTES) {
+      stream.destroy();
+      throw new Error('Response body exceeds size limit');
+    }
+    chunks.push(data);
+  }
+  return Buffer.concat(chunks, bytes).toString('utf8');
+}
+
 export async function safeWebFetch(url: string, maxChars = 8000, resolver: Resolver = resolveHost): Promise<{ summary: string; text: string; status: number }> {
   try {
     let target = await resolveFetchUrl(url, resolver);
@@ -195,7 +214,7 @@ export async function safeWebFetch(url: string, maxChars = 8000, resolver: Resol
       const isRedirect = [301, 302, 303, 307, 308].includes(res.statusCode ?? 0);
       if (!isRedirect || !location) break;
 
-      res.resume();
+      res.destroy();
       if (++hops > MAX_REDIRECTS) {
         throw new FetchBlockedError(`too many redirects (> ${MAX_REDIRECTS})`);
       }
@@ -203,9 +222,7 @@ export async function safeWebFetch(url: string, maxChars = 8000, resolver: Resol
       current = target.url;
     }
 
-    const chunks: Buffer[] = [];
-    for await (const chunk of res) chunks.push(Buffer.from(chunk));
-    const body = Buffer.concat(chunks).toString('utf8');
+    const body = await readLimitedBody(res);
     const clean = body.replace(/<script[\s\S]*?<\/script>/gi, '')
                       .replace(/<style[\s\S]*?<\/style>/gi, '')
                       .replace(/<[^>]+>/g, ' ')
@@ -214,7 +231,7 @@ export async function safeWebFetch(url: string, maxChars = 8000, resolver: Resol
 
     return {
       summary: `Fetched ${url} (${res.statusCode})`,
-      text: clean.slice(0, maxChars),
+      text: clean.slice(0, Number.isFinite(maxChars) ? Math.max(0, Math.min(Math.trunc(maxChars), 100_000)) : 8000),
       status: res.statusCode ?? 500,
     };
   } catch (err) {
