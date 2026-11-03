@@ -36,8 +36,7 @@ import { nanoid }                     from 'nanoid';
 import path                           from 'node:path';
 
 import { getAdapter }                 from '@/adapters/adapter-factory.js';
-import { parseStructuredOutput,
-         parseStructuredOutputLenient } from '@/utils/structured-output.js';
+import { parseStructuredOutput }     from '@/utils/structured-output.js';
 import { withLLMRetry }               from '@/utils/retry.js';
 import { gitCommit }                  from '@/utils/git.js';
 import { getDb }                      from '@/db/migrate.js';
@@ -207,18 +206,9 @@ export class DreamEngine {
       costUsd      = response.costUsd ?? 0;
 
       // ── STEP 6: Parse DreamAgent output ─────────────────────────
-      const fallbackDream: DreamOutput = {
-        validated_patterns: [],
-        anti_patterns:      [],
-        contradictions:     [],
-        superseded_facts:   [],
-        domain_knowledge:   [],
-        new_memory_index:   currentMemoryIndex, // Keep current if parse fails
-        dream_report:       'autoDream: LLM output could not be parsed. Memory unchanged.',
-        quality_score:      0.1,
-      };
-
-      dreamOutput = parseStructuredOutputLenient(rawLlmOutput, DreamOutputSchema, fallbackDream);
+      // Throws on malformed output; the catch below leaves memory unchanged
+      // (fail closed) instead of fabricating a "successful" dream.
+      dreamOutput = parseStructuredOutput(rawLlmOutput, DreamOutputSchema);
       console.log(chalk.magenta(`     Dream quality: ${(dreamOutput.quality_score * 100).toFixed(0)}%`));
 
     } catch (err) {

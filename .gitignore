@@ -1,9 +1,45 @@
 node_modules/
+
+# ── Secrets ─────────────────────────────────────────────────────────
 .env
-autoorg.db
-autoorg.db-shm
-autoorg.db-wal
+.env.*
+!.env.example
+
+# ── Databases ───────────────────────────────────────────────────────
+# Covers autoorg.db, test-api.db, test-daemon.db, *-shm and *-wal.
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# ── Build output ────────────────────────────────────────────────────
+dist/
+build/
+out/
+.next/
+web/.next/
+web/tsconfig.tsbuildinfo
+*.tsbuildinfo
 *.map
+
+# ── Test / CI artifacts ─────────────────────────────────────────────
+test-results/
+coverage/
+.ci/
+daemon-test.log
+*.log
+
+# ── Approval staging (snapshots + review patches, never committed) ───
+artifacts/approvals/
+
+# ── Errors from a literal "~" bun cache path (see bunfig.toml) ──────
+~/
+
+# ── OS noise ────────────────────────────────────────────────────────
 .DS_Store
+Thumbs.db
+
+# ── Runtime state written by missions ───────────────────────────────
 mailbox/inbox/*.json
 mailbox/outbox/*.json

@@ -11,7 +11,8 @@
 
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
 import type { LLMAdapter, LLMProvider, LLMRunOptions, LLMResponse, LLMStructuredOptions } from '@/types/index.js';
-import { parseStructuredOutputLenient } from '@/utils/structured-output.js';
+import { parseStructuredOutput } from '@/utils/structured-output.js';
+import { providerApiKey } from '@/config/env.js';
 
 const SAFETY_SETTINGS = [
   { category: HarmCategory.HARM_CATEGORY_HARASSMENT,        threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -33,8 +34,13 @@ export class GeminiAdapter implements LLMAdapter {
     model:  string = 'gemini-1.5-flash-latest',
     apiKey?: string
   ) {
-    const key = apiKey ?? process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY;
-    if (!key) throw new Error('[GeminiAdapter] Missing GEMINI_API_KEY or GOOGLE_API_KEY');
+    // GEMINI_API_KEY (documented), GOOGLE_API_KEY, or AUTOORG_API_KEY_GEMINI.
+    const key = providerApiKey('gemini', apiKey) || process.env.GOOGLE_API_KEY || '';
+    if (!key) {
+      throw new Error(
+        '[GeminiAdapter] Missing GEMINI_API_KEY (or GOOGLE_API_KEY). See .env.example.'
+      );
+    }
 
     this.client       = new GoogleGenerativeAI(key);
     this.defaultModel = model;
@@ -88,7 +94,7 @@ export class GeminiAdapter implements LLMAdapter {
 
     const result = await model.generateContent(userText);
     const raw    = result.response.text();
-    return parseStructuredOutputLenient(raw, opts.schema, null as unknown as T);
+    return parseStructuredOutput(raw, opts.schema);
   }
 
   // ── Native text embeddings ───────────────────────────────────────────────

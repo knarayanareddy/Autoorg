@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 import { MailMan } from '../src/runtime/mailman.js';
 import { rmSync, mkdirSync } from 'node:fs';
+import { useTestDb, cleanupTestDb } from './helpers/test-db.ts';
 import type { AgentTask, AgentOutput } from '../src/types/index.js';
 
 const TEST_MAILBOX = '/tmp/autoorg-test-mailbox';
@@ -9,12 +10,15 @@ describe('MailMan (Filesystem IPC)', () => {
   const mail = new MailMan(TEST_MAILBOX);
 
   beforeAll(async () => {
+    // MailMan persists to the DB — isolate it instead of writing ./autoorg.db
+    await useTestDb('autoorg-mailman-');
     mkdirSync(TEST_MAILBOX, { recursive: true });
     await mail.ensureDirs();
   });
 
   afterAll(() => {
     rmSync(TEST_MAILBOX, { recursive: true, force: true });
+    cleanupTestDb();
   });
 
   const testTask: AgentTask = {

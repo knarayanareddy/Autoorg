@@ -1,6 +1,10 @@
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
+import { useTestDb, cleanupTestDb, testRunId } from './helpers/test-db.ts';
 
 describe('Pipeline (Phase 2)', () => {
+  beforeAll(async () => { await useTestDb('autoorg-pipeline-'); });
+  afterAll(() => cleanupTestDb());
+
   it('pipeline module exists and exports runCyclePipeline', async () => {
     const module = await import('../src/runtime/pipeline.js');
     expect(typeof module.runCyclePipeline).toBe('function');
@@ -22,28 +26,16 @@ describe('Pipeline (Phase 2)', () => {
     const { storeCycleContext, loadCycleContext } = await import('../src/runtime/cycle-context-builder.js');
     const { getDb } = await import('../src/db/migrate.js');
 
-    // Ensure table exists
-    const db = getDb();
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS cycle_context (
-        id TEXT PRIMARY KEY, cycle_id TEXT NOT NULL,
-        run_id TEXT NOT NULL, agent_role TEXT NOT NULL,
-        system_prompt TEXT NOT NULL, user_message TEXT NOT NULL,
-        response TEXT NOT NULL, created_at DATETIME DEFAULT (datetime('now')),
-        UNIQUE(cycle_id, agent_role)
-      )
-    `);
-    db.close();
-
-    const testRunId = 'test_run_' + Date.now();
-    const testCycleId = 'test_cycle_' + Date.now();
+    // `cycle_context` comes from the real migration — no local DDL here.
+    const runId = testRunId('pipeline');
+    const testCycleId = `test_cycle_${Date.now()}`;
 
     const db2 = getDb();
-    db2.prepare('INSERT INTO runs (id, status, config_json, org_md_hash, org_md_path) VALUES (?, ?, ?, ?, ?)').run(testRunId, 'running', '{}', 'test_hash', 'org.md');
-    db2.prepare('INSERT INTO cycles (id, run_id, cycle_number) VALUES (?, ?, ?)').run(testCycleId, testRunId, 1);
+    db2.prepare('INSERT INTO runs (id, status, config_json, org_md_hash, org_md_path) VALUES (?, ?, ?, ?, ?)').run(runId, 'running', '{}', 'test_hash', 'org.md');
+    db2.prepare('INSERT INTO cycles (id, run_id, cycle_number) VALUES (?, ?, ?)').run(testCycleId, runId, 1);
     db2.close();
 
-    storeCycleContext(testCycleId, testRunId, 'Engineer', {
+    storeCycleContext(testCycleId, runId, 'Engineer', {
       systemPrompt: 'You are the Engineer',
       userMessage:  'Write section 1',
     }, 'Here is section 1...');

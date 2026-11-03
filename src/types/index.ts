@@ -86,7 +86,7 @@ export type AgentRole =
   | 'DreamAgent'
   | 'UltraPlanner';
 
-export type RatchetDecision = 'COMMIT' | 'REVERT' | 'DISQUALIFIED' | 'TIMEOUT' | 'ERROR';
+export type RatchetDecision = 'COMMIT' | 'REVERT' | 'DISQUALIFIED' | 'TIMEOUT' | 'ERROR' | 'PENDING_APPROVAL';
 export type ObjectionSeverity = 'BLOCKER' | 'MAJOR' | 'MINOR';
 export type RunStatus = 'running' | 'completed' | 'failed' | 'stopped';
 export type StopReason = 

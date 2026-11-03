@@ -11,7 +11,10 @@ const MIGRATIONS = [
   'src/db/migrate.ts',
 ];
 
-// Core tables that MUST exist for a healthy platform (Phase 0-15 consolidated)
+// Core tables that MUST exist for a healthy platform (Phase 0-15 consolidated).
+// Includes the hardening/governance tables the orchestrator touches on its very
+// first cycle — those were missing from the schema entirely, so this check used
+// to pass on a database that could not run a cycle.
 const REQUIRED_TABLES = [
   'runs',
   'cycles',
@@ -25,7 +28,21 @@ const REQUIRED_TABLES = [
   'llm_providers',
   'llm_models',
   'benchmark_suites',
-  'benchmark_cases'
+  'benchmark_cases',
+  // Hardening / governance (Phase 5)
+  'objections',
+  'approvals',
+  'pending_actions',
+  'action_ledger',
+  'action_policies',
+  'tool_policies',
+  'tool_executions',
+  'redaction_events',
+  'security_findings',
+  'workspace_locks',
+  'run_checkpoints',
+  // Migration bookkeeping
+  'schema_migrations',
 ];
 
 async function main() {
@@ -46,7 +63,8 @@ async function main() {
 
   if (verify || checkSchema) {
     console.log(chalk.cyan('\n🔍 Verifying schema integrity...\n'));
-    const { getDb } = await import('../../src/db/migrate.ts');
+    // Note: relative to THIS file's directory (scripts/ci/), so ../../src is correct.
+    const { getDb, getSchemaVersion } = await import('../../src/db/migrate.ts');
     const db = getDb();
 
     for (const table of REQUIRED_TABLES) {
@@ -59,7 +77,9 @@ async function main() {
       console.log(chalk.green(`  ✓ Found table: ${table}`));
     }
 
+    const version = getSchemaVersion(db);
     db.close();
+    console.log(chalk.gray(`\n  Schema version: ${version}`));
     console.log(chalk.bold.green('\n✅ Schema integrity verified. High-availability ready.\n'));
   }
 

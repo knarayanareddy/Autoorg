@@ -30,7 +30,7 @@ import {
   getKnowledgeGraph,
 } from '@/db/queries.js';
 import { registerRoute, matchRoute, json, notFound, serverError } from './route-utils.js';
-import { getDb } from '@/db/migrate.js';
+import { getDb, withDb } from '@/db/migrate.js';
 import { ApprovalGate } from '@/runtime/approval-gate.js';
 import { ServiceState } from '@/runtime/service-state.js';
 import { verifyGitHubSignature, storeGitHubEvent } from '@/integrations/webhooks.js';
@@ -42,25 +42,40 @@ import { handlePivotRoutes } from './pivot-routes.js';
 import { handleSwarmRoutes } from './swarm-routes.js';
 import { handlePlatformRoutes } from './platform-routes.js';
 import { handleLearningRoutes } from './learning-routes.js';
+import { handleApprovalDecision } from './approval-routes.js';
+import { authenticate, corsHeaders, checkBootSafety } from './auth.js';
 
 dotenvLoad();
 
 const PORT = parseInt(process.env.API_PORT ?? '3001');
 
-// ── CORS headers ────────────────────────────────────────────────────────
-const CORS = {
-  'Access-Control-Allow-Origin':  '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-  'Content-Type':                 'application/json',
-};
+// ── CORS ────────────────────────────────────────────────────────────────
+// Handled per-request by `corsHeaders()` in ./auth.ts. Wildcard CORS is NOT
+// used: combined with unauthenticated approval endpoints it let any origin the
+// operator visited approve a staged commit.
+const HOSTNAME = process.env.API_HOST ?? '0.0.0.0';
 
 // ── Request handler ────────────────────────────────────────────────────
+const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
 async function handleRequest(req: Request): Promise<Response> {
   const url    = new URL(req.url);
   const method = req.method;
 
-  if (method === 'OPTIONS') return new Response(null, { headers: CORS });
+  if (method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: corsHeaders(req) });
+  }
+
+  // Webhooks authenticate with their own HMAC signature, not the API key.
+  const isWebhook = url.pathname === '/api/webhooks/github';
+
+  // Auth gate: every mutating endpoint requires the API key once configured.
+  if (!isWebhook && MUTATING.has(method)) {
+    const auth = authenticate(req, true);
+    if (!auth.ok) {
+      return json({ error: auth.error }, { status: auth.status ?? 401 });
+    }
+  }
 
   try {
     // Phase 7: Eval/Benchmark routes
@@ -88,16 +103,18 @@ async function handleRequest(req: Request): Promise<Response> {
     if (learningResponse) return learningResponse;
 
     // GET /api/health (Enterprise-tier health check)
+    //
+    // NOTE: this must not open-and-close a connection per probe. The server
+    // shares one WAL connection, and closing it here could interrupt another
+    // in-flight request's transaction. `withDb` reuses the shared handle.
     if (url.pathname === '/api/health' || url.pathname === '/health') {
-      const db = getDb();
       let dbOk = false;
       try {
-        db.prepare('SELECT 1').get();
+        withDb(db => { db.prepare('SELECT 1').get(); });
         dbOk = true;
       } catch (err) {
         console.error(chalk.red(`[Health] DB Error: ${err}`));
       }
-      db.close();
 
       const status = dbOk ? 200 : 503;
       return json({
@@ -187,20 +204,19 @@ async function handleRequest(req: Request): Promise<Response> {
       return json(gate.getPending(url.searchParams.get('runId') ?? undefined));
     }
 
-    // POST /api/approvals/:id/approve
+    // POST /api/approvals/:id/approve — 404 on unknown IDs (A01/A04),
+    // materializes staged candidates on success.
     params = matchRoute(url, method, '/api/approvals/:id/approve', 'POST');
     if (params) {
-      const gate = new ApprovalGate();
-      gate.approve(params.id!, 'human_api');
-      return json({ ok: true, id: params.id, status: 'approved' });
+      const result = await handleApprovalDecision({ id: params.id!, action: 'approve' });
+      return json(result.body, { status: result.status });
     }
 
-    // POST /api/approvals/:id/reject
+    // POST /api/approvals/:id/reject — 404 on unknown IDs (A01/A04)
     params = matchRoute(url, method, '/api/approvals/:id/reject', 'POST');
     if (params) {
-      const gate = new ApprovalGate();
-      gate.reject(params.id!, 'human_api');
-      return json({ ok: true, id: params.id, status: 'rejected' });
+      const result = await handleApprovalDecision({ id: params.id!, action: 'reject' });
+      return json(result.body, { status: result.status });
     }
 
     // POST /api/webhooks/github
@@ -209,15 +225,25 @@ async function handleRequest(req: Request): Promise<Response> {
         return json({ error: 'GitHub integration disabled' }, { status: 403 });
       }
 
+      if (!process.env.GITHUB_WEBHOOK_SECRET) {
+        return json({ error: 'Webhook secret not configured' }, { status: 503 });
+      }
+
       const body = await req.text();
       const signature = req.headers.get('x-hub-signature-256');
-      
+
       if (!verifyGitHubSignature(body, signature)) {
-        return json({ error: 'Invalid signature' }, { status: 401 });
+        return json({ error: 'Invalid signature' }, { status: 403 });
       }
 
       const event = req.headers.get('x-github-event') || 'unknown';
-      const payload = JSON.parse(body);
+
+      let payload: any;
+      try {
+        payload = JSON.parse(body);
+      } catch {
+        return json({ error: 'Malformed JSON' }, { status: 400 });
+      }
 
       storeGitHubEvent({
         eventType: event,
@@ -233,28 +259,24 @@ async function handleRequest(req: Request): Promise<Response> {
     // GET /api/tools/executions
     if (url.pathname === '/api/tools/executions' && method === 'GET') {
       const runId = url.searchParams.get('runId');
-      const db = getDb();
-      const traces = db.prepare(`
+      const traces = withDb(db => db.prepare(`
         SELECT * FROM tool_executions
         WHERE (? IS NULL OR run_id = ?)
         ORDER BY created_at DESC
         LIMIT 50
-      `).all(runId ?? null, runId ?? null);
-      db.close();
+      `).all(runId ?? null, runId ?? null));
       return json(traces);
     }
 
     // GET /api/security/findings
     if (url.pathname === '/api/security/findings' && method === 'GET') {
       const runId = url.searchParams.get('runId');
-      const db = getDb();
-      const findings = db.prepare(`
+      const findings = withDb(db => db.prepare(`
         SELECT * FROM security_findings
         WHERE (? IS NULL OR run_id = ?)
         ORDER BY created_at DESC
         LIMIT 50
-      `).all(runId ?? null, runId ?? null);
-      db.close();
+      `).all(runId ?? null, runId ?? null));
       return json(findings);
     }
 
@@ -281,11 +303,9 @@ async function handleRequest(req: Request): Promise<Response> {
       const { InterviewEngine } = await import('@/runtime/interview.js');
 
       // Load session from DB
-      const db      = (await import('@/db/migrate.js')).getDb();
-      const session = db.prepare(`
+      const session = withDb(db => db.prepare(`
         SELECT * FROM interview_sessions WHERE id = ?
-      `).get(params.sessionId!) as { run_id: string; turns: string } | undefined;
-      db.close();
+      `).get(params.sessionId!)) as { run_id: string; turns: string } | undefined;
 
       if (!session) return notFound(`Session ${params.sessionId} not found`);
 
@@ -299,20 +319,39 @@ async function handleRequest(req: Request): Promise<Response> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(chalk.red(`[API] Error: ${msg}`));
-    return serverError(msg);
+    return withCors(serverError(msg), req);
   }
+}
+
+/** Attach per-request CORS headers to a response, replacing any baseline. */
+function withCors(res: Response, req: Request): Response {
+  const headers = new Headers(res.headers);
+  // Drop any CORS headers a route may have set, then apply the allowlist.
+  headers.delete('Access-Control-Allow-Origin');
+  headers.delete('Access-Control-Allow-Credentials');
+  for (const [k, v] of Object.entries(corsHeaders(req))) headers.set(k, v);
+  return new Response(res.body, { status: res.status, headers });
+}
+
+// ── Boot safety ────────────────────────────────────────────────────────
+// Refuse to expose unauthenticated approval endpoints on a public interface.
+const bootProblem = checkBootSafety(HOSTNAME);
+if (bootProblem) {
+  console.error(chalk.red(`\n❌ Refusing to start: ${bootProblem}\n`));
+  process.exit(1);
 }
 
 // ── Bun server with WebSocket support ─────────────────────────────────
 const server = Bun.serve({
   port: PORT,
+  hostname: HOSTNAME,
   fetch(req, server) {
     // Upgrade WebSocket connections
     if (req.headers.get('upgrade') === 'websocket') {
       const success = server.upgrade(req);
       return success ? undefined : new Response('WebSocket upgrade failed', { status: 400 });
     }
-    return handleRequest(req);
+    return handleRequest(req).then(res => withCors(res, req));
   },
   websocket: {
     open(ws) {
@@ -338,6 +377,14 @@ const server = Bun.serve({
 console.log(chalk.bold.cyan(`\n🌐 AutoOrg API Server`));
 console.log(chalk.white(`   HTTP:      http://localhost:${PORT}/api`));
 console.log(chalk.white(`   WebSocket: ws://localhost:${PORT}/ws`));
+console.log(chalk.white(`   Bind:      ${HOSTNAME}:${PORT}`));
+if (process.env.AUTOORG_API_KEY) {
+  console.log(chalk.green('   Auth:      API key required for POST endpoints'));
+} else {
+  console.log(chalk.yellow('   Auth:      DISABLED (AUTOORG_API_KEY unset) — loopback only'));
+}
+const corsOrigins = (process.env.AUTOORG_CORS_ORIGINS ?? '').trim();
+console.log(chalk.gray(`   CORS:      ${corsOrigins || 'same-origin only'}`));
 console.log(chalk.gray(`   Press Ctrl+C to stop\n`));
 
 export { server };

@@ -11,15 +11,21 @@ import simpleGit, { type SimpleGit } from 'simple-git';
 import chalk from 'chalk';
 
 let gitInstance: SimpleGit | null = null;
+let gitInstanceCwd: string | null = null;
 
 function git(): SimpleGit {
-  if (!gitInstance) {
-    gitInstance = simpleGit(process.cwd(), {
+  // Re-resolve when the working directory changes: tests (and the approval
+  // materializer) may chdir into another repo after the first call, and a
+  // stale cached baseDir would commit into the wrong repository.
+  const cwd = process.cwd();
+  if (!gitInstance || gitInstanceCwd !== cwd) {
+    gitInstance = simpleGit(cwd, {
       config: [
         `user.name=${process.env.GIT_AUTHOR_NAME ?? 'AutoOrg'}`,
         `user.email=${process.env.GIT_AUTHOR_EMAIL ?? 'autoorg@localhost'}`,
       ],
     });
+    gitInstanceCwd = cwd;
   }
   return gitInstance;
 }

@@ -37,15 +37,27 @@ AutoOrg is a production-grade platform designed to manage complex, multi-cycle a
 
 ### 2. Setup
 ```bash
-# Clone and install
+# Clone and install (Bun 1.1+ required)
 bun install
+bun run setup:hooks        # optional: commit-msg + secret checks
 
-# Run database migrations
-bun run src/db/migrate.ts
+# Configure credentials
+cp .env.example .env       # then fill in the keys you have
 
-# Seed initial providers
+# Create the database (idempotent; re-running is a no-op)
+bun run db:migrate
+
+# Seed LLM providers from the environment
 bun run src/scripts/seed-providers.ts
+
+# Verify everything is wired up
+bun run typecheck && bun run test:ci
 ```
+
+Only one provider is required. Set `DEFAULT_LLM_PROVIDER` and the matching key
+(`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, or
+leave it on `ollama` for local inference). Keys may also be supplied as
+`AUTOORG_API_KEY_<PROVIDER>`.
 
 ### 3. Launch a Mission
 Create a mission file (e.g., `mission.md`) and launch the orchestrator:
@@ -72,7 +84,41 @@ AutoOrg utilizes a three-tier memory system and a hierarchical multi-agent loop:
 ---
 
 ## 🛡️ Security & Compliance
-All tool actions are governed by a **Policy Engine** that enforces role-based permissions (`repo.search`, `web.fetch`, `sandbox.exec`). Every artifact is signed and recorded in the **Action Ledger** for full deterministic auditability.
+All tool actions are governed by a **Policy Engine** that enforces role-based
+permissions (`repo.search`, `web.fetch`, `sandbox.exec`). Every artifact is
+signed and recorded in the **Action Ledger** for full deterministic
+auditability.
+
+**The API binds unauthenticated by default only on loopback.** The approval
+endpoints can commit code, so:
+
+```bash
+AUTOORG_API_KEY=<long-random-value>   # required for any non-loopback bind
+AUTOORG_CORS_ORIGINS=https://your.dashboard
+GITHUB_WEBHOOK_SECRET=<secret>        # webhooks reject unsigned payloads
+```
+
+The server **refuses to start** on a public interface without
+`AUTOORG_API_KEY`. CORS is an explicit allowlist — never `*`.
+
+### Development
+```bash
+bun run typecheck   # tsc --noEmit
+bun run test:ci     # unit tests
+bun run build       # bundle CLI + API
+bun run lint
+bun run security    # secrets, tracked build output, route-auth checks
+bun run api         # dashboard API on :3001
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the schema-change and testing
+conventions.
+
+## 📚 Documentation
+- `CONTRIBUTING.md` — setup, commit format, schema and test conventions
+- `docs/` — the GitHub Pages project site
+- `web/` — the Next.js dashboard (`cd web && bun install && bun run dev`,
+  proxying `/api` to the server on port 3001)
 
 ---
 

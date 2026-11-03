@@ -3,16 +3,26 @@ import OpenAI from 'openai';
 import { BaseAdapter } from '@/adapters/base-adapter.js';
 import { estimateCost } from '@/config/model-costs.js';
 import type { LLMProvider, LLMResponse, LLMRunOptions } from '@/types/index.js';
+import { providerApiKey, providerBaseUrl } from '@/config/env.js';
 
 export class OpenAIAdapter extends BaseAdapter {
   provider: LLMProvider = 'openai';
   private client: OpenAI;
 
-  constructor(apiKey?: string) {
+  constructor(apiKey?: string, baseUrl?: string) {
     super();
-    const key = apiKey ?? (process.env.AUTOORG_API_KEY_OPENAI || process.env.OPENAI_API_KEY);
-    if (!key) throw new Error('OpenAI API key is not set');
-    this.client = new OpenAI({ apiKey: key });
+    const key = providerApiKey('openai', apiKey);
+    if (!key) {
+      throw new Error(
+        'OpenAI API key is not set. Set OPENAI_API_KEY in .env (see .env.example).'
+      );
+    }
+    // OPENAI_BASE_URL lets this point at LM Studio / Together / any compatible API.
+    const resolvedBaseUrl = providerBaseUrl('openai', baseUrl);
+    this.client = new OpenAI({
+      apiKey: key,
+      ...(resolvedBaseUrl ? { baseURL: resolvedBaseUrl } : {}),
+    });
   }
 
   async run(opts: LLMRunOptions): Promise<LLMResponse> {

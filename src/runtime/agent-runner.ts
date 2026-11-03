@@ -14,8 +14,7 @@ import { getAdapter }                from '@/adapters/adapter-factory.js';
 import { featureFlag }                 from '@/config/feature-flags.js';
 import { gitCommit, gitPush, gitCheckout } from '@/utils/git.js';
 import { withLLMRetry }              from '@/utils/retry.js';
-import { parseStructuredOutput,
-         parseStructuredOutputLenient } from '@/utils/structured-output.js';
+import { parseStructuredOutput }     from '@/utils/structured-output.js';
 import { estimateTokens }            from '@/utils/token-counter.js';
 import { transcriptLogger }          from './transcript-logger.js';
 import { mailman }                   from './mailman.js';
@@ -211,19 +210,10 @@ export async function runCEOAssignment(
     synthesis_directive: z.string(),
   }));
 
-  // Fallback defaults if parsing fails
-  const defaultAssignments = {
-    cycle_assessment: `Cycle ${ctx.cycle}: Continuing improvement`,
-    assignments: {
-      Engineer:       { task: 'Improve and expand the main content', angle: 'Be more specific and grounded', avoid: 'Repetition of previous output', target_section: 'Main body' },
-      Critic:         { task: 'Find the most critical flaw in the current output', focus: 'Groundedness and specificity', previous_objections_to_verify: 'All outstanding objections' },
-      DevilsAdvocate: { task: 'Argue the current approach is wrong', challenge: 'Our core assumption about the mission' },
-      Archivist:      { task: 'Check for repeated failures', search_terms: ['failed', 'rejected', 'error'] },
-    },
-    synthesis_directive: 'Weight Critic and Engineer outputs equally',
-  };
-
-  const parsed = parseStructuredOutputLenient(output.content, AssignmentSchema, defaultAssignments);
+  // OWASP A04: parse failures are fatal — `parseStructuredOutput` throws
+  // and the error propagates to the orchestrator's cycle catch (reset +
+  // error cycle) instead of substituting a fabricated assignment.
+  const parsed = parseStructuredOutput(output.content, AssignmentSchema);
 
   return {
     output,
@@ -365,24 +355,8 @@ export async function runCritic(
     { temperature: 0.5 } // Lower temp for more consistent critiques
   );
 
-  // Parse structured critic output
-  const fallbackCriticData: CriticOutputData = {
-    steelman:                'The proposal represents a reasonable attempt at the mission.',
-    objections:              [{
-      id:          'obj_parse_error',
-      severity:    'MINOR',
-      description: 'Critic output could not be parsed — treating as minor issue',
-      evidence:    'Parse error',
-      fix:         'No action required',
-    }],
-    resolved_from_previous: [],
-    overall_verdict:        'NEEDS_WORK',
-    verdict_reason:         'Parsing failed — treating as needs work',
-  };
-
-  const parsedData = parseStructuredOutputLenient(
-    output.content, CriticOutputSchema, fallbackCriticData
-  );
+  // Parse structured critic output — throws on failure (fail closed).
+  const parsedData = parseStructuredOutput(output.content, CriticOutputSchema);
 
   return {
     ...output,
@@ -418,18 +392,7 @@ export async function runDevilsAdvocate(
     { temperature: 0.85 } // Higher temp for more creative contrarianism
   );
 
-  const fallbackAdvocate: AdvocateOutputData = {
-    contrarian_position:  'The current approach may be solving the wrong problem.',
-    unexplored_direction: 'Consider reframing the mission from a different stakeholder perspective.',
-    challenge_to_critic:  'The Critic focuses on details when the structure needs questioning.',
-    strongest_assumption: 'We assume the seed material represents the full problem space.',
-    recommended_pivot:    'Try a completely different organizational structure for the output.',
-    risk_of_consensus:    'The team is converging too quickly on a single framing.',
-  };
-
-  const parsedData = parseStructuredOutputLenient(
-    output.content, AdvocateOutputSchema, fallbackAdvocate
-  );
+  const parsedData = parseStructuredOutput(output.content, AdvocateOutputSchema);
 
   return { ...output, structuredData: parsedData };
 }
@@ -461,16 +424,7 @@ export async function runArchivist(
     { temperature: 0.3 } // Low temp — memory tasks need consistency
   );
 
-  const fallbackArchivist: ArchivistOutputData = {
-    memory_search_findings:      'No relevant history found.',
-    similar_past_cycles:         [],
-    validated_decisions_at_risk: [],
-    memory_update_recommendation: {},
-  };
-
-  const parsedData = parseStructuredOutputLenient(
-    output.content, ArchivistOutputSchema, fallbackArchivist
-  );
+  const parsedData = parseStructuredOutput(output.content, ArchivistOutputSchema);
 
   return { ...output, structuredData: parsedData };
 }

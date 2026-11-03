@@ -1,7 +1,7 @@
 {
   "name": "autoorg",
   "version": "0.1.0",
-  "description": "Autonomous Research Organization Engine — You write the mission. The agents run the company.",
+  "description": "Autonomous Research Organization Engine \u2014 You write the mission. The agents run the company.",
   "module": "src/index.ts",
   "type": "module",
   "scripts": {
@@ -21,7 +21,9 @@
     "run:org": "bun run src/index.ts --org org.md",
     "test": "bun test",
     "db:migrate": "bun run src/db/migrate.ts",
-    "clean": "bun run src/scripts/clean.ts"
+    "clean": "rm -rf dist test-results .ci autoorg.db autoorg.db-shm autoorg.db-wal",
+    "build": "bun build src/index.ts src/api/server.ts --target=bun --outdir=dist --external react-devtools-core",
+    "build:web": "cd web && bun run build"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
@@ -51,5 +53,8 @@
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
   }
 }

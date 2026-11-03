@@ -1,7 +1,13 @@
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 import { eventBus } from '../src/runtime/event-bus.js';
+import { useTestDb, cleanupTestDb } from './helpers/test-db.ts';
 
 describe('EventBus', () => {
+  // broadcast() persists to websocket_events — use a throwaway DB so the test
+  // does not create ./autoorg.db in the working tree.
+  beforeAll(async () => { await useTestDb('autoorg-eventbus-'); });
+  afterAll(() => cleanupTestDb());
+
   it('starts with zero clients', () => {
     expect(eventBus.clientCount).toBe(0);
   });

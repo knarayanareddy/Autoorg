@@ -42,8 +42,9 @@ export class SafetyReview {
       for (const finding of review.findings) {
         db.prepare(`
           INSERT INTO security_findings
-          (id, run_id, cycle_number, severity, category, action_id, tool_execution_id, summary, details_json, status)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open')
+          (id, run_id, cycle_number, severity, category, action_id, tool_execution_id,
+           summary, description, details_json, status)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open')
         `).run(
           `sf_${nanoid(10)}`,
           this.runId,
@@ -53,6 +54,8 @@ export class SafetyReview {
           opts.actionId ?? null,
           opts.toolExecutionId ?? null,
           finding.summary,
+          // `description` is NOT NULL in the schema; the reason is the detail.
+          finding.reason ?? finding.summary,
           JSON.stringify({ reason: finding.reason, safeAlternative: review.safe_alternative }),
         );
       }

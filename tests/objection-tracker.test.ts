@@ -1,34 +1,21 @@
-import { describe, it, expect, beforeAll } from 'bun:test';
+import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 import { ObjectionTracker }  from '../src/runtime/objection-tracker.js';
+import { useTestDb, cleanupTestDb, testRunId } from './helpers/test-db.ts';
 
-// Use a test run ID so we don't pollute real data
-const TEST_RUN_ID = `test_run_${Date.now()}`;
+// Isolated run id so rows never collide between test files
+const TEST_RUN_ID = testRunId('objections');
 
 describe('ObjectionTracker', () => {
   let tracker: ObjectionTracker;
 
   beforeAll(async () => {
-    // Run Phase 0 + Phase 2 migrations first
-    const { getDb } = await import('../src/db/migrate.js');
-    const db = getDb();
-    
-    // Ensure objections table exists
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS objections (
-        id TEXT PRIMARY KEY, run_id TEXT NOT NULL,
-        cycle_raised INTEGER NOT NULL, cycle_resolved INTEGER,
-        severity TEXT NOT NULL, description TEXT NOT NULL,
-        proposed_fix TEXT NOT NULL, evidence TEXT,
-        resolved INTEGER NOT NULL DEFAULT 0, resolution_note TEXT,
-        raised_by TEXT NOT NULL DEFAULT 'Critic',
-        embedding BLOB, created_at DATETIME DEFAULT (datetime('now')),
-        updated_at DATETIME DEFAULT (datetime('now'))
-      )
-    `);
-    db.close();
-    
+    // Use the REAL migration — never a hand-rolled CREATE TABLE, which is
+    // what previously masked the missing `objections` table.
+    await useTestDb('autoorg-objections-');
     tracker = new ObjectionTracker(TEST_RUN_ID);
   });
+
+  afterAll(() => cleanupTestDb());
 
   it('starts with no objections', () => {
     const stats = tracker.getStats();

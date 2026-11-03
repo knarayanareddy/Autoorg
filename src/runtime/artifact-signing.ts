@@ -7,11 +7,30 @@ function sha256(buf: Buffer): string {
   return createHash('sha256').update(buf).digest('hex');
 }
 
+/**
+ * OWASP A08: a missing signing key used to fall back to the literal
+ * `'internal-default-secret'`, so anyone who read the source could forge a
+ * valid signature for any artifact. There is no default anymore — a missing or
+ * empty `AUTOORG_SIGNING_SECRET` is a hard failure.
+ */
+function signingSecret(): string {
+  const secret = process.env.AUTOORG_SIGNING_SECRET;
+  if (!secret) {
+    throw new Error(
+      'AUTOORG_SIGNING_SECRET is not set. Refusing to sign or verify artifacts ' +
+      'without a key — generate one (e.g. `openssl rand -hex 32`) before starting AutoOrg.'
+    );
+  }
+  return secret;
+}
+
+/** Startup guard: fail hard when the signing key is missing or empty. */
+export function assertSigningConfigured(): void {
+  signingSecret();
+}
+
 function signDigest(digest: string): string {
-  // In a real system, use private keys. 
-  // For this implementation, we use a HMAC or simplified signing mock based on env secret.
-  const secret = process.env.AUTOORG_SIGNING_SECRET ?? 'internal-default-secret';
-  return createHash('sha256').update(digest + secret).digest('hex');
+  return createHash('sha256').update(digest + signingSecret()).digest('hex');
 }
 
 export class ArtifactSigner {

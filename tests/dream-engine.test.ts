@@ -1,15 +1,24 @@
-import { describe, it, expect, beforeAll } from 'bun:test';
+import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 import { DreamEngine, shouldTriggerDream } from '../src/runtime/dream.js';
 import { FactStore }     from '../src/memory/fact-store.js';
 import { getDb }         from '../src/db/migrate.js';
+import { invalidateFlagCache } from '../src/config/feature-flags.js';
+import { useTestDb, cleanupTestDb } from './helpers/test-db.ts';
 
 const TEST_RUN = `dream_test_${Date.now()}`;
 
 describe('shouldTriggerDream', () => {
+  // `shouldTriggerDream` reads feature flags, so a database must exist and the
+  // 60s flag cache must be primed — otherwise every flag reads false and the
+  // plateau / memory-critical triggers silently never fire.
   beforeAll(async () => {
+    await useTestDb('autoorg-dreamtrigger-');
+    invalidateFlagCache();
     const { loadFeatureFlags } = await import('../src/config/feature-flags.js');
     await loadFeatureFlags();
   });
+
+  afterAll(() => cleanupTestDb());
 
   it('triggers on interval', () => {
     const { shouldDream, trigger } = shouldTriggerDream(10, 10, 0, 10, { critical: [] }, null);
@@ -49,15 +58,12 @@ describe('FactStore', () => {
   let store: FactStore;
 
   beforeAll(async () => {
-    // Standardize database for tests — must be set before classes are instantiated
-    const testDbPath = `/tmp/autoorg-dream-test-${Date.now()}.db`;
-    process.env.AUTOORG_DB_PATH = testDbPath;
-    
-    const { migrate } = await import('../src/db/migrate.js');
-    await migrate();
-    
+    // Throwaway DB built by the real migration — no hand-rolled DDL.
+    await useTestDb('autoorg-dream-');
     store = new FactStore(TEST_RUN);
   });
+
+  afterAll(() => cleanupTestDb());
 
   it('adds a fact and retrieves it', async () => {
     const fact = await store.addFact({

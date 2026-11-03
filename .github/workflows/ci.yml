@@ -6,19 +6,80 @@ on:
   pull_request:
     branches: [main]
 
+# Previously this workflow only ran `bun install` and then a step that grepped
+# package.json for a "build" script (which did not exist), so it could never
+# fail. typecheck, tests, migrations and the security gate all existed as npm
+# scripts but were never invoked — which is how a schema/code drift that crashed
+# the first cycle reached main.
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AUTOORG_DB_PATH: ${{ github.workspace }}/.ci/autoorg.db
+
 jobs:
-  build:
+  verify:
+    name: Verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-      - run: bun install
-      - name: Build (skipped when no build script)
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Migrate a fresh database
         run: |
-          if [ -f package.json ] && grep -q '"build"' package.json; then
-            bun run build
-          else
-            echo "no build script; install-only check"
-          fi
+          mkdir -p .ci
+          bun run db:migrate
+
+      - name: Migrate is idempotent
+        run: |
+          bun run db:migrate
+          bun run db:migrate --verify
+
+      - name: Unit tests
+        run: bun run test:ci
+
+      - name: Build
+        run: bun run build
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Security scan
+        run: bun run security
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-report
+          path: test-results/junit.xml
+          if-no-files-found: ignore
+
+  web:
+    name: Dashboard build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dashboard dependencies
+        working-directory: web
+        run: bun install --frozen-lockfile
+
+      - name: Build dashboard
+        working-directory: web
+        run: bun run build

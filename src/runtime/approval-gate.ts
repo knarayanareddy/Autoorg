@@ -34,24 +34,40 @@ export class ApprovalGate {
     return id;
   }
 
-  approve(id: string, decidedBy: string = 'human') {
+  /**
+   * Returns true when a row was actually decided. Unknown IDs change
+   * nothing and return false, so API callers can 404 instead of claiming
+   * `{ok:true}` for IDs that never existed (OWASP A04/A01).
+   */
+  approve(id: string, decidedBy: string = 'human'): boolean {
     const db = getDb();
-    db.prepare(`
+    const result = db.prepare(`
       UPDATE approvals
       SET status='approved', decided_at=datetime('now'), decided_by=?
       WHERE id=?
     `).run(decidedBy, id);
     db.close();
+    return result.changes > 0;
   }
 
-  reject(id: string, decidedBy: string = 'human') {
+  reject(id: string, decidedBy: string = 'human'): boolean {
     const db = getDb();
-    db.prepare(`
+    const result = db.prepare(`
       UPDATE approvals
       SET status='rejected', decided_at=datetime('now'), decided_by=?
       WHERE id=?
     `).run(decidedBy, id);
     db.close();
+    return result.changes > 0;
+  }
+
+  findById(id: string) {
+    const db = getDb();
+    const row = db.prepare(`SELECT * FROM approvals WHERE id=?`).get(id) as
+      | Record<string, unknown>
+      | undefined;
+    db.close();
+    return row;
   }
 
   isApproved(id: string): boolean {

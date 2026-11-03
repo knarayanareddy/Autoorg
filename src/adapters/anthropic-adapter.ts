@@ -3,16 +3,27 @@ import Anthropic from '@anthropic-ai/sdk';
 import { BaseAdapter } from '@/adapters/base-adapter.js';
 import { estimateCost } from '@/config/model-costs.js';
 import type { LLMProvider, LLMResponse, LLMRunOptions } from '@/types/index.js';
+import { providerApiKey, providerBaseUrl } from '@/config/env.js';
 
 export class AnthropicAdapter extends BaseAdapter {
   provider: LLMProvider = 'anthropic';
   private client: Anthropic;
 
-  constructor(apiKey?: string) {
+  constructor(apiKey?: string, baseUrl?: string) {
     super();
-    const key = apiKey ?? process.env.AUTOORG_API_KEY_ANTHROPIC;
-    if (!key) throw new Error('Anthropic API key is not set');
-    this.client = new Anthropic({ apiKey: key });
+    // Accepts ANTHROPIC_API_KEY (documented) and AUTOORG_API_KEY_ANTHROPIC (legacy).
+    const key = providerApiKey('anthropic', apiKey);
+    if (!key) {
+      throw new Error(
+        'Anthropic API key is not set. Set ANTHROPIC_API_KEY in .env ' +
+        '(see .env.example), or choose another provider with DEFAULT_LLM_PROVIDER.'
+      );
+    }
+    const resolvedBaseUrl = providerBaseUrl('anthropic', baseUrl);
+    this.client = new Anthropic({
+      apiKey: key,
+      ...(resolvedBaseUrl ? { baseURL: resolvedBaseUrl } : {}),
+    });
   }
 
   async run(opts: LLMRunOptions): Promise<LLMResponse> {

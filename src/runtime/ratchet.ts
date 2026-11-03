@@ -6,11 +6,12 @@
  */
 
 import chalk            from 'chalk';
-import { gitCommit, gitReset } from '@/utils/git.js';
+import { gitReset } from '@/utils/git.js';
 import { logCycleResult }      from '@/utils/results-logger.js';
 import { getDb }               from '@/db/migrate.js';
 import { transcriptLogger }    from './transcript-logger.js';
 import { memoryManager }       from './memory-manager.js';
+import { ApprovalEnforcer }    from './approval-enforcer.js';
 import type {
   RatchetScore, RatchetDecision, CycleState, OrgConfig,
 } from '@/types/index.js';
@@ -128,32 +129,47 @@ export class RatchetEngine {
         `A:${score.alignment.toFixed(2)}]`,
       ].join(' ');
 
-      const commitHash = await gitCommit(commitMessage);
+      // OWASP A01: the strict-approval path used to be dead code. Every
+      // candidate now goes through the ApprovalEnforcer — snapshot + patch +
+      // approval request, tree pulled back to HEAD — and lands only when a
+      // human approves it. The LLM score alone can no longer commit anything.
+      const enforcer = new ApprovalEnforcer(cycleState.runId);
+      const staged = await enforcer.stageCommitCandidate({
+        cycleNumber: cycleState.cycleNumber,
+        score,
+        summary: score.justification,
+        commitMessage,
+      });
 
       console.log(
-        chalk.bold.green(`\n  ✅ COMMIT`) +
-        chalk.white(` — New best: ${score.composite.toFixed(4)}`) +
-        chalk.green(` (+${(score.composite - previousBestScore).toFixed(4)})`) +
-        chalk.gray(` [${commitHash}]`)
+        chalk.bold.yellow(`\n  ⏳ PENDING APPROVAL`) +
+        chalk.white(` — Score: ${score.composite.toFixed(4)}`) +
+        chalk.yellow(` (staged, not landed)`) +
+        chalk.gray(` [${staged.actionId}]`)
       );
 
       db.prepare(`
         UPDATE cycles
-        SET decision='COMMIT', git_commit_hash=?, decision_reason=?,
+        SET decision='PENDING_APPROVAL', decision_reason=?,
             score_groundedness=?, score_novelty=?,
             score_consistency=?, score_alignment=?, score_composite=?
         WHERE id=?
       `).run(
-        commitHash, score.justification,
+        score.justification,
         score.groundedness, score.novelty,
         score.consistency, score.alignment, score.composite,
         cycleState.id
       );
 
-      await logCycleResult(cycleState.cycleNumber, score, cycleState.totalCostUsd, score.justification);
+      await logCycleResult(
+        cycleState.cycleNumber,
+        { ...score, decision: 'PENDING_APPROVAL' },
+        cycleState.totalCostUsd,
+        score.justification
+      );
 
       db.close();
-      return { decision: 'COMMIT', newBest: score.composite, commitHash };
+      return { decision: 'PENDING_APPROVAL', newBest: previousBestScore };
 
     } else {
       await gitReset();

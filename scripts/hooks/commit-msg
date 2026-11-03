@@ -2,13 +2,23 @@
 
 MSG=$(cat "$1")
 
-PATTERN="^(feat|fix|chore|docs|test|refactor|perf|ci|build|style|revert)(\(.+\))?: .{5,}"
+HUMAN_PATTERN="^(feat|fix|chore|docs|test|refactor|perf|ci|build|style|revert)(\(.+\))?: .{5,}"
 
-if ! echo "$MSG" | grep -qE "$PATTERN"; then
-  echo "❌ Commit message doesn't match convention:"
-  echo "   type(scope): message"
-  echo "   e.g. feat(api): add health check"
-  exit 1
+# AutoOrg's own ratchet commits are machine-generated audit records and must
+# NOT follow the human convention — the run loop (and, since strict approval
+# gating, the approve endpoint's materialization) commits with this exact
+# shape: "autoorg-cycle-N: score=0.9123 (prev=0.8400) [G:… N:… C:… A:…]".
+# Accepting only this one machine shape keeps humans on the convention while
+# keeping the audit prefix greppable in `git log`.
+MACHINE_PATTERN="^autoorg-cycle-[0-9]+: score=[0-9]+\.[0-9]{4} "
+
+if echo "$MSG" | grep -qE "$HUMAN_PATTERN" || echo "$MSG" | grep -qE "$MACHINE_PATTERN"; then
+  echo "✅ Commit message ok"
+  exit 0
 fi
 
-echo "✅ Commit message ok"
+echo "❌ Commit message doesn't match convention:"
+echo "   type(scope): message"
+echo "   e.g. feat(api): add health check"
+echo "   (AutoOrg ratchet commits: autoorg-cycle-N: score=…)"
+exit 1

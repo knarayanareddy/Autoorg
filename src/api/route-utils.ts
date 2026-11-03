@@ -1,7 +1,14 @@
+/**
+ * Baseline response headers.
+ *
+ * NOTE: no `Access-Control-Allow-Origin` here. CORS is decided per request by
+ * `corsHeaders()` in `./auth.ts` from the `AUTOORG_CORS_ORIGINS` allowlist. A
+ * hardcoded `*` combined with unauthenticated POST endpoints let any origin
+ * approve staged commits.
+ */
 export const CORS = {
-  'Access-Control-Allow-Origin':  '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, x-hub-signature-256, x-github-event, x-github-delivery',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key, x-hub-signature-256, x-github-event, x-github-delivery',
   'Content-Type':                 'application/json',
 };
 
