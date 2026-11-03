@@ -13,3 +13,13 @@ describe('dashboard API authentication', () => {
     }
   });
 });
+
+describe('dashboard framework baseline', () => {
+  it('uses the upgraded Next and React majors', async () => {
+    const { readFileSync } = await import('node:fs');
+    const pkg = JSON.parse(readFileSync('web/package.json', 'utf8'));
+    expect(Number(pkg.dependencies.next.match(/\d+/)[0])).toBeGreaterThanOrEqual(16);
+    expect(Number(pkg.dependencies.react.match(/\d+/)[0])).toBeGreaterThanOrEqual(19);
+    expect(Number(pkg.dependencies['react-dom'].match(/\d+/)[0])).toBeGreaterThanOrEqual(19);
+  });
+});
