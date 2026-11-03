@@ -264,6 +264,11 @@ export async function* orchestratorLoop(
       else currentModelAssignments[role].model = model;
     }
 
+    // A human may have approved (and materialized) a staged candidate since
+    // the last cycle — refresh from results.tsv so this cycle compares
+    // against what has actually landed, not a stale run-local value.
+    runState.bestScore = Math.max(runState.bestScore, await getBestScore());
+
     const previousBest = runState.bestScore;
     const cycleStartEvt: OrchestratorEvent = { type: 'cycle_start', cycleNumber, previousBest };
     yield cycleStartEvt;
@@ -373,6 +378,18 @@ export async function* orchestratorLoop(
         };
         yield committedEvt;
         eventBus.broadcast(committedEvt);
+
+      } else if (ratchetResult.decision === 'PENDING_APPROVAL') {
+        // Staged for a human (A01): the candidate has NOT landed, so the
+        // best score stays untouched — and it is NOT a failed experiment,
+        // so neither the plateau nor the reject counters may move.
+        await transcriptLogger.logOrchestrator(
+          cycleNumber, 'awaiting_approval',
+          `Cycle ${cycleNumber} scored ${score.composite.toFixed(4)} and was staged for human approval.`
+        );
+        console.log(
+          chalk.bold.yellow(`  ⏳ Candidate staged — awaiting human approval (nothing committed)`)
+        );
 
       } else {
         runState.plateauCount++;

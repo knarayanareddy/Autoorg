@@ -30,6 +30,9 @@ coverage/
 daemon-test.log
 *.log
 
+# ── Approval staging (snapshots + review patches, never committed) ───
+artifacts/approvals/
+
 # ── Errors from a literal "~" bun cache path (see bunfig.toml) ──────
 ~/
 

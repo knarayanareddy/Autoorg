@@ -42,6 +42,7 @@ import { handlePivotRoutes } from './pivot-routes.js';
 import { handleSwarmRoutes } from './swarm-routes.js';
 import { handlePlatformRoutes } from './platform-routes.js';
 import { handleLearningRoutes } from './learning-routes.js';
+import { handleApprovalDecision } from './approval-routes.js';
 import { authenticate, corsHeaders, checkBootSafety } from './auth.js';
 
 dotenvLoad();
@@ -203,20 +204,19 @@ async function handleRequest(req: Request): Promise<Response> {
       return json(gate.getPending(url.searchParams.get('runId') ?? undefined));
     }
 
-    // POST /api/approvals/:id/approve
+    // POST /api/approvals/:id/approve — 404 on unknown IDs (A01/A04),
+    // materializes staged candidates on success.
     params = matchRoute(url, method, '/api/approvals/:id/approve', 'POST');
     if (params) {
-      const gate = new ApprovalGate();
-      gate.approve(params.id!, 'human_api');
-      return json({ ok: true, id: params.id, status: 'approved' });
+      const result = await handleApprovalDecision({ id: params.id!, action: 'approve' });
+      return json(result.body, { status: result.status });
     }
 
-    // POST /api/approvals/:id/reject
+    // POST /api/approvals/:id/reject — 404 on unknown IDs (A01/A04)
     params = matchRoute(url, method, '/api/approvals/:id/reject', 'POST');
     if (params) {
-      const gate = new ApprovalGate();
-      gate.reject(params.id!, 'human_api');
-      return json({ ok: true, id: params.id, status: 'rejected' });
+      const result = await handleApprovalDecision({ id: params.id!, action: 'reject' });
+      return json(result.body, { status: result.status });
     }
 
     // POST /api/webhooks/github
