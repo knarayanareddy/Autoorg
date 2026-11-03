@@ -42,6 +42,7 @@ const ALLOWLIST = new Set([
   'tests/api-auth.test.ts',
   'tests/git-hooks.test.ts', // seeds a fake key to prove the pre-commit hook catches it
   'tests/transcript-redaction.test.ts', // fake sk-ant/ghp fixtures for sink-redaction assertions
+  'tests/repo-search.test.ts', // fake sk-ant/ghp fixtures for connector-redaction assertions
   'scripts/ci/security-scan.ts',
 ]);
 

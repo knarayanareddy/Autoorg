@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { RedactionFilter } from '@/runtime/redaction.js';
 
 export interface RepoSearchHit {
   file: string;
@@ -29,7 +30,10 @@ export async function repoSearchConnector(query: string, cwd: string = process.c
           return {
             file: line.slice(0, first),
             line: Number(line.slice(first + 1, second)),
-            text: line.slice(second + 1),
+            // Ripgrep returns raw file content: any credential in a working
+            // file (not hidden by .gitignore) would land verbatim in agent
+            // context. Redact at the connector so every caller is safe.
+            text: RedactionFilter.redactOnly(line.slice(second + 1)).text,
           };
         })
         .filter(Boolean);
