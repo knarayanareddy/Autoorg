@@ -3,13 +3,32 @@ set -e
 
 echo "🔍 Running pre-commit checks..."
 
-# Typecheck
-/Users/macbookprom1pro/.bun/bin/bun run scripts/ci/typecheck.ts --project tsconfig.json
+# 1. Secrets in STAGED files.
+#
+# Deliberately uses output presence, not exit codes: GNU `xargs` reports 123
+# when the command exits 1-125, so a `grep` that found NOTHING made the old
+# `if xargs grep …` condition true and every clean commit was rejected as a
+# "secret" on Linux. `|| true` + non-empty output is portable across GNU/BSD.
+STAGED_FILES="$(git diff --cached --name-only)"
+if [ -n "$STAGED_FILES" ]; then
+  SECRET_HITS="$(printf '%s\n' "$STAGED_FILES" | xargs grep -lE "(sk-[A-Za-z0-9_\-]{20,}|sk-ant-|gh[pousr]_)" 2>/dev/null || true)"
+  if [ -n "$SECRET_HITS" ]; then
+    echo "❌ Potential secret in staged files. Aborting."
+    echo "$SECRET_HITS"
+    exit 1
+  fi
+fi
 
-# Check for secrets in staged files
-if git diff --cached --name-only | xargs grep -lE "(sk-[A-Za-z0-9_\-]{20,}|sk-ant-|gh[pousr]_)" 2>/dev/null; then
-  echo "❌ Potential secret in staged files. Aborting."
+# 2. Typecheck — `bun` must be on PATH. Never a machine-specific absolute
+# path: the old hook hardcoded a bun binary under one developer's home
+# directory, which failed (exit 127) for everyone else and blocked every
+# commit.
+BUN_BIN="$(command -v bun || true)"
+if [ -z "$BUN_BIN" ]; then
+  echo "❌ bun not found on PATH — pre-commit cannot run the typecheck."
+  echo "   Install Bun (https://bun.sh) and retry."
   exit 1
 fi
+"$BUN_BIN" run scripts/ci/typecheck.ts --project tsconfig.json
 
 echo "✅ Pre-commit checks passed"

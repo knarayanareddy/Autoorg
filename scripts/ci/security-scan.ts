@@ -40,6 +40,7 @@ const ALLOWLIST = new Set([
   'src/api/auth.ts',
   'tests/redaction.test.ts',
   'tests/api-auth.test.ts',
+  'tests/git-hooks.test.ts', // seeds a fake key to prove the pre-commit hook catches it
   'scripts/ci/security-scan.ts',
 ]);
 
