@@ -141,19 +141,23 @@ on restart and is not shared between processes.
 
 By default, new transcript entries retain operational metadata but omit prompt,
 response and arbitrary metadata content. Stored cycle contexts and agent output
-are also withheld by default; post-run interviews lose that historical context. Legacy transcript retrieval and
-indexing are disabled in this mode. Repository search returns counts and line
+are also withheld by default; post-run interviews lose that historical context.
+Tool trace inputs, outputs, artifact snippets and stored evidence are withheld
+too, although evidence still reaches the active agent in memory. Legacy
+transcript retrieval and indexing are disabled in this mode. Repository search returns counts and line
 numbers but withholds queries, paths and snippets. This deliberately sacrifices
 search usefulness to avoid relying on secret-pattern detection.
 
 For trusted workspaces, `AUTOORG_TRANSCRIPT_CONTENT=1` enables transcript
 content and retrieval, and `AUTOORG_REPO_SEARCH_CONTENT=1` enables search paths
-and snippets. Redaction then covers known configured credentials and common
+and snippets; transcript opt-in also enables stored tool and evidence content.
+Redaction then covers known configured credentials and common
 patterns, but **cannot recognize every possible secret**, including arbitrary
 unknown values and fragments of multiline keys. Only enable these options after
 reviewing data and protecting access to the workspace, database and backups.
 Other application data can also contain sensitive content. Rotate exposed keys;
 redaction is not a substitute for rotation.
+
 ### Run budgets
 
 `MAX_API_SPEND_USD` is checked immediately before every LLM attempt in the
@@ -199,14 +203,16 @@ The apply step replaces every JSONL transcript's contents with metadata-only
 records (including hashed legacy run IDs), deletes transcript search-index
 entries and embeddings, rebuilds the FTS index, clears stored agent prompt
 contexts, outputs and old reversible prompt hashes, and removes credential
-fields from saved run configs. It checkpoints the WAL and vacuums the database. It
+fields from saved run configs. It also clears tool trace payloads, tool
+artifacts, evidence snippets, and tool-ledger payloads (retaining trace IDs
+and ledger hashes). It checkpoints the WAL and vacuums the database. It
 cannot sanitize unknown secrets in unrelated tables, files, logs or backups.
 It validates files first and can be rerun, but database and file updates are not
 one atomic transaction: if interrupted, rerun while offline. Malformed files
 and symlinks cause it to stop for manual review. Make a protected backup before
 applying, then securely retire old backups and snapshots where appropriate.
-Storage snapshots and flash media may retain old blocks; rotate previously
-exposed credentials even after cleanup. The command warns when no database is
+Storage snapshots, Git history and flash media may retain old data; rotate
+previously exposed credentials even after cleanup. The command warns when no database is
 found; run it for every database and memory directory in use.
 
 ### Provider credentials at rest

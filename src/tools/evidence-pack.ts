@@ -1,5 +1,7 @@
 import { nanoid } from 'nanoid';
 import { getDb } from '@/db/migrate.js';
+import { transcriptContentEnabled, OMITTED_TRANSCRIPT_CONTENT } from '@/runtime/transcript-privacy.js';
+import { sanitizeRunConfig } from '@/runtime/run-config.js';
 import type { ToolResult } from './registry.js';
 
 export interface EvidenceItem {
@@ -52,7 +54,8 @@ export class EvidencePack {
 
     const tx = db.transaction(() => {
         for (const item of this.items) {
-            stmt.run(`ei_${nanoid(8)}`, packId, item.executionId, item.sourceUri ?? null, item.title ?? null, item.excerpt, item.confidence);
+            const safe = transcriptContentEnabled() ? sanitizeRunConfig(item) : { ...item, sourceUri: undefined, title: undefined, excerpt: OMITTED_TRANSCRIPT_CONTENT };
+            stmt.run(`ei_${nanoid(8)}`, packId, safe.executionId, safe.sourceUri ?? null, safe.title ?? null, safe.excerpt, safe.confidence);
         }
     });
     tx();

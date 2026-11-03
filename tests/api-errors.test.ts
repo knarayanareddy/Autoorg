@@ -23,3 +23,15 @@ describe('API error handling', () => {
     expect(await parseJsonBody(request)).toEqual({ ok: true });
   });
 });
+
+it('masks stored tool traces in privacy mode', async () => {
+  const { sanitizeToolTrace } = await import('../src/api/route-utils.ts');
+  const old = process.env.AUTOORG_TRANSCRIPT_CONTENT;
+  delete process.env.AUTOORG_TRANSCRIPT_CONTENT;
+  try {
+    const secret = 'unknown-private-tool-input';
+    const safe = sanitizeToolTrace({ id: '1', input_json: secret, output_json: secret, output_summary: secret, error_text: secret });
+    expect(JSON.stringify(safe)).not.toContain(secret);
+    expect(safe.id).toBe('1');
+  } finally { if (old === undefined) delete process.env.AUTOORG_TRANSCRIPT_CONTENT; else process.env.AUTOORG_TRANSCRIPT_CONTENT = old; }
+});

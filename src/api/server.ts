@@ -29,7 +29,7 @@ import {
   getDashboardSummary, getFeatureFlags,
   getKnowledgeGraph,
 } from '@/db/queries.js';
-import { registerRoute, matchRoute, json, notFound, serverError, HttpError, parseJsonBody, MAX_BODY_BYTES, checkContentLength } from './route-utils.js';
+import { registerRoute, matchRoute, json, notFound, serverError, HttpError, parseJsonBody, MAX_BODY_BYTES, checkContentLength, sanitizeToolTrace } from './route-utils.js';
 import { getDb, withDb } from '@/db/migrate.js';
 import { ApprovalGate } from '@/runtime/approval-gate.js';
 import { ServiceState } from '@/runtime/service-state.js';
@@ -275,8 +275,8 @@ async function handleRequest(req: Request, peer: string): Promise<Response> {
         WHERE (? IS NULL OR run_id = ?)
         ORDER BY created_at DESC
         LIMIT 50
-      `).all(runId ?? null, runId ?? null));
-      return json(traces);
+      `).all(runId ?? null, runId ?? null) as Array<Record<string, unknown>>);
+      return json(traces.map(sanitizeToolTrace));
     }
 
     // GET /api/security/findings

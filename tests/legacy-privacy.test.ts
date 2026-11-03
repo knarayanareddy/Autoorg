@@ -17,6 +17,14 @@ describe('legacy privacy cleanup', () => {
     db.run('CREATE TABLE transcript_index (id TEXT PRIMARY KEY, content TEXT NOT NULL)');
     db.run('CREATE TABLE cycle_context (system_prompt TEXT, user_message TEXT, response TEXT)');
     db.run('CREATE TABLE agent_executions (system_prompt_hash TEXT, output_text TEXT)');
+    db.run('CREATE TABLE tool_executions (input_json TEXT, output_json TEXT, output_summary TEXT, error_text TEXT)');
+    db.run('CREATE TABLE tool_artifacts (source_uri TEXT, title TEXT, excerpt TEXT, metadata_json TEXT)');
+    db.run('CREATE TABLE evidence_items (source_uri TEXT, title TEXT, excerpt TEXT)');
+    db.run('CREATE TABLE action_ledger (target_kind TEXT, input_json TEXT, output_json TEXT, compensation_action_json TEXT, policy_snapshot_json TEXT)');
+    db.query('INSERT INTO tool_executions VALUES (?, ?, ?, ?)').run(secret, secret, secret, secret);
+    db.query('INSERT INTO tool_artifacts VALUES (?, ?, ?, ?)').run(secret, secret, secret, secret);
+    db.query('INSERT INTO evidence_items VALUES (?, ?, ?)').run(secret, secret, secret);
+    db.query('INSERT INTO action_ledger VALUES (?, ?, ?, ?, ?)').run('tool', secret, secret, secret, secret);
     db.query('INSERT INTO cycle_context VALUES (?, ?, ?)').run(secret, secret, secret);
     db.query('INSERT INTO agent_executions VALUES (?, ?)').run(Buffer.from(secret).toString('base64'), secret);
     db.run("CREATE VIRTUAL TABLE transcript_fts USING fts5(content, content='transcript_index', content_rowid='rowid')");
@@ -31,6 +39,9 @@ describe('legacy privacy cleanup', () => {
       expect(JSON.parse(readFileSync(file, 'utf8')).content).toBe('[CONTENT OMITTED]');
       expect((db.query('SELECT count(*) AS n FROM transcript_index').get() as any).n).toBe(0);
       expect(JSON.stringify(db.query('SELECT config_json FROM runs').get())).not.toContain(secret);
+      for (const table of ['tool_executions', 'tool_artifacts', 'evidence_items', 'action_ledger']) {
+        expect(JSON.stringify(db.query(`SELECT * FROM ${table}`).get())).not.toContain(secret);
+      }
       expect(JSON.stringify(db.query('SELECT * FROM cycle_context').get())).not.toContain(secret);
       expect(JSON.stringify(db.query('SELECT * FROM agent_executions').get())).not.toContain(secret);
       expect(JSON.stringify(db.query('SELECT * FROM agent_executions').get())).not.toContain(Buffer.from(secret).toString('base64'));

@@ -1,4 +1,5 @@
 import { nanoid } from 'nanoid';
+import { createHash } from 'node:crypto';
 import { getDb } from '@/db/migrate.js';
 import { toolRegistry, type ToolExecutionContext } from './registry.js';
 import { ToolPolicy }        from './tool-policy.js';
@@ -8,6 +9,8 @@ import { ActionLedger }      from '@/runtime/action-ledger.js';
 import { SafetyReview }      from '@/runtime/safety-review.js';
 import { featureFlag }        from '@/config/feature-flags.js';
 import { assertConstitutionSafeTool } from '@/runtime/constitution-lock.js';
+import { transcriptContentEnabled, OMITTED_TRANSCRIPT_CONTENT } from '@/runtime/transcript-privacy.js';
+import { sanitizeRunConfig } from '@/runtime/run-config.js';
 
 export class ToolRunner {
   private policy: ToolPolicy;
@@ -44,6 +47,8 @@ export class ToolRunner {
     input = parsedInput.data;
 
     if (featureFlag('constitutionLock')) assertConstitutionSafeTool(toolName);
+    const savedInput = transcriptContentEnabled() ? sanitizeRunConfig(input) : { omitted: true };
+    const inputHash = createHash('sha256').update(JSON.stringify(input)).digest('hex');
 
     // 0. Role → tool permission.
     //
@@ -64,7 +69,8 @@ export class ToolRunner {
           targetRef: toolName,
           riskTier: 'high',
           summary: `Denied: ${decision.reason}`,
-          input,
+          input: savedInput,
+          inputHash,
           reversible: true,
           policySnapshot: null,
         });
@@ -100,7 +106,8 @@ export class ToolRunner {
         targetRef: toolName,
         riskTier: decision.riskTier,
         summary: `Executing ${toolName}`,
-        input,
+        input: savedInput,
+        inputHash,
         reversible: true, // simplified
         policySnapshot: decision
       });
@@ -139,8 +146,8 @@ export class ToolRunner {
     const db = getDb();
     db.prepare(`
         INSERT INTO tool_executions (id, run_id, cycle_number, task_id, team_id, role, tool_name, capability_class, status, input_json, started_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, datetime('now'))
-    `).run(executionId, ctx.runId, ctx.cycleNumber, ctx.taskId ?? null, ctx.teamId ?? null, ctx.role, tool.name, tool.capabilityClass, JSON.stringify(input));
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, datetime('now'))
+    `).run(executionId, ctx.runId, ctx.cycleNumber, ctx.taskId ?? null, ctx.teamId ?? null, ctx.role, tool.name, tool.capabilityClass, JSON.stringify(savedInput));
     db.close();
 
     const start = Date.now();
@@ -149,12 +156,16 @@ export class ToolRunner {
       const duration = Date.now() - start;
 
       this.recordSuccess(executionId, result, duration);
-      if (ctx.taskId) this.ledger.apply(ctx.taskId, { output: result });
+      if (ctx.taskId) this.ledger.apply(ctx.taskId, {
+        output: transcriptContentEnabled() ? sanitizeRunConfig(result) : { omitted: true },
+        outputHash: createHash('sha256').update(JSON.stringify(result)).digest('hex'),
+      });
       return { executionId, result };
     } catch (err) {
       const duration = Date.now() - start;
-      this.recordFailure(executionId, String(err), duration);
-      if (ctx.taskId) this.ledger.fail(ctx.taskId, String(err));
+      const safeError = transcriptContentEnabled() ? String(sanitizeRunConfig(String(err))) : 'Tool execution failed';
+      this.recordFailure(executionId, safeError, duration);
+      if (ctx.taskId) this.ledger.fail(ctx.taskId, safeError);
       throw err;
     }
   }
@@ -165,14 +176,15 @@ export class ToolRunner {
       UPDATE tool_executions
       SET status='completed', output_summary=?, duration_ms=?, cost_usd=?, source_count=?, finished_at=datetime('now')
       WHERE id=?
-    `).run(result.summary, duration, result.costUsd ?? 0, result.sources?.length ?? 0, id);
+    `).run(transcriptContentEnabled() ? sanitizeRunConfig(result.summary) : OMITTED_TRANSCRIPT_CONTENT, duration, result.costUsd ?? 0, result.sources?.length ?? 0, id);
 
-    if (result.sources) {
+    if (transcriptContentEnabled() && result.sources) {
       const stmt = db.prepare(`
         INSERT INTO tool_artifacts (id, execution_id, artifact_type, source_uri, title, excerpt, metadata_json)
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `);
-      for (const src of result.sources) {
+      for (const rawSource of result.sources) {
+        const src = sanitizeRunConfig(rawSource);
         stmt.run(`art_${nanoid(8)}`, id, src.type, src.uri ?? null, src.title ?? null, src.excerpt ?? null, JSON.stringify(src.metadata ?? {}));
       }
     }

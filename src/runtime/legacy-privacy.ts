@@ -9,7 +9,7 @@ const ROLES = new Set(['CEO', 'Engineer', 'Critic', 'DevilsAdvocate', 'Archivist
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
 type FilePlan = { file: string; beforeHash: string; after: string };
 type ConfigPlan = { id: string; before: string; after: string };
-export interface LegacyPrivacyPlan { files: FilePlan[]; configs: ConfigPlan[]; indexedCount: number; contextCount: number; executionCount: number }
+export interface LegacyPrivacyPlan { files: FilePlan[]; configs: ConfigPlan[]; indexedCount: number; contextCount: number; executionCount: number; toolCount: number; artifactCount: number; evidenceCount: number; ledgerCount: number }
 
 /** Pure planning step: validates input and makes no filesystem/database changes. */
 export function planLegacyPrivacyCleanup(transcriptsDir: string, db: Database | null): LegacyPrivacyPlan {
@@ -46,6 +46,10 @@ export function planLegacyPrivacyCleanup(transcriptsDir: string, db: Database | 
   let indexedCount = 0;
   let contextCount = 0;
   let executionCount = 0;
+  let toolCount = 0;
+  let artifactCount = 0;
+  let evidenceCount = 0;
+  let ledgerCount = 0;
   if (db) {
     const rows = db.query('SELECT id, config_json FROM runs').all() as Array<{ id: string; config_json: string }>;
     configs = rows.map(row => {
@@ -56,8 +60,12 @@ export function planLegacyPrivacyCleanup(transcriptsDir: string, db: Database | 
     indexedCount = (db.query('SELECT count(*) AS n FROM transcript_index').get() as { n: number }).n;
     contextCount = (db.query('SELECT count(*) AS n FROM cycle_context').get() as { n: number }).n;
     executionCount = (db.query('SELECT count(*) AS n FROM agent_executions').get() as { n: number }).n;
+    toolCount = (db.query('SELECT count(*) AS n FROM tool_executions').get() as { n: number }).n;
+    artifactCount = (db.query('SELECT count(*) AS n FROM tool_artifacts').get() as { n: number }).n;
+    evidenceCount = (db.query('SELECT count(*) AS n FROM evidence_items').get() as { n: number }).n;
+    ledgerCount = (db.query("SELECT count(*) AS n FROM action_ledger WHERE target_kind = 'tool'").get() as { n: number }).n;
   }
-  return { files, configs, indexedCount, contextCount, executionCount };
+  return { files, configs, indexedCount, contextCount, executionCount, toolCount, artifactCount, evidenceCount, ledgerCount };
 }
 
 /** Requires all AutoOrg processes stopped. Restartable, but not cross-resource atomic. */
@@ -77,6 +85,10 @@ export function applyLegacyPrivacyCleanup(plan: LegacyPrivacyPlan, db: Database 
       }
       db.query('UPDATE cycle_context SET system_prompt = ?, user_message = ?, response = ?').run(OMITTED_TRANSCRIPT_CONTENT, OMITTED_TRANSCRIPT_CONTENT, OMITTED_TRANSCRIPT_CONTENT);
       db.run('UPDATE agent_executions SET system_prompt_hash = NULL, output_text = NULL');
+      db.query("UPDATE tool_executions SET input_json = '{}', output_json = NULL, output_summary = ?, error_text = NULL").run(OMITTED_TRANSCRIPT_CONTENT);
+      db.run("UPDATE tool_artifacts SET source_uri = NULL, title = NULL, excerpt = NULL, metadata_json = '{}'");
+      db.run('UPDATE evidence_items SET source_uri = NULL, title = NULL, excerpt = NULL');
+      db.run("UPDATE action_ledger SET input_json = '{}', output_json = NULL, compensation_action_json = NULL, policy_snapshot_json = '{}' WHERE target_kind = 'tool'");
       db.run('DELETE FROM transcript_index');
       db.run("INSERT INTO transcript_fts(transcript_fts) VALUES ('rebuild')");
     }).immediate();

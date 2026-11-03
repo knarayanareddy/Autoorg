@@ -1,3 +1,5 @@
+import { transcriptContentEnabled } from '@/runtime/transcript-privacy.js';
+import { sanitizeRunConfig } from '@/runtime/run-config.js';
 /**
  * Baseline response headers.
  *
@@ -80,4 +82,11 @@ export function matchRoute(
     }
   }
   return params;
+}
+
+/** Never expose legacy tool payloads by default. */
+export function sanitizeToolTrace(row: Record<string, unknown>): Record<string, unknown> {
+  if (transcriptContentEnabled()) return sanitizeRunConfig(row);
+  const allowed = ['id', 'run_id', 'cycle_number', 'role', 'tool_name', 'capability_class', 'status', 'cost_usd', 'duration_ms', 'created_at', 'started_at', 'finished_at', 'task_id', 'team_id', 'source_count'];
+  return Object.fromEntries(allowed.filter(key => key in row).map(key => [key, row[key]]));
 }
