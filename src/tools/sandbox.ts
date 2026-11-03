@@ -80,6 +80,11 @@ export class Sandbox {
   }
 
   async run(command: string, opts: { cwd?: string; env?: Record<string, string>; timeout?: number } = {}): Promise<SandboxResult> {
+    // Neither mode is a security boundary: host execution is unrestricted,
+    // and Docker mounts the workspace including any files it contains.
+    if (process.env.AUTOORG_ALLOW_UNSAFE_SANDBOX !== '1') {
+      return { stdout: '', stderr: 'Sandbox execution disabled: unsafe execution requires explicit opt-in and external isolation', exitCode: 126 };
+    }
     // Denylist FIRST — a blocked command must never reach a shell, in any mode.
     const denial = findDeniedCommand(command);
     if (denial) {
@@ -117,7 +122,7 @@ export class Sandbox {
   }
 
   private async runDocker(command: string, opts: any): Promise<SandboxResult> {
-    // Hard isolation via Docker (requires docker to be installed on host)
+    // Docker provides partial isolation only; workspace files remain accessible.
     // We mount the CWD into /workspace. The container starts with the image's
     // own environment — no host variables are passed with -e.
     const cwd = opts.cwd ?? process.cwd();
@@ -125,7 +130,7 @@ export class Sandbox {
       'run', '--rm',
       '-v', `${cwd}:/workspace`,
       '-w', '/workspace',
-      'node:20-slim',
+      'node:24-slim',
       'bash', '-c', command
     ];
 

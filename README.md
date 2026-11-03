@@ -181,7 +181,10 @@ it changes or disappears before scoring/staging. Because the shell sandbox is
 not a filesystem isolation boundary, the lock blocks `sandbox.exec` and other
 non-allowlisted tools; only the built-in read-only search and web-fetch tools
 remain available. Set `FEATURE_CONSTITUTION_LOCK=0` only if you deliberately
-accept the risk and provide your own OS-level isolation. Hash checks cannot
+accept the risk and provide your own OS-level isolation. Sandbox execution is
+also disabled unless `AUTOORG_ALLOW_UNSAFE_SANDBOX=1` is explicitly set. Neither
+the command denylist nor Docker mode protects secrets in the mounted workspace;
+never enable it for untrusted commands without independently enforced isolation. Hash checks cannot
 prevent an independent host process from changing and restoring the file
 between checks; isolate the workspace from untrusted host processes as well.
 

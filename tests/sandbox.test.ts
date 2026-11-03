@@ -122,7 +122,10 @@ describe('scrubbedSandboxEnv (secret scrub)', () => {
   });
 });
 
-describe('sandbox.run (bun mode)', () => {
+describe('sandbox.run (bun mode, explicitly opted in)', () => {
+  const oldOptIn = process.env.AUTOORG_ALLOW_UNSAFE_SANDBOX;
+  beforeAll(() => { process.env.AUTOORG_ALLOW_UNSAFE_SANDBOX = '1'; });
+  afterAll(() => { if (oldOptIn === undefined) delete process.env.AUTOORG_ALLOW_UNSAFE_SANDBOX; else process.env.AUTOORG_ALLOW_UNSAFE_SANDBOX = oldOptIn; });
   it('does not leak host secrets into the command environment', async () => {
     process.env.ANTHROPIC_API_KEY = 'sk-ant-supersecret-value';
     process.env.AUTOORG_SIGNING_SECRET = 'signing-supersecret';
@@ -146,4 +149,20 @@ describe('sandbox.run (bun mode)', () => {
     expect(res.exitCode).toBe(0);
     expect(res.stdout.trim()).toBe('sandbox-ok');
   }, 20000);
+});
+
+describe('unsafe sandbox opt-in', () => {
+  it('does not execute an obfuscated credential read without an explicit unsafe opt-in', async () => {
+    const old = process.env.AUTOORG_ALLOW_UNSAFE_SANDBOX;
+    delete process.env.AUTOORG_ALLOW_UNSAFE_SANDBOX;
+    try {
+      const result = await sandbox.run('python3 -c "print(open(\'.\'+\'env\').read())"');
+      expect(result.exitCode).toBe(126);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toMatch(/disabled|unsafe/i);
+    } finally {
+      if (old === undefined) delete process.env.AUTOORG_ALLOW_UNSAFE_SANDBOX;
+      else process.env.AUTOORG_ALLOW_UNSAFE_SANDBOX = old;
+    }
+  });
 });
