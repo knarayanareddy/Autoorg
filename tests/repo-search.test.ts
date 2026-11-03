@@ -51,7 +51,9 @@ describe('repo.search secret redaction (R3)', () => {
 
   it('still finds matches when the query itself is secret-shaped', async () => {
     // An agent searching for a key it already knows must not re-leak file content.
-    const res = await repoSearchConnector('sk-ant-api03repoSearch', FIXTURE_DIR, 10);
+    const res = await repoSearchConnector(SECRET_ANTHROPIC, FIXTURE_DIR, 10);
+    expect(res.lines.length).toBeGreaterThan(0);
+    expect(res.summary).not.toContain(SECRET_ANTHROPIC);
     for (const l of res.lines) {
       expect(l.text).not.toContain(SECRET_ANTHROPIC);
     }

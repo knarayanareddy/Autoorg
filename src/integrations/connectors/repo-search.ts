@@ -10,7 +10,7 @@ export interface RepoSearchHit {
 export async function repoSearchConnector(query: string, cwd: string = process.cwd(), limit: number = 20): Promise<{ summary: string; lines: RepoSearchHit[] }> {
   return new Promise((resolve) => {
     // Basic ripgrep command
-    const child = spawn('rg', ['-n', '--hidden', '--glob', '!node_modules', '--glob', '!.git', query, cwd]);
+    const child = spawn('rg', ['-n', '--hidden', '--glob', '!node_modules', '--glob', '!.git', '--', query, cwd]);
     
     let stdout = '';
     child.stdout.on('data', (data) => {
@@ -28,7 +28,7 @@ export async function repoSearchConnector(query: string, cwd: string = process.c
           if (first === -1 || second === -1) return null as any;
 
           return {
-            file: line.slice(0, first),
+            file: RedactionFilter.redactOnly(line.slice(0, first)).text,
             line: Number(line.slice(first + 1, second)),
             // Ripgrep returns raw file content: any credential in a working
             // file (not hidden by .gitignore) would land verbatim in agent
@@ -39,13 +39,13 @@ export async function repoSearchConnector(query: string, cwd: string = process.c
         .filter(Boolean);
 
       resolve({
-        summary: `Found ${hits.length} repo matches for "${query}"`,
+        summary: `Found ${hits.length} repo matches for "${RedactionFilter.redactOnly(query).text}"`,
         lines: hits,
       });
     });
 
     child.on('error', () => {
-      resolve({ summary: `Search failed for "${query}"`, lines: [] });
+      resolve({ summary: `Search failed for "${RedactionFilter.redactOnly(query).text}"`, lines: [] });
     });
   });
 }
