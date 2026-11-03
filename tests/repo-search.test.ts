@@ -15,6 +15,7 @@ const FIXTURE_DIR = path.resolve('./test-results/repo-search-fixture');
 const SECRET_ANTHROPIC = 'sk-' + 'ant-api03repoSearchfixture0123456789abcdef';
 const SECRET_GITHUB = 'gh' + 'p_repoSearchfixturetoken0123456789abcdef01';
 const MARKER = 'redteam-repo-search-marker';
+const previousContent = process.env.AUTOORG_REPO_SEARCH_CONTENT;
 
 beforeAll(async () => {
   await rm(FIXTURE_DIR, { recursive: true, force: true });
@@ -31,10 +32,13 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   await rm(FIXTURE_DIR, { recursive: true, force: true });
+  if (previousContent === undefined) delete process.env.AUTOORG_REPO_SEARCH_CONTENT;
+  else process.env.AUTOORG_REPO_SEARCH_CONTENT = previousContent;
 });
 
 describe('repo.search secret redaction (R3)', () => {
   it('redacts secret-shaped hit content before returning it', async () => {
+    process.env.AUTOORG_REPO_SEARCH_CONTENT = '1';
     const res = await repoSearchConnector(MARKER, FIXTURE_DIR, 10);
     expect(res.lines.length).toBeGreaterThanOrEqual(3);
 
@@ -50,6 +54,7 @@ describe('repo.search secret redaction (R3)', () => {
   });
 
   it('still finds matches when the query itself is secret-shaped', async () => {
+    process.env.AUTOORG_REPO_SEARCH_CONTENT = '1';
     // An agent searching for a key it already knows must not re-leak file content.
     const res = await repoSearchConnector(SECRET_ANTHROPIC, FIXTURE_DIR, 10);
     expect(res.lines.length).toBeGreaterThan(0);
@@ -58,4 +63,15 @@ describe('repo.search secret redaction (R3)', () => {
       expect(l.text).not.toContain(SECRET_ANTHROPIC);
     }
   });
+  it('omits arbitrary unknown query and hit content by default', async () => {
+    delete process.env.AUTOORG_REPO_SEARCH_CONTENT;
+    const unknown = 'unrecognizable-provider-value-57123';
+    await writeFile(path.join(FIXTURE_DIR, 'unknown.txt'), `${MARKER} ${unknown}`);
+    const res = await repoSearchConnector(unknown, FIXTURE_DIR, 10);
+    expect(res.lines.length).toBeGreaterThan(0);
+    expect(JSON.stringify(res)).not.toContain(unknown);
+    expect(res.lines[0]!.text).toBe('[CONTENT OMITTED]');
+    expect(res.lines[0]!.file).toBe('[PATH OMITTED]');
+  });
+
 });

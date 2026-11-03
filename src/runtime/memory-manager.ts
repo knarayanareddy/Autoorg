@@ -1,3 +1,4 @@
+import { transcriptContentEnabled, OMITTED_TRANSCRIPT_CONTENT } from '@/runtime/transcript-privacy.js';
 /**
  * AutoOrg Memory Manager — Phase 3 Full Upgrade
  *
@@ -240,6 +241,7 @@ export class MemoryManager {
     currentCycle: number,
     query?:       string
   ): Promise<string> {
+    if (!transcriptContentEnabled()) return OMITTED_TRANSCRIPT_CONTENT;
     // Phase 3: Use hybrid search if query provided and features enabled
     if (
       query &&

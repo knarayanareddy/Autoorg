@@ -16,6 +16,7 @@ import { existsSync }        from 'node:fs';
 import path                  from 'node:path';
 import type { AgentRole }    from '@/types/index.js';
 import { RedactionFilter }   from '@/runtime/redaction.js';
+import { transcriptContentEnabled, OMITTED_TRANSCRIPT_CONTENT, safeTranscriptAction } from './transcript-privacy.js';
 
 /**
  * Resolved per call so tests can redirect AUTOORG_MEMORY_DIR after import.
@@ -57,6 +58,16 @@ export class TranscriptLogger {
       await mkdir(dir, { recursive: true });
     }
 
+    if (!transcriptContentEnabled()) {
+      const safeEntry: TranscriptEntry = {
+        ts: new Date().toISOString(), run_id: this.runId, cycle: entry.cycle,
+        role: entry.role, action: safeTranscriptAction(entry.action),
+        content: OMITTED_TRANSCRIPT_CONTENT, tokens: entry.tokens, cost_usd: entry.cost_usd,
+      };
+      await appendFile(this.getFilePath(entry.cycle), JSON.stringify(safeEntry) + '\n', { encoding: 'utf8', mode: 0o600 });
+      return;
+    }
+
     // Redaction happens AT THE SINK, before anything touches disk. Prompts and
     // responses used to be written raw and only redacted afterwards (when the
     // redactor ran for the LLM call), so every credential in LLM traffic was
@@ -86,7 +97,7 @@ export class TranscriptLogger {
     };
 
     const filePath = this.getFilePath(entry.cycle);
-    await appendFile(filePath, JSON.stringify(fullEntry) + '\n', 'utf-8');
+    await appendFile(filePath, JSON.stringify(fullEntry) + '\n', { encoding: 'utf8', mode: 0o600 });
   }
 
   async logAgentPrompt(

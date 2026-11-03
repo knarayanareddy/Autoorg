@@ -14,6 +14,7 @@ import { useTestDb, cleanupTestDb, testRunId } from './helpers/test-db.ts';
 const RUN_ID = testRunId('transcript');
 const MEMORY_DIR = path.resolve('./test-results/transcript-redaction');
 const previousMemoryDir = process.env.AUTOORG_MEMORY_DIR;
+const previousContent = process.env.AUTOORG_TRANSCRIPT_CONTENT;
 
 const SECRET_ANTHROPIC = 'sk-' + 'ant-api03-redteamfixturekey0123456789abcdef';
 const SECRET_GITHUB = 'gh' + 'p_redteamfixturetoken0123456789abcdef0123';
@@ -29,6 +30,8 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   cleanupTestDb();
+  if (previousContent === undefined) delete process.env.AUTOORG_TRANSCRIPT_CONTENT;
+  else process.env.AUTOORG_TRANSCRIPT_CONTENT = previousContent;
   if (previousMemoryDir === undefined) delete process.env.AUTOORG_MEMORY_DIR;
   else process.env.AUTOORG_MEMORY_DIR = previousMemoryDir;
   await rm(MEMORY_DIR, { recursive: true, force: true });
@@ -36,6 +39,7 @@ afterAll(async () => {
 
 describe('transcript logger sink redaction (R2)', () => {
   it('never writes raw secrets to transcripts', async () => {
+    process.env.AUTOORG_TRANSCRIPT_CONTENT = '1';
     const { TranscriptLogger } = await import('../src/runtime/transcript-logger.ts');
     const logger = new TranscriptLogger();
     logger.init(RUN_ID);
@@ -69,5 +73,32 @@ describe('transcript logger sink redaction (R2)', () => {
     expect(raw).toContain('[REDACTED:GITHUB_TOKEN]');
     // Non-secret entries still log normally.
     expect(raw).toContain('REVERT score=0.5000');
+  });
+  it('omits arbitrary unknown secrets and metadata by default', async () => {
+    delete process.env.AUTOORG_TRANSCRIPT_CONTENT;
+    const { TranscriptLogger } = await import('../src/runtime/transcript-logger.ts');
+    const logger = new TranscriptLogger();
+    logger.init(RUN_ID);
+    const secret = 'an-unrecognizable-value-314159';
+    await logger.log({ role: 'CEO', cycle: 3, action: 'prompt', content: secret, metadata: { other: secret } });
+    const raw = await readFile(path.join(MEMORY_DIR, 'transcripts', 'cycle_0003.jsonl'), 'utf8');
+    expect(raw).not.toContain(secret);
+    expect(JSON.parse(raw).content).toBe('[CONTENT OMITTED]');
+    expect(JSON.parse(raw).metadata).toBeUndefined();
+  });
+
+});
+
+describe('legacy transcript retrieval', () => {
+  it('does not read or index old transcript content in metadata-only mode', async () => {
+    const old = process.env.AUTOORG_TRANSCRIPT_CONTENT;
+    delete process.env.AUTOORG_TRANSCRIPT_CONTENT;
+    try {
+      const { searchBM25, indexTranscriptFile } = await import('../src/memory/bm25.ts');
+      const { hybridSearch } = await import('../src/memory/hybrid-search.ts');
+      expect(searchBM25('secret', RUN_ID)).toEqual([]);
+      expect(await hybridSearch('secret', RUN_ID)).toEqual([]);
+      expect(await indexTranscriptFile('missing-file', RUN_ID)).toBe(0);
+    } finally { if (old === undefined) delete process.env.AUTOORG_TRANSCRIPT_CONTENT; else process.env.AUTOORG_TRANSCRIPT_CONTENT = old; }
   });
 });

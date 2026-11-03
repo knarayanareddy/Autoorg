@@ -11,6 +11,7 @@
  */
 
 import { getDb } from '@/db/migrate.js';
+import { transcriptContentEnabled } from '@/runtime/transcript-privacy.js';
 
 export interface BM25Result {
   id:           string;
@@ -32,6 +33,7 @@ export async function indexTranscriptEntry(
   content:     string,
   contentHash: string
 ): Promise<void> {
+  if (!transcriptContentEnabled()) return;
   const db = getDb();
 
   // Check for duplicate
@@ -56,6 +58,7 @@ export function searchBM25(
   runId:  string,
   limit:  number = 20
 ): BM25Result[] {
+  if (!transcriptContentEnabled()) return [];
   const db = getDb();
 
   // FTS5 bm25() function returns negative scores (more negative = better)
@@ -85,6 +88,7 @@ export async function indexTranscriptFile(
   filePath: string,
   runId:    string
 ): Promise<number> {
+  if (!transcriptContentEnabled()) return 0;
   const { readFile } = await import('node:fs/promises');
   const { existsSync } = await import('node:fs');
   const { createHash } = await import('node:crypto');

@@ -137,9 +137,22 @@ not forwarded headers, so clients behind one proxy share a limit; enforce
 per-client throttling at a trusted proxy if needed. The in-memory limiter resets
 on restart and is not shared between processes.
 
-Redaction prevents recognized secret patterns from entering new transcripts
-and search results; it is not a substitute for rotating exposed keys or
-reviewing existing files. Older transcripts are not automatically sanitized.
+### Transcript and search privacy
+
+By default, new transcript entries retain operational metadata but omit prompt,
+response and arbitrary metadata content. Legacy transcript retrieval and
+indexing are disabled in this mode. Repository search returns counts and line
+numbers but withholds queries, paths and snippets. This deliberately sacrifices
+search usefulness to avoid relying on secret-pattern detection.
+
+For trusted workspaces, `AUTOORG_TRANSCRIPT_CONTENT=1` enables transcript
+content and retrieval, and `AUTOORG_REPO_SEARCH_CONTENT=1` enables search paths
+and snippets. Redaction then covers known configured credentials and common
+patterns, but **cannot recognize every possible secret**, including arbitrary
+unknown values and fragments of multiline keys. Only enable these options after
+reviewing data and protecting access to the workspace, database and backups.
+Other application data can also contain sensitive content. Rotate exposed keys;
+redaction is not a substitute for rotation.
 ### Run budgets
 
 `MAX_API_SPEND_USD` is checked immediately before every LLM attempt in the
