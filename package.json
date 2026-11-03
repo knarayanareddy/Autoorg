@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "api": "bun run src/api/server.ts",
+    "api:key:init": "bun run src/scripts/init-api-key.ts",
     "migrate": "bun run scripts/ci/migrate-all.ts",
     "privacy:sanitize": "bun run src/scripts/sanitize-legacy-privacy.ts",
     "providers:encrypt": "bun run src/scripts/encrypt-provider-keys.ts",

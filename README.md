@@ -43,7 +43,8 @@ bun install
 bun run setup:hooks        # optional: commit-msg + secret checks
 
 # Configure credentials
-cp .env.example .env       # then fill in the keys you have
+cp .env.example .env       # then fill in the provider keys you have
+bun run api:key:init       # create a local API key without printing it
 
 # Create the database (idempotent; re-running is a no-op)
 bun run db:migrate
@@ -99,7 +100,11 @@ AUTOORG_CORS_ORIGINS=https://your.dashboard
 GITHUB_WEBHOOK_SECRET=<secret>        # webhooks reject unsigned payloads
 ```
 
-The server **refuses to start** without `AUTOORG_API_KEY`, even on loopback. CORS is an explicit allowlist — never `*`.
+The server **refuses to start** without `AUTOORG_API_KEY`, even on loopback.
+Run `bun run api:key:init` in the project directory to generate a random key in
+`.env` with owner-only permissions; it never replaces an existing key. Enter the
+key in the dashboard API key control when prompted. CORS is an explicit
+allowlist — never `*`.
 
 ### Remote deployment and TLS
 
