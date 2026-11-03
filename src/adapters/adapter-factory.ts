@@ -6,7 +6,8 @@ import { OpenAICompatibleAdapter } from '@/adapters/openai-compatible-adapter.js
 import { GeminiAdapter } from '@/adapters/gemini-adapter.js';
 import { getDb } from '@/db/migrate.js';
 import { decryptProviderKey } from '@/config/provider-secrets.js';
-import { runBudgetedLLM, requireUnbudgetedStructuredCall } from '@/runtime/llm-budget.js';
+import { runBudgetedLLM, hasLLMBudget } from '@/runtime/llm-budget.js';
+import { parseStructuredOutput } from '@/utils/structured-output.js';
 import { registerKnownSecret } from '@/runtime/redaction.js';
 import type { LLMAdapter, LLMProvider, ModelConfig } from '@/types/index.js';
 
@@ -60,7 +61,24 @@ export function guardAdapter(adapter: LLMAdapter): LLMAdapter {
   return {
     provider: adapter.provider,
     run: opts => runBudgetedLLM(() => adapter.run(opts)),
-    structured: opts => { requireUnbudgetedStructuredCall(); return adapter.structured(opts); },
+    structured: async opts => {
+      if (!hasLLMBudget()) return adapter.structured(opts);
+      const attempts = Math.max(1, opts.maxRetries ?? 3);
+      let lastError: unknown;
+      for (let i = 0; i < attempts; i++) {
+        // Charge every provider call before attempting to parse its response.
+        const response = await runBudgetedLLM(() => adapter.run({
+          model: opts.model,
+          messages: [...opts.messages, { role: 'user', content: 'Respond only with valid JSON matching the required schema.' }],
+          temperature: opts.temperature ?? 0.1,
+          maxTokens: opts.maxTokens ?? 4096,
+        }));
+        try {
+          return parseStructuredOutput(response.content, opts.schema);
+        } catch (err) { lastError = err; }
+      }
+      throw lastError;
+    },
   };
 }
 

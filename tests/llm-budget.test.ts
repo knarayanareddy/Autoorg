@@ -3,6 +3,7 @@ import { LLMBudget, runBudgetedLLM, withLLMBudget } from '../src/runtime/llm-bud
 import { withLLMRetry } from '../src/utils/retry';
 import { guardAdapter } from '../src/adapters/adapter-factory';
 import type { LLMAdapter } from '../src/types/index';
+import { z } from 'zod';
 
 describe('LLM budget guard', () => {
   it('serializes parallel calls and checks remaining budget before each', async () => {
@@ -46,6 +47,22 @@ describe('LLM budget guard', () => {
     await withLLMBudget(guard, () => adapter.run(opts));
     await expect(withLLMBudget(guard, () => adapter.run(opts))).rejects.toThrow(/budget/i);
     expect(calls).toBe(1);
+  });
+
+  it('budgets structured-output calls and retries after malformed responses', async () => {
+    let calls = 0;
+    const adapter = guardAdapter({
+      provider: 'anthropic',
+      run: async () => { calls++; return { content: calls === 1 ? 'bad json' : '{"ok":true}', costUsd: 0.6 }; },
+      structured: async () => { throw new Error('must use budgeted run'); },
+    } as LLMAdapter);
+    const budget = new LLMBudget(1);
+    const result = await withLLMBudget(budget, () => adapter.structured({ model: 'test', messages: [], schema: z.object({ ok: z.boolean() }), maxRetries: 2 }));
+    expect(result.ok).toBe(true);
+    expect(calls).toBe(2);
+    expect(budget.spent).toBeCloseTo(1.2);
+    await expect(withLLMBudget(budget, () => adapter.structured({ model: 'test', messages: [], schema: z.object({ ok: z.boolean() }) }))).rejects.toThrow(/budget/i);
+    expect(calls).toBe(2);
   });
 
 });

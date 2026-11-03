@@ -578,57 +578,64 @@ export async function* orchestratorLoop(
     // ── Cycle complete ─────────────────────────────────────────────
     runState.totalCostUsd = budget.spent;
     cycleState.totalCostUsd = budget.spent - cycleStartSpent;
-    const durationMs = Date.now() - cycleStartMs;
-
     // ── Phase 9: Reflection & Strategic Pivoting ──────────────────
-    if (featureFlag('processReflection') || featureFlag('strategicPivoting')) {
-      const currentRunOutput = await Bun.file('./workspace/current_output.md').text().catch(() => '');
-      
-      // Generate Process Debt Report
-      if (featureFlag('processReflection')) {
-        await reflection.reflect({ cycleNumber, transcript: currentRunOutput });
-      }
+    try {
+      if (!budgetStopped && !budget.exhausted && (featureFlag('processReflection') || featureFlag('strategicPivoting'))) {
+        const currentRunOutput = await Bun.file('./workspace/current_output.md').text().catch(() => '');
+        
+        // Generate Process Debt Report
+        if (featureFlag('processReflection')) {
+          await withLLMBudget(budget, () => reflection.reflect({ cycleNumber, transcript: currentRunOutput }));
+        }
 
-      // Check for Strategic Pivot
-      if (featureFlag('strategicPivoting')) {
-        const pivot = await pivoting.evaluatePivot({
-          cycleNumber,
-          scoreHistory: scoreHistory.map(s => s.score),
-          currentOutput: currentRunOutput,
-          objectives: weights
-        });
+        // Check for Strategic Pivot
+        if (featureFlag('strategicPivoting')) {
+          const pivot = await withLLMBudget(budget, () => pivoting.evaluatePivot({
+            cycleNumber,
+            scoreHistory: scoreHistory.map(s => s.score),
+            currentOutput: currentRunOutput,
+            objectives: weights
+          }));
 
-        if (pivot?.status === 'auto_approved') {
-          await pivoting.applyPivot(pivot.pivotId);
-          console.log(chalk.bold.yellow(`  🚀 Auto-Applied Minor Pivot: ${pivot.pivotId}`));
-        } else if (pivot?.status === 'pending') {
-          console.log(chalk.bold.red(`  ⚠️   Major Strategic Pivot Proposed: ${pivot.pivotId}. Waiting for approval.`));
+          if (pivot?.status === 'auto_approved') {
+            await pivoting.applyPivot(pivot.pivotId);
+            console.log(chalk.bold.yellow(`  🚀 Auto-Applied Minor Pivot: ${pivot.pivotId}`));
+          } else if (pivot?.status === 'pending') {
+            console.log(chalk.bold.red(`  ⚠️   Major Strategic Pivot Proposed: ${pivot.pivotId}. Waiting for approval.`));
+          }
         }
       }
-    }
 
-    // ── Phase 10: Swarm Delegation ───────────────────────────────
-    if (featureFlag('hierarchicalSwarm')) {
-      const currentRunOutput = await Bun.file('./workspace/current_output.md').text().catch(() => '');
-      const transcriptText = runState.cycleHistory.slice(-3).map((c: any) => c.action).join('\n');
+      // ── Phase 10: Swarm Delegation ───────────────────────────────
+      if (!budgetStopped && !budget.exhausted && featureFlag('hierarchicalSwarm')) {
+        const currentRunOutput = await Bun.file('./workspace/current_output.md').text().catch(() => '');
+        const transcriptText = runState.cycleHistory.slice(-3).map((c: any) => c.action).join('\n');
 
-      const delegation = await swarm.evaluateDelegation({
-        cycle: cycleNumber,
-        mission: config.mission,
-        currentOutput: currentRunOutput,
-        transcript: transcriptText
-      });
+        const delegation = await withLLMBudget(budget, () => swarm.evaluateDelegation({
+          cycle: cycleNumber,
+          mission: config.mission,
+          currentOutput: currentRunOutput,
+          transcript: transcriptText
+        }));
 
-      if (delegation) {
-        console.log(chalk.bold.cyan(`  🐝 Swarm Delegation: Contract ${delegation.contractId} created with Specialist Org ${delegation.provider.runId}`));
-        eventBus.broadcast({ 
-          type: 'swarm_event', 
-          message: `Delegated to Specialist Org for service: ${delegation.provider.serviceKey}` 
-        });
+        if (delegation) {
+          console.log(chalk.bold.cyan(`  🐝 Swarm Delegation: Contract ${delegation.contractId} created with Specialist Org ${delegation.provider.runId}`));
+          eventBus.broadcast({ 
+            type: 'swarm_event', 
+            message: `Delegated to Specialist Org for service: ${delegation.provider.serviceKey}` 
+          });
+        }
       }
-    }
 
+    } catch (err) {
+      if (!(err instanceof LLMBudgetError)) throw err;
+      budgetStopped = true;
+      yield { type: 'error', message: err.message, cycleNumber, fatal: false };
+    }
+    runState.totalCostUsd = budget.spent;
+    cycleState.totalCostUsd = budget.spent - cycleStartSpent;
     cycleState.endedAt = new Date();
+    const durationMs = Date.now() - cycleStartMs;
     finalizeCycleInDb(cycleState.id, durationMs, cycleState.totalCostUsd, cycleState.totalTokens, proposalPath, dreamRan);
     updateRunProgress(runId, cycleNumber, runState.bestScore, runState.totalCostUsd);
 

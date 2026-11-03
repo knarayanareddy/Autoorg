@@ -63,6 +63,4 @@ export function runBudgetedLLM<T>(fn: () => Promise<T>): Promise<T> {
   const budget = currentBudget.getStore();
   return budget ? budget.run(fn) : fn();
 }
-export function requireUnbudgetedStructuredCall(): void {
-  if (currentBudget.getStore()) throw new BudgetUnknownError();
-}
+export function hasLLMBudget(): boolean { return currentBudget.getStore() !== undefined; }
