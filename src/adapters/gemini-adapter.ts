@@ -13,7 +13,7 @@ import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/ge
 import type { LLMAdapter, LLMProvider, LLMRunOptions, LLMResponse, LLMStructuredOptions } from '@/types/index.js';
 import { parseStructuredOutput } from '@/utils/structured-output.js';
 import { providerApiKey } from '@/config/env.js';
-import { estimateCost } from '@/config/model-costs.js';
+import { estimateReportedCost } from '@/config/model-costs.js';
 
 const SAFETY_SETTINGS = [
   { category: HarmCategory.HARM_CATEGORY_HARASSMENT,        threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -73,7 +73,7 @@ export class GeminiAdapter implements LLMAdapter {
       promptTokens:     inputTokens,
       completionTokens: outputTokens,
       totalTokens:      inputTokens + outputTokens,
-      costUsd:          response.usageMetadata ? estimateCost(opts.model, inputTokens, outputTokens) : undefined,
+      costUsd:          estimateReportedCost(opts.model, response.usageMetadata?.promptTokenCount, response.usageMetadata?.candidatesTokenCount),
       model:            opts.model ?? this.defaultModel,
       provider:         'gemini',
     };

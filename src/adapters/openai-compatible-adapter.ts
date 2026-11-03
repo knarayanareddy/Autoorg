@@ -1,5 +1,5 @@
 import { BaseAdapter } from './base-adapter.js';
-import { estimateCost } from '@/config/model-costs.js';
+import { estimateReportedCost } from '@/config/model-costs.js';
 import type { LLMProvider, LLMResponse, LLMRunOptions } from '@/types/index.js';
 import { providerApiKey, providerBaseUrl } from '@/config/env.js';
 
@@ -45,7 +45,7 @@ export class OpenAICompatibleAdapter extends BaseAdapter {
       content,
       usage: { inputTokens, outputTokens },
       promptTokens: inputTokens, completionTokens: outputTokens, totalTokens: inputTokens + outputTokens,
-      costUsd: data.usage ? estimateCost(opts.model, inputTokens, outputTokens) : undefined,
+      costUsd: estimateReportedCost(opts.model, data.usage?.prompt_tokens, data.usage?.completion_tokens),
       model: opts.model,
     };
   }

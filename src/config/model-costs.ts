@@ -32,3 +32,10 @@ export function estimateCost(
     (outputTokens / 1_000_000) * costs.outputPerMToken
   );
 }
+
+/** Missing, invalid or partial provider usage must never be accounted as free. */
+export function estimateReportedCost(model: string, inputTokens: unknown, outputTokens: unknown): number | undefined {
+  if (typeof inputTokens !== 'number' || !Number.isFinite(inputTokens) || inputTokens < 0 ||
+      typeof outputTokens !== 'number' || !Number.isFinite(outputTokens) || outputTokens < 0) return undefined;
+  return estimateCost(model, inputTokens, outputTokens);
+}

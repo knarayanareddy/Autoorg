@@ -1,7 +1,7 @@
 // src/adapters/anthropic-adapter.ts
 import Anthropic from '@anthropic-ai/sdk';
 import { BaseAdapter } from '@/adapters/base-adapter.js';
-import { estimateCost } from '@/config/model-costs.js';
+import { estimateReportedCost } from '@/config/model-costs.js';
 import type { LLMProvider, LLMResponse, LLMRunOptions } from '@/types/index.js';
 import { providerApiKey, providerBaseUrl } from '@/config/env.js';
 
@@ -49,10 +49,10 @@ export class AnthropicAdapter extends BaseAdapter {
 
     const inputTokens = response.usage.input_tokens;
     const outputTokens = response.usage.output_tokens;
-    const costUsd = estimateCost(opts.model, inputTokens, outputTokens);
+    const costUsd = estimateReportedCost(opts.model, inputTokens, outputTokens);
 
     if (process.env.AUTOORG_DEBUG_LLM === '1') {
-      console.debug(`[AnthropicAdapter] model=${opts.model} in=${inputTokens} out=${outputTokens} cost=$${costUsd.toFixed(6)}`);
+      console.debug(`[AnthropicAdapter] model=${opts.model} in=${inputTokens} out=${outputTokens} cost=$${costUsd?.toFixed(6) ?? "unknown"}`);
     }
 
     return {

@@ -1,7 +1,7 @@
 // src/adapters/openai-adapter.ts
 import OpenAI from 'openai';
 import { BaseAdapter } from '@/adapters/base-adapter.js';
-import { estimateCost } from '@/config/model-costs.js';
+import { estimateReportedCost } from '@/config/model-costs.js';
 import type { LLMProvider, LLMResponse, LLMRunOptions } from '@/types/index.js';
 import { providerApiKey, providerBaseUrl } from '@/config/env.js';
 
@@ -40,7 +40,7 @@ export class OpenAIAdapter extends BaseAdapter {
     const content = response.choices[0]?.message?.content ?? '';
     const inputTokens = response.usage?.prompt_tokens ?? 0;
     const outputTokens = response.usage?.completion_tokens ?? 0;
-    const costUsd = response.usage ? estimateCost(opts.model, inputTokens, outputTokens) : undefined;
+    const costUsd = estimateReportedCost(opts.model, response.usage?.prompt_tokens, response.usage?.completion_tokens);
 
     if (process.env.AUTOORG_DEBUG_LLM === '1') {
       console.debug(`[OpenAIAdapter] model=${opts.model} in=${inputTokens} out=${outputTokens} cost=$${costUsd?.toFixed(6) ?? "unknown"}`);
