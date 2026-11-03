@@ -12,6 +12,15 @@ export const CORS = {
   'Content-Type':                 'application/json',
 };
 
+export const MAX_BODY_BYTES = 1024 * 1024;
+
+/** Early check; the server also enforces the limit while reading streamed bodies. */
+export function checkContentLength(req: Request): boolean {
+  const value = req.headers.get('content-length');
+  if (value === null) return true;
+  return /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) <= MAX_BODY_BYTES;
+}
+
 export function json(data: unknown, statusOrOpts: number | { status: number } = 200): Response {
   const status = typeof statusOrOpts === 'number' ? statusOrOpts : statusOrOpts.status;
   return new Response(JSON.stringify(data), { 

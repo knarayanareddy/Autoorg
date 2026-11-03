@@ -29,7 +29,7 @@ import {
   getDashboardSummary, getFeatureFlags,
   getKnowledgeGraph,
 } from '@/db/queries.js';
-import { registerRoute, matchRoute, json, notFound, serverError, HttpError, parseJsonBody } from './route-utils.js';
+import { registerRoute, matchRoute, json, notFound, serverError, HttpError, parseJsonBody, MAX_BODY_BYTES, checkContentLength } from './route-utils.js';
 import { getDb, withDb } from '@/db/migrate.js';
 import { ApprovalGate } from '@/runtime/approval-gate.js';
 import { ServiceState } from '@/runtime/service-state.js';
@@ -64,6 +64,10 @@ async function handleRequest(req: Request): Promise<Response> {
 
   if (method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: corsHeaders(req) });
+  }
+
+  if (MUTATING.has(method) && !checkContentLength(req)) {
+    return json({ error: 'Request body too large or invalid' }, 413);
   }
 
   // Webhooks authenticate with their own HMAC signature, not the API key.
@@ -346,6 +350,7 @@ if (bootProblem) {
 const server = Bun.serve({
   port: PORT,
   hostname: HOSTNAME,
+  maxRequestBodySize: MAX_BODY_BYTES,
   fetch(req, server) {
     // Upgrade WebSocket connections
     if (req.headers.get('upgrade') === 'websocket') {
