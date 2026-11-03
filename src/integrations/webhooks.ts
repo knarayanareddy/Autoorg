@@ -9,6 +9,10 @@ export function verifyGitHubSignature(body: string, signature: string | null): b
   const hmac = createHmac('sha256', secret);
   const digest = `sha256=${hmac.update(body).digest('hex')}`;
 
+  // timingSafeEqual throws on length mismatch — guard first. A malformed
+  // signature header must be a rejection, never an exception.
+  if (digest.length !== signature.length) return false;
+
   try {
     return timingSafeEqual(Buffer.from(digest), Buffer.from(signature));
   } catch {
