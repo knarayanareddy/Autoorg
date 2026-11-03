@@ -7,6 +7,7 @@ import { PolicyEngine }      from '@/runtime/policy-engine.js';
 import { ActionLedger }      from '@/runtime/action-ledger.js';
 import { SafetyReview }      from '@/runtime/safety-review.js';
 import { featureFlag }        from '@/config/feature-flags.js';
+import { assertConstitutionSafeTool } from '@/runtime/constitution-lock.js';
 
 export class ToolRunner {
   private policy: ToolPolicy;
@@ -41,6 +42,8 @@ export class ToolRunner {
       throw new Error(`Invalid tool input for ${toolName}: ${detail}`);
     }
     input = parsedInput.data;
+
+    if (featureFlag('constitutionLock')) assertConstitutionSafeTool(toolName);
 
     // 0. Role → tool permission.
     //

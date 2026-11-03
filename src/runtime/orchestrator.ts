@@ -52,6 +52,7 @@ import { parseOrgMd, validateOrgConfig } from '@/config/org-parser.js';
 import { gitInit }                    from '@/utils/git.js';
 import { ensureResultsFile, getBestScore } from '@/utils/results-logger.js';
 import { getDb }                      from '@/db/migrate.js';
+import { ConstitutionGuard, ConstitutionChangedError } from './constitution-lock.js';
 import type { AgentRunnerContext }    from './agent-runner.js';
 import { GraphBuilder }               from '@/graph/graph-builder.js';
 import { createBestAvailableGraphDB } from '@/graph/graph-db.js';
@@ -143,6 +144,13 @@ export async function* orchestratorLoop(
   if (validationErrors.length > 0) {
     for (const e of validationErrors) console.error(chalk.red(`  ✗ ${e}`));
     yield { type: 'error', message: validationErrors.join('\n'), fatal: true };
+    return;
+  }
+
+  let constitutionGuard: ConstitutionGuard | undefined;
+  try { if (featureFlag('constitutionLock')) constitutionGuard = new ConstitutionGuard(); }
+  catch (err) {
+    yield { type: 'error', message: err instanceof Error ? err.message : 'Constitution unavailable', fatal: true };
     return;
   }
 
@@ -294,6 +302,7 @@ export async function* orchestratorLoop(
         `Open objections: ${objectionTracker.getStats().open}`
       );
 
+      constitutionGuard?.assertUnchanged();
       // ── RUN THE PIPELINE ──────────────────────────────────────────
       const pipelineResult = await runCyclePipeline(
         agentCtx,
@@ -302,6 +311,7 @@ export async function* orchestratorLoop(
         (event) => eventBus.broadcast(event as OrchestratorEvent)
       );
 
+      constitutionGuard?.assertUnchanged();
       // ── WRITE PROPOSAL & UPDATE OUTPUT ────────────────────────────
       proposalPath = await writeProposal(cycleNumber, pipelineResult.ceoSynthesis.content);
       cycleState.proposalPath = proposalPath;
@@ -337,6 +347,7 @@ export async function* orchestratorLoop(
         `\n  ${chalk.italic.gray(score.justification.slice(0, 100))}`
       );
 
+      constitutionGuard?.assertUnchanged();
       // ── KEEP OR REVERT ─────────────────────────────────────────────
       const ratchetResult = await ratchet.keepOrRevert(score, runState.bestScore, cycleState);
       cycleState.decision = ratchetResult.decision;
@@ -516,7 +527,17 @@ export async function* orchestratorLoop(
       }
 
     } catch (err) {
+      // Check even when another failure occurred: never reset over an operator's
+      // concurrent constitution edit merely because the pipeline also failed.
+      try { constitutionGuard?.assertUnchanged(); } catch (changed) { err = changed; }
       const errMsg = err instanceof Error ? err.message : String(err);
+      if (err instanceof ConstitutionChangedError) {
+        finalizeRunInDb(runId, 'failed', 'constitution_changed');
+        const event: OrchestratorEvent = { type: 'error', message: errMsg, cycleNumber, fatal: true };
+        yield event;
+        eventBus.broadcast(event);
+        return; // Never reset the operator's modified file.
+      }
       console.error(chalk.red(`\n  ✗ Cycle ${cycleNumber}: ${errMsg}`));
 
       try {

@@ -140,6 +140,18 @@ on restart and is not shared between processes.
 Redaction prevents recognized secret patterns from entering new transcripts
 and search results; it is not a substitute for rotating exposed keys or
 reviewing existing files. Older transcripts are not automatically sanitized.
+### Constitution lock
+
+The `constitutionLock` flag is enabled by default. A run records a hash of a
+regular `constitution.md` at startup and stops without resetting the file if
+it changes or disappears before scoring/staging. Because the shell sandbox is
+not a filesystem isolation boundary, the lock blocks `sandbox.exec` and other
+non-allowlisted tools; only the built-in read-only search and web-fetch tools
+remain available. Set `FEATURE_CONSTITUTION_LOCK=0` only if you deliberately
+accept the risk and provide your own OS-level isolation. Hash checks cannot
+prevent an independent host process from changing and restoring the file
+between checks; isolate the workspace from untrusted host processes as well.
+
 ### Provider credentials at rest
 
 Provider seeding normally leaves database key fields empty and reads provider

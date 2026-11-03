@@ -63,3 +63,18 @@ describe('ToolRunner input validation (safeParse)', () => {
     expect(executionCount()).toBe(0);
   });
 });
+
+describe('constitution lock tool enforcement', () => {
+  it('blocks sandbox execution before starting a subprocess', async () => {
+    await import('../src/tools/manifests/sandbox-exec.ts');
+    const previous = process.env.FEATURE_CONSTITUTION_LOCK;
+    process.env.FEATURE_CONSTITUTION_LOCK = '1';
+    try {
+      await expect(runner.run('sandbox.exec', { command: 'echo harmless' }, CTX)).rejects.toThrow(/constitution lock/i);
+      expect(executionCount()).toBe(0);
+    } finally {
+      if (previous === undefined) delete process.env.FEATURE_CONSTITUTION_LOCK;
+      else process.env.FEATURE_CONSTITUTION_LOCK = previous;
+    }
+  });
+});
