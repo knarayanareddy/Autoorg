@@ -58,6 +58,9 @@ jobs:
       - name: Security scan
         run: bun run security
 
+      - name: Dependency audit
+        run: bun run audit
+
       - name: Upload test report
         if: always()
         uses: actions/upload-artifact@v4

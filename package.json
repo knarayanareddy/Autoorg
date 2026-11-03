@@ -14,6 +14,7 @@
     "health": "bun run scripts/ci/health-check.ts",
     "smoke": "bun run scripts/ci/smoke-test.ts",
     "security": "bun run scripts/ci/security-scan.ts",
+    "audit": "bun run scripts/ci/dependency-audit.ts",
     "setup:hooks": "git config core.hooksPath scripts/hooks && chmod +x scripts/hooks/*",
     "start": "bun run src/index.ts",
     "dev": "bun --watch run src/index.ts",
