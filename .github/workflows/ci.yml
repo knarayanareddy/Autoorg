@@ -83,6 +83,10 @@ jobs:
         working-directory: web
         run: bun install --frozen-lockfile
 
+      - name: Audit dashboard dependencies
+        working-directory: web
+        run: bun run ../scripts/ci/dependency-audit.ts
+
       - name: Build dashboard
         working-directory: web
         run: bun run build

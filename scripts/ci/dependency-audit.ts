@@ -68,7 +68,8 @@ export function validateAuditResult(status: number | null, output: string, error
   if (error || status === null) return false;
   const findings = parseAuditFindings(output);
   if (status === 0) return findings.length === 0 && /No vulnerabilities found/i.test(output);
-  return status === 1 && findings.length > 0;
+  const summary = output.match(/(?:^|\n)(\d+) vulnerabilities? \(/);
+  return status === 1 && !!summary && Number(summary[1]) === findings.length && findings.length > 0;
 }
 
 function main(): void {

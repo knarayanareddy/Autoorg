@@ -18,7 +18,7 @@ brace-expansion@2.1.0
 left-pad@1.0.0
   low: cosmetic issue - https://example/d
 
-2 vulnerabilities (1 critical, 1 high)
+4 vulnerabilities (1 critical, 1 high, 1 moderate, 1 low)
 `;
 
 describe('dependency audit gate', () => {
@@ -63,5 +63,6 @@ describe('dependency audit execution failures', () => {
     expect(validateAuditResult(2, SAMPLE)).toBe(false);
     expect(validateAuditResult(0, 'No vulnerabilities found (checked 125 packages)')).toBe(true);
     expect(validateAuditResult(1, SAMPLE)).toBe(true);
+    expect(validateAuditResult(1, SAMPLE.replace('4 vulnerabilities', '5 vulnerabilities'))).toBe(false);
   });
 });
