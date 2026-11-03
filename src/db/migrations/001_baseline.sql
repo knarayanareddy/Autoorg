@@ -625,11 +625,18 @@ CREATE INDEX IF NOT EXISTS idx_security_run ON security_findings(run_id);
 CREATE TABLE IF NOT EXISTS redaction_events (
   id              TEXT PRIMARY KEY,
   run_id          TEXT NOT NULL,
-  entity_type     TEXT NOT NULL,
-  original_text   TEXT,
-  redacted_text   TEXT,
+  cycle_number    INTEGER,
+  channel         TEXT,
+  artifact_path   TEXT,
+  detector        TEXT,
+  finding_type    TEXT,
+  replacement     TEXT,
+  before_hash     TEXT,
+  after_hash      TEXT,
   created_at      DATETIME NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE INDEX IF NOT EXISTS idx_redaction_events_run ON redaction_events(run_id);
 
 -- ────────────────────────────────────────────────────────────
 -- TABLE: interview engine

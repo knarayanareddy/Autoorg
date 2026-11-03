@@ -477,3 +477,17 @@ CREATE VIRTUAL TABLE IF NOT EXISTS transcript_fts USING fts5(
   content_rowid='rowid',
   tokenize='porter unicode61'
 );
+
+-- ============================================================
+-- LEGACY TABLE REBUILDS
+--
+-- `redaction_events` originally had a different shape (entity_type /
+-- original_text / redacted_text) with `entity_type NOT NULL`. The runtime
+-- writes a different set of columns, so the table must be rebuilt rather than
+-- extended. `migrate.ts` performs this rebuild in TypeScript (detect old shape
+-- → create new → copy → drop → rename) because it needs a conditional; it is
+-- documented here so the schema history stays readable.
+--
+-- Canonical shape lives in 001_baseline.sql.
+-- ============================================================
+SELECT 1; -- no-op statement keeps this file non-empty

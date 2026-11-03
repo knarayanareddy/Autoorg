@@ -30,7 +30,7 @@ import {
   getKnowledgeGraph,
 } from '@/db/queries.js';
 import { registerRoute, matchRoute, json, notFound, serverError } from './route-utils.js';
-import { getDb } from '@/db/migrate.js';
+import { getDb, withDb } from '@/db/migrate.js';
 import { ApprovalGate } from '@/runtime/approval-gate.js';
 import { ServiceState } from '@/runtime/service-state.js';
 import { verifyGitHubSignature, storeGitHubEvent } from '@/integrations/webhooks.js';
@@ -88,16 +88,18 @@ async function handleRequest(req: Request): Promise<Response> {
     if (learningResponse) return learningResponse;
 
     // GET /api/health (Enterprise-tier health check)
+    //
+    // NOTE: this must not open-and-close a connection per probe. The server
+    // shares one WAL connection, and closing it here could interrupt another
+    // in-flight request's transaction. `withDb` reuses the shared handle.
     if (url.pathname === '/api/health' || url.pathname === '/health') {
-      const db = getDb();
       let dbOk = false;
       try {
-        db.prepare('SELECT 1').get();
+        withDb(db => { db.prepare('SELECT 1').get(); });
         dbOk = true;
       } catch (err) {
         console.error(chalk.red(`[Health] DB Error: ${err}`));
       }
-      db.close();
 
       const status = dbOk ? 200 : 503;
       return json({
@@ -233,28 +235,24 @@ async function handleRequest(req: Request): Promise<Response> {
     // GET /api/tools/executions
     if (url.pathname === '/api/tools/executions' && method === 'GET') {
       const runId = url.searchParams.get('runId');
-      const db = getDb();
-      const traces = db.prepare(`
+      const traces = withDb(db => db.prepare(`
         SELECT * FROM tool_executions
         WHERE (? IS NULL OR run_id = ?)
         ORDER BY created_at DESC
         LIMIT 50
-      `).all(runId ?? null, runId ?? null);
-      db.close();
+      `).all(runId ?? null, runId ?? null));
       return json(traces);
     }
 
     // GET /api/security/findings
     if (url.pathname === '/api/security/findings' && method === 'GET') {
       const runId = url.searchParams.get('runId');
-      const db = getDb();
-      const findings = db.prepare(`
+      const findings = withDb(db => db.prepare(`
         SELECT * FROM security_findings
         WHERE (? IS NULL OR run_id = ?)
         ORDER BY created_at DESC
         LIMIT 50
-      `).all(runId ?? null, runId ?? null);
-      db.close();
+      `).all(runId ?? null, runId ?? null));
       return json(findings);
     }
 
@@ -281,11 +279,9 @@ async function handleRequest(req: Request): Promise<Response> {
       const { InterviewEngine } = await import('@/runtime/interview.js');
 
       // Load session from DB
-      const db      = (await import('@/db/migrate.js')).getDb();
-      const session = db.prepare(`
+      const session = withDb(db => db.prepare(`
         SELECT * FROM interview_sessions WHERE id = ?
-      `).get(params.sessionId!) as { run_id: string; turns: string } | undefined;
-      db.close();
+      `).get(params.sessionId!)) as { run_id: string; turns: string } | undefined;
 
       if (!session) return notFound(`Session ${params.sessionId} not found`);
 

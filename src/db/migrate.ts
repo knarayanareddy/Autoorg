@@ -109,6 +109,107 @@ export function getDb(dbPath?: string): Database {
   return db;
 }
 
+/**
+ * Tables whose original shape cannot be reached with ADD COLUMN and must be
+ * rebuilt (SQLite can't drop or retype a column, and NOT NULL legacy columns
+ * block inserts). Detected by a sentinel legacy column.
+ */
+interface RebuildSpec {
+  table: string;
+  /** If this column exists, the table is in its legacy shape. */
+  legacyColumn: string;
+  /** Canonical DDL, must define `table` with the same name. */
+  ddl: string;
+  /** Columns to carry over when they exist in both shapes. */
+  copyColumns: string[];
+}
+
+const REBUILDS: RebuildSpec[] = [
+  {
+    table: 'redaction_events',
+    legacyColumn: 'entity_type',
+    copyColumns: ['id', 'run_id', 'created_at'],
+    ddl: `
+      CREATE TABLE redaction_events__new (
+        id            TEXT PRIMARY KEY,
+        run_id        TEXT NOT NULL,
+        cycle_number  INTEGER,
+        channel       TEXT,
+        artifact_path TEXT,
+        detector      TEXT,
+        finding_type  TEXT,
+        replacement   TEXT,
+        before_hash   TEXT,
+        after_hash    TEXT,
+        created_at    DATETIME NOT NULL DEFAULT (datetime('now'))
+      )
+    `,
+  },
+];
+
+/** Rebuild a legacy table in place. Returns true when a rebuild happened. */
+export function rebuildLegacyTable(db: Database, spec: RebuildSpec): boolean {
+  const exists = db
+    .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name = ?`)
+    .get(spec.table);
+  if (!exists) return false;
+
+  const columns = db.prepare(`PRAGMA table_info("${spec.table}")`).all() as Array<{ name: string }>;
+  const names = columns.map(c => c.name);
+  if (!names.includes(spec.legacyColumn)) return false;
+
+  const carried = spec.copyColumns.filter(c => names.includes(c));
+  const tmp = `${spec.table}__new`;
+
+  db.transaction(() => {
+    db.exec(`DROP TABLE IF EXISTS "${tmp}"`);
+    db.exec(spec.ddl);
+    db.exec(
+      `INSERT INTO "${tmp}" (${carried.map(c => `"${c}"`).join(', ')})
+       SELECT ${carried.map(c => `"${c}"`).join(', ')} FROM "${spec.table}"`
+    );
+    db.exec(`DROP TABLE "${spec.table}"`);
+    db.exec(`ALTER TABLE "${tmp}" RENAME TO "${spec.table}"`);
+  })();
+
+  return true;
+}
+
+// ── Shared connection ────────────────────────────────────────────────
+// Opening, configuring (4 PRAGMAs) and closing a SQLite handle per query costs
+// ~0.47ms versus ~0.03ms for a reused handle — 16x overhead on every call, at
+// 200+ call sites. A single shared handle is also the only way transactions can
+// span more than one helper.
+
+let sharedDb: Database | null = null;
+let sharedDbPath: string | null = null;
+
+/** The process-wide connection. Prefer `withDb()` in request paths. */
+export function getSharedDb(): Database {
+  const dbPath = getDbPath();
+  if (!sharedDb || sharedDbPath !== dbPath) {
+    try { sharedDb?.close(); } catch { /* already closed */ }
+    sharedDb = getDb(dbPath);
+    sharedDbPath = dbPath;
+  }
+  return sharedDb;
+}
+
+/**
+ * Run `fn` against the shared connection. The connection stays open — do NOT
+ * close it, or you will interrupt other in-flight work using the same handle.
+ */
+export function withDb<T>(fn: (db: Database) => T): T {
+  return fn(getSharedDb());
+}
+
+/** Close the shared connection. For tests and graceful shutdown only. */
+export function closeSharedDb(): void {
+  try { sharedDb?.close(); } catch { /* already closed */ }
+  sharedDb = null;
+  sharedDbPath = null;
+}
+
 /** Add a column only if the table exists and the column is absent. */
 export function ensureColumn(db: Database, spec: ColumnSpec): boolean {
   const table = db
@@ -232,6 +333,7 @@ const FALLBACK_FLAGS: Array<[string, boolean, string]> = [
 export interface MigrateResult {
   applied: string[];
   columnsAdded: number;
+  tablesRebuilt: number;
   alreadyCurrent: boolean;
 }
 
@@ -240,7 +342,7 @@ export async function migrate(): Promise<MigrateResult> {
   console.log(chalk.cyan(`\n🗄️  Running AutoOrg database migrations [${dbPath}]...\n`));
 
   const db = getDb(dbPath);
-  const result: MigrateResult = { applied: [], columnsAdded: 0, alreadyCurrent: true };
+  const result: MigrateResult = { applied: [], columnsAdded: 0, tablesRebuilt: 0, alreadyCurrent: true };
 
   try {
     db.run(`
@@ -288,6 +390,14 @@ export async function migrate(): Promise<MigrateResult> {
       result.applied.push(m.file);
       result.alreadyCurrent = false;
       console.log(chalk.green(`  ✓ Applied migration ${m.file}`));
+    }
+
+    // Rebuild tables whose old shape cannot be reached with ADD COLUMN.
+    for (const spec of REBUILDS) {
+      if (rebuildLegacyTable(db, spec)) {
+        result.tablesRebuilt++;
+        console.log(chalk.green(`  ✓ Rebuilt legacy table ${spec.table}`));
+      }
     }
 
     // Column additions for databases created before the column existed.
