@@ -1,21 +1,25 @@
-import { describe, it, expect, beforeAll } from 'bun:test';
+import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 import { createBestAvailableGraphDB } from '../src/graph/graph-db.js';
 import { GraphBuilder } from '../src/graph/graph-builder.js';
 import { GraphGroundingValidator } from '../src/graph/graph-grounding.js';
-import { loadFeatureFlags } from '../src/config/feature-flags.js';
+import { invalidateFlagCache } from '../src/config/feature-flags.js';
+import { useTestDb, cleanupTestDb } from './helpers/test-db.ts';
 
 describe('Graph Engine (Phase 4)', () => {
-  const runId = 'test_graph_run';
-  
+  const runId = `test_graph_run_${Date.now()}`;
+
   beforeAll(async () => {
-    process.env.AUTOORG_FLAG_knowledgeGraph = 'true';
-    const { loadFeatureFlags } = await import('../src/config/feature-flags.js');
-    await loadFeatureFlags();
-    
-    // Standardize database for tests
-    process.env.AUTOORG_DB_PATH = `/tmp/autoorg-graph-test-${Date.now()}.db`;
-    const { migrate } = await import('../src/db/migrate.js');
-    await migrate();
+    // Must be set BEFORE the DB is opened, and use the key the flag layer
+    // actually reads (`envKeyFor('knowledgeGraph')`), not a made-up name.
+    process.env.FEATURE_KNOWLEDGE_GRAPH = 'true';
+    invalidateFlagCache();
+    await useTestDb('autoorg-graph-');
+  });
+
+  afterAll(() => {
+    delete process.env.FEATURE_KNOWLEDGE_GRAPH;
+    invalidateFlagCache();
+    cleanupTestDb();
   });
 
   it('should create and connect to a graph database', async () => {
