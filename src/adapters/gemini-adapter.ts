@@ -1,18 +1,18 @@
 /**
  * AutoOrg — Native Google Gemini Adapter
  *
- * Uses the official @google/generative-ai SDK instead of the OpenAI-compat proxy.
+ * Uses the official @google/genai SDK instead of the OpenAI-compat proxy.
  * Supports:
  *   - Text generation (run)
  *   - Structured output with Zod schema (structured) — native JSON mode
- *   - Native text embeddings (embed) — models/text-embedding-004
+ *   - Native text embeddings (embed) — gemini-embedding-001
  *   - Multi-turn chat (for agent interview sessions)
  */
 
-import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
+import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from '@google/genai';
 import type { LLMAdapter, LLMProvider, LLMRunOptions, LLMResponse, LLMStructuredOptions } from '@/types/index.js';
 import { parseStructuredOutput } from '@/utils/structured-output.js';
-import { providerApiKey } from '@/config/env.js';
+import { providerApiKey, providerBaseUrl } from '@/config/env.js';
 import { estimateReportedCost } from '@/config/model-costs.js';
 
 const SAFETY_SETTINGS = [
@@ -22,18 +22,19 @@ const SAFETY_SETTINGS = [
   { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
 ];
 
-// Default embedding model — free tier, 768 dimensions
-const EMBEDDING_MODEL = 'models/text-embedding-004';
+// Default embedding model; verify dimensions before mixing with old indexes
+const EMBEDDING_MODEL = 'gemini-embedding-001';
 
 export class GeminiAdapter implements LLMAdapter {
   readonly provider: LLMProvider = 'gemini';
 
-  private client:       GoogleGenerativeAI;
+  private client:       GoogleGenAI;
   private defaultModel: string;
 
   constructor(
-    model:  string = 'gemini-1.5-flash-latest',
-    apiKey?: string
+    model:  string = 'gemini-2.5-flash',
+    apiKey?: string,
+    baseUrl?: string
   ) {
     // GEMINI_API_KEY (documented), GOOGLE_API_KEY, or AUTOORG_API_KEY_GEMINI.
     const key = providerApiKey('gemini', apiKey) || process.env.GOOGLE_API_KEY || '';
@@ -43,26 +44,30 @@ export class GeminiAdapter implements LLMAdapter {
       );
     }
 
-    this.client       = new GoogleGenerativeAI(key);
+    const resolvedBaseUrl = providerBaseUrl('gemini', baseUrl);
+    this.client = new GoogleGenAI({ apiKey: key, httpOptions: { retryOptions: { attempts: 1 }, ...(resolvedBaseUrl ? { baseUrl: resolvedBaseUrl } : {}) } });
     this.defaultModel = model;
   }
 
   // ── Text generation ──────────────────────────────────────────────────────
   async run(opts: LLMRunOptions): Promise<LLMResponse> {
-    // Extract system prompt and user messages from standard LLMMessage array
     const systemMsg = opts.messages.find(m => m.role === 'system')?.content ?? '';
-    const userMsgs  = opts.messages.filter(m => m.role !== 'system');
-    const userText  = userMsgs.map(m => m.content).join('\n\n');
-
-    const model = this.client.getGenerativeModel({
-      model:             opts.model ?? this.defaultModel,
-      systemInstruction: systemMsg || undefined,
-      safetySettings:    SAFETY_SETTINGS,
+    const contents = opts.messages.filter(m => m.role !== 'system').map(m => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }],
+    }));
+    const response = await this.client.models.generateContent({
+      model: opts.model ?? this.defaultModel,
+      contents,
+      config: {
+        systemInstruction: systemMsg || undefined,
+        safetySettings: SAFETY_SETTINGS,
+        temperature: opts.temperature,
+        maxOutputTokens: opts.maxTokens,
+      },
     });
-
-    const result   = await model.generateContent(userText);
-    const response = result.response;
-    const content  = response.text();
+    const content = response.text;
+    if (content === undefined) throw new Error('Gemini response contained no text');
 
     const inputTokens  = response.usageMetadata?.promptTokenCount     ?? 0;
     const outputTokens = response.usageMetadata?.candidatesTokenCount  ?? 0;
@@ -85,48 +90,50 @@ export class GeminiAdapter implements LLMAdapter {
     const userMsgs  = opts.messages.filter(m => m.role !== 'system');
     const userText  = userMsgs.map(m => m.content).join('\n\n');
 
-    const model = this.client.getGenerativeModel({
+    const response = await this.client.models.generateContent({
       model: opts.model ?? this.defaultModel,
-      systemInstruction: systemMsg
-        ? `${systemMsg}\n\nRespond ONLY with valid JSON. No markdown fences.`
-        : 'Respond ONLY with valid JSON. No markdown fences.',
-      safetySettings:   SAFETY_SETTINGS,
-      generationConfig: { responseMimeType: 'application/json' },
+      contents: userText,
+      config: {
+        systemInstruction: systemMsg
+          ? `${systemMsg}\n\nRespond ONLY with valid JSON. No markdown fences.`
+          : 'Respond ONLY with valid JSON. No markdown fences.',
+        safetySettings: SAFETY_SETTINGS,
+        responseMimeType: 'application/json',
+        temperature: opts.temperature,
+        maxOutputTokens: opts.maxTokens,
+      },
     });
-
-    const result = await model.generateContent(userText);
-    const raw    = result.response.text();
-    return parseStructuredOutput(raw, opts.schema);
+    if (response.text === undefined) throw new Error('Gemini response contained no text');
+    return parseStructuredOutput(response.text, opts.schema);
   }
 
   // ── Native text embeddings ───────────────────────────────────────────────
   async embed(text: string): Promise<number[]> {
-    const model  = this.client.getGenerativeModel({ model: EMBEDDING_MODEL });
-    const result = await model.embedContent(text);
-    return result.embedding.values;
+    const result = await this.client.models.embedContent({ model: EMBEDDING_MODEL, contents: text });
+    const values = result.embeddings?.[0]?.values;
+    if (!values) throw new Error('Gemini embedding response was empty');
+    return values;
   }
 
   // ── Multi-turn chat (for interview engine) ───────────────────────────────
   startChat(systemPrompt: string) {
-    const model = this.client.getGenerativeModel({
-      model:             this.defaultModel,
-      systemInstruction: systemPrompt,
-      safetySettings:    SAFETY_SETTINGS,
+    return this.client.chats.create({
+      model: this.defaultModel,
+      history: [],
+      config: { systemInstruction: systemPrompt, safetySettings: SAFETY_SETTINGS, automaticContinuation: false },
     });
-
-    return model.startChat({ history: [] });
   }
 }
 
 // ── Model tier helpers ────────────────────────────────────────────────────
 export const GEMINI_MODELS = {
   // Most capable — use for Ratchet Judge (Opus-equivalent tier)
-  pro:     'gemini-1.5-pro-latest',
+  pro:     'gemini-2.5-pro',
   // Fast + cheap — use for workers (Haiku-equivalent tier)
-  flash:   'gemini-1.5-flash-latest',
+  flash:   'gemini-2.5-flash',
   // Ultra-low latency
-  flash8b: 'gemini-1.5-flash-8b-latest',
+  flash8b: 'gemini-2.5-flash-lite',
   // Next generation
-  pro2:    'gemini-2.0-pro-exp',
-  flash2:  'gemini-2.0-flash-exp',
+  pro2:    'gemini-2.5-pro',
+  flash2:  'gemini-2.5-flash',
 } as const;

@@ -94,7 +94,7 @@ function createAdapter(type: LLMProvider, apiKey?: string, baseUrl?: string): LL
       return new OllamaAdapter(baseUrl);
     case 'gemini':
       // Native Google Generative AI SDK — supports vision, native embeddings, structured output
-      return new GeminiAdapter('gemini-1.5-flash-latest', apiKey);
+      return new GeminiAdapter('gemini-2.5-flash', apiKey, baseUrl);
     case 'groq':
     case 'together':
     case 'custom':

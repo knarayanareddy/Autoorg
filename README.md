@@ -62,6 +62,13 @@ leave it on `ollama` for local inference). Keys may also be supplied as
 `AUTOORG_API_KEY_<PROVIDER>`. The Anthropic SDK v1 message API no longer exposes
 the `temperature` parameter, so Anthropic calls use the provider default even
 when a temperature is requested.
+Gemini now uses the `@google/genai` SDK, a `gemini-2.5-flash` default, and
+`gemini-embedding-001` for embeddings. Existing explicitly configured model IDs
+are not rewritten; verify provider availability. Embeddings from the new model
+may not be compatible with older indexes: rebuild affected indexes rather than
+mixing vectors. `GeminiAdapter.startChat()` now returns the new SDK chat API
+(`sendMessage({ message })`). SDK compatibility is covered with mock providers;
+live provider access and pricing must be verified separately.
 
 ### 3. Launch a Mission
 Create a mission file (e.g., `mission.md`) and launch the orchestrator:
