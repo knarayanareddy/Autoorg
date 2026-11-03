@@ -54,6 +54,7 @@ import { ensureResultsFile, getBestScore } from '@/utils/results-logger.js';
 import { getDb }                      from '@/db/migrate.js';
 import { ConstitutionGuard, ConstitutionChangedError } from './constitution-lock.js';
 import { LLMBudget, LLMBudgetError, withLLMBudget } from './llm-budget.js';
+import { sanitizeRunConfig } from './run-config.js';
 import type { AgentRunnerContext }    from './agent-runner.js';
 import { GraphBuilder }               from '@/graph/graph-builder.js';
 import { createBestAvailableGraphDB } from '@/graph/graph-db.js';
@@ -83,7 +84,7 @@ function createCycleState(runId: string, cycle: number, prevBest: number): Cycle
 function upsertRunInDb(runId: string, config: OrgConfig): void {
   const db = getDb();
   db.prepare(`INSERT OR REPLACE INTO runs (id,org_md_hash,org_md_path,status,config_json) VALUES (?,?,'org.md','running',?)`)
-    .run(runId, config.contentHash, JSON.stringify(config));
+    .run(runId, config.contentHash, JSON.stringify(sanitizeRunConfig(config)));
   db.close();
 }
 
@@ -236,7 +237,7 @@ export async function* orchestratorLoop(
   console.log(chalk.gray(`  Run ID:   ${runId}`));
   console.log(chalk.gray(`  Mode:     Phase 3 (Full Memory System + autoDream)`));
 
-  const startEvt: OrchestratorEvent = { type: 'run_start', runId, config };
+  const startEvt: OrchestratorEvent = { type: 'run_start', runId, config: sanitizeRunConfig(config) };
   yield startEvt;
   eventBus.broadcast(startEvt);
 

@@ -124,3 +124,21 @@ describe('RedactionFilter', () => {
     expect(() => filter.redact('bob@example.com', { channel: 'output' })).not.toThrow();
   });
 });
+
+describe('known credential redaction', () => {
+  it('redacts arbitrary configured environment and registered provider credentials', async () => {
+    const { registerKnownSecret, unregisterKnownSecret } = await import('../src/runtime/redaction.ts');
+    const old = process.env.CUSTOM_API_KEY;
+    process.env.CUSTOM_API_KEY = 'unusual-custom-value-93$';
+    registerKnownSecret('database-secret-77!');
+    try {
+      const result = RedactionFilter.redactOnly('A unusual-custom-value-93$ B database-secret-77!');
+      expect(result.text).not.toContain('unusual-custom-value-93$');
+      expect(result.text).not.toContain('database-secret-77!');
+      expect(result.redacted).toBe(true);
+    } finally {
+      unregisterKnownSecret('database-secret-77!');
+      if (old === undefined) delete process.env.CUSTOM_API_KEY; else process.env.CUSTOM_API_KEY = old;
+    }
+  });
+});

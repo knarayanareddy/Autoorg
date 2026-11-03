@@ -81,3 +81,25 @@ describe('OrgMd Parser', () => {
     expect(config.contentHash).toHaveLength(64);
   });
 });
+
+describe('run configuration secrets', () => {
+  it('does not embed provider environment keys in parsed model assignments', () => {
+    const old = process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = 'custom-anthropic-credential';
+    const file = '/tmp/test-org-secrets.md';
+    try {
+      writeFileSync(file, TEST_ORG_MD);
+      expect(JSON.stringify(parseOrgMd(file))).not.toContain('custom-anthropic-credential');
+    } finally {
+      unlinkSync(file);
+      if (old === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = old;
+    }
+  });
+  it('removes explicitly supplied model keys from persisted and broadcast config', async () => {
+    const { sanitizeRunConfig } = await import('../src/runtime/run-config.ts');
+    const config = { modelAssignments: { CEO: { provider: 'anthropic', model: 'model', apiKey: 'arbitrary-value' } }, mission: 'hello' };
+    const safe = sanitizeRunConfig(config);
+    expect(JSON.stringify(safe)).not.toContain('arbitrary-value');
+    expect(config.modelAssignments.CEO.apiKey).toBe('arbitrary-value');
+  });
+});

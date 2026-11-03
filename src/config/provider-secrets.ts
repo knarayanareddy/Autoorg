@@ -1,5 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import type { Database } from 'bun:sqlite';
+import { registerKnownSecret } from '@/runtime/redaction.js';
 
 const PREFIX = 'enc:v1:';
 function encryptionKey(): Buffer {
@@ -27,7 +28,9 @@ export function decryptProviderKey(value: string, providerId: string): string {
     const decipher = createDecipheriv('aes-256-gcm', encryptionKey(), Buffer.from(parts[0]!, 'hex'));
     decipher.setAAD(Buffer.from(providerId, 'utf8'));
     decipher.setAuthTag(Buffer.from(parts[1]!, 'hex'));
-    return Buffer.concat([decipher.update(Buffer.from(parts[2]!, 'hex')), decipher.final()]).toString('utf8');
+    const secret = Buffer.concat([decipher.update(Buffer.from(parts[2]!, 'hex')), decipher.final()]).toString('utf8');
+    registerKnownSecret(secret);
+    return secret;
   } catch {
     throw new Error('Cannot decrypt provider key: check encryption key and database integrity');
   }

@@ -7,6 +7,7 @@ import { GeminiAdapter } from '@/adapters/gemini-adapter.js';
 import { getDb } from '@/db/migrate.js';
 import { decryptProviderKey } from '@/config/provider-secrets.js';
 import { runBudgetedLLM, requireUnbudgetedStructuredCall } from '@/runtime/llm-budget.js';
+import { registerKnownSecret } from '@/runtime/redaction.js';
 import type { LLMAdapter, LLMProvider, ModelConfig } from '@/types/index.js';
 
 const adapters = new Map<string, LLMAdapter>();
@@ -17,6 +18,7 @@ const adapters = new Map<string, LLMAdapter>();
 export function getAdapter(config: ModelConfig | { provider: LLMProvider; model?: string }): LLMAdapter {
   const providerType = config.provider;
   const apiKey = (config as ModelConfig).apiKey;
+  if (apiKey) registerKnownSecret(apiKey);
   const baseUrl = (config as ModelConfig).baseUrl;
   const cacheKey = `${providerType}:${apiKey ?? 'default'}:${baseUrl ?? 'default'}`;
 

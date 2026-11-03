@@ -44,17 +44,15 @@ function parseModelString(modelStr: string): ModelConfig {
   const provider = trimmed.slice(0, slashIdx) as LLMProvider;
   const model = trimmed.slice(slashIdx + 1);
   
-  // Inject base URLs and API keys from environment
+  // Provider adapters resolve environment credentials without embedding them in run config.
   const config: ModelConfig = { provider, model };
   
   switch (provider) {
     case 'anthropic':
       config.baseUrl = process.env.ANTHROPIC_BASE_URL;
-      config.apiKey = process.env.ANTHROPIC_API_KEY;
       break;
     case 'openai':
       config.baseUrl = process.env.OPENAI_BASE_URL;
-      config.apiKey = process.env.OPENAI_API_KEY;
       break;
     case 'ollama':
       config.baseUrl = process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434';
@@ -62,11 +60,9 @@ function parseModelString(modelStr: string): ModelConfig {
       break;
     case 'groq':
       config.baseUrl = process.env.GROQ_BASE_URL ?? 'https://api.groq.com/openai/v1';
-      config.apiKey = process.env.GROQ_API_KEY;
       break;
     case 'together':
       config.baseUrl = process.env.TOGETHER_BASE_URL ?? 'https://api.together.xyz/v1';
-      config.apiKey = process.env.TOGETHER_API_KEY;
       break;
     case 'lmstudio':
       // LM Studio runs on localhost:1234 by default
@@ -75,7 +71,6 @@ function parseModelString(modelStr: string): ModelConfig {
       break;
     case 'custom':
       config.baseUrl = process.env.CUSTOM_BASE_URL;
-      config.apiKey = process.env.CUSTOM_API_KEY;
       break;
   }
   
