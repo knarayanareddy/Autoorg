@@ -37,9 +37,9 @@ afterEach(() => {
 });
 
 describe('authenticate', () => {
-  it('allows mutating requests when no key is configured (loopback guard applies)', () => {
+  it('fails closed when no key is configured', () => {
     expect(getAuthConfig().apiKey).toBeNull();
-    expect(authenticate(req('POST'), true).ok).toBe(true);
+    expect(authenticate(req('POST'), true).ok).toBe(false);
   });
 
   it('rejects a mutating request with no key once a key is configured', () => {
@@ -115,9 +115,9 @@ describe('checkBootSafety', () => {
     expect(checkBootSafety('0.0.0.0')).toContain('AUTOORG_API_KEY');
   });
 
-  it('allows a loopback bind without an API key', () => {
-    expect(checkBootSafety('127.0.0.1')).toBeNull();
-    expect(checkBootSafety('localhost')).toBeNull();
+  it('refuses a loopback bind without an API key', () => {
+    expect(checkBootSafety('127.0.0.1')).toContain('AUTOORG_API_KEY');
+    expect(checkBootSafety('localhost')).toContain('AUTOORG_API_KEY');
   });
 
   it('allows a public bind when a key is set', () => {

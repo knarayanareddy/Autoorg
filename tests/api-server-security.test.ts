@@ -39,6 +39,14 @@ afterAll(async () => {
 });
 
 describe('API server security', () => {
+  it('refuses an unkeyed loopback server at startup', () => {
+    const child = spawnSync(process.execPath, ['run', 'src/api/server.ts'], {
+      env: { ...process.env, API_HOST: '127.0.0.1', API_PORT: '0', AUTOORG_API_KEY: '', AUTOORG_DB_PATH: path.join(dir, 'test.db') },
+      timeout: 5000, encoding: 'utf8',
+    });
+    expect(child.status).not.toBe(0);
+    expect(child.stderr).toContain('AUTOORG_API_KEY');
+  });
   it('sends security headers on ordinary, preflight and error responses', async () => {
     for (const [path, options] of [
       ['/health', {}],

@@ -350,7 +350,7 @@ function withCors(res: Response, req: Request): Response {
 }
 
 // ── Boot safety ────────────────────────────────────────────────────────
-// Refuse to expose unauthenticated approval endpoints on a public interface.
+// Refuse to expose unauthenticated endpoints, including on loopback.
 const bootProblem = checkBootSafety(HOSTNAME);
 if (bootProblem) {
   console.error(chalk.red(`\n❌ Refusing to start: ${bootProblem}\n`));
@@ -407,7 +407,7 @@ console.log(chalk.white(`   HTTP:      http://localhost:${PORT}/api`));
 console.log(chalk.white(`   WebSocket: ws://localhost:${PORT}/ws`));
 console.log(chalk.white(`   Bind:      ${HOSTNAME}:${PORT}`));
 if (process.env.AUTOORG_API_KEY) {
-  console.log(chalk.green('   Auth:      API key required for POST endpoints'));
+  console.log(chalk.green('   Auth:      API key required for HTTP and WebSocket'));
 } else {
   console.log(chalk.yellow('   Auth:      DISABLED (AUTOORG_API_KEY unset) — loopback only'));
 }

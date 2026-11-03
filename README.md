@@ -90,30 +90,29 @@ permissions (`repo.search`, `web.fetch`, `sandbox.exec`). Every artifact is
 signed and recorded in the **Action Ledger** for full deterministic
 auditability.
 
-**The API binds unauthenticated by default only on loopback.** The approval
-endpoints can commit code, so:
+**The API requires an API key on every interface, including loopback.** The
+approval endpoints can commit code, so:
 
 ```bash
-AUTOORG_API_KEY=<long-random-value>   # required for any non-loopback bind
+AUTOORG_API_KEY=<long-random-value>   # required on every interface
 AUTOORG_CORS_ORIGINS=https://your.dashboard
 GITHUB_WEBHOOK_SECRET=<secret>        # webhooks reject unsigned payloads
 ```
 
-The server **refuses to start** on a public interface without
-`AUTOORG_API_KEY`. CORS is an explicit allowlist — never `*`.
+The server **refuses to start** without `AUTOORG_API_KEY`, even on loopback. CORS is an explicit allowlist — never `*`.
 
 ### Remote deployment and TLS
 
 The Bun API does not terminate TLS. For remote use, put the dashboard and API
 behind a TLS-terminating reverse proxy or VPN; bind the API to `127.0.0.1` and
-set a strong `AUTOORG_API_KEY` **even on loopback** when a proxy can reach it.
+set a strong `AUTOORG_API_KEY`.
 Forward `/api` to the API and `/ws` as a WebSocket upgrade to the API (preserve
 `Upgrade` and `Connection` headers). Serve both through HTTPS so the browser
 uses `wss://`; do not send API keys over plain HTTP or WebSocket connections.
 Configure proxy timeouts and body-size limits as appropriate. The API also
 limits request bodies to 1 MiB.
 
-**The API key protects reads, mutations and WebSocket events when configured.**
+**The API key protects reads, mutations and WebSocket events.**
 The GitHub webhook instead requires its own HMAC signature. Restrict access to
 the dashboard and API at the proxy or network layer as defense in depth; CORS
 is not authentication. Do not expose the dashboard's
@@ -131,9 +130,7 @@ arbitrary headers. Treat URLs as secrets: disable or redact query strings in
 proxy/access logs, monitoring, and tracing; use WSS. Non-browser clients may
 instead send `x-api-key`.
 
-Unkeyed WebSocket access is permitted only from loopback with a trusted browser
-origin; never rely on that exception behind a proxy, since proxied clients may
-appear to be loopback. Failed key attempts are throttled by the direct peer IP,
+Unkeyed WebSocket access is not permitted. Failed key attempts are throttled by the direct peer IP,
 not forwarded headers, so clients behind one proxy share a limit; enforce
 per-client throttling at a trusted proxy if needed. The in-memory limiter resets
 on restart and is not shared between processes.

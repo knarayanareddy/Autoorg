@@ -6,16 +6,9 @@
  * approve a staged commit. This module is the single place that decides whether
  * a request may mutate state.
  *
- * Model
- * ─────
- * - `AUTOORG_API_KEY` enables authentication. Accepted as
- *   `Authorization: Bearer <key>` or `x-api-key: <key>`.
- * - Auth is MANDATORY whenever the server is not bound to loopback. Booting an
- *   unauthenticated server on a public interface is refused rather than warned
- *   about, because "approve arbitrary commits" is not a safe default.
- * - All API requests require the key once one is configured.
- *
- * Set `AUTOORG_API_KEY` in `.env` for anything other than a local run.
+ * All HTTP requests and WebSocket upgrades require AUTOORG_API_KEY, even
+ * on loopback. A local web page can send cross-origin requests to localhost,
+ * so loopback binding alone is not an authentication boundary.
  */
 
 import { timingSafeEqual } from 'node:crypto';
@@ -64,9 +57,7 @@ export function authenticate(req: Request, mutating: boolean): AuthResult {
   const { apiKey } = getAuthConfig();
 
   if (!apiKey) {
-    // No key configured: allow, but only because the boot guard refuses to
-    // start on a non-loopback interface without one.
-    return { ok: true };
+    return { ok: false, status: 503, error: 'API key not configured' };
   }
 
 
@@ -116,20 +107,12 @@ export function corsHeaders(req: Request): Record<string, string> {
 }
 
 /**
- * Refuse to boot an unauthenticated server on a non-loopback interface.
+ * Refuse to boot an unauthenticated server, including on loopback.
  * Returns an error message, or null when the configuration is safe.
  */
 export function checkBootSafety(hostname: string | undefined): string | null {
-  const host = (hostname ?? '0.0.0.0').toLowerCase();
-  const isLoopback = host === 'localhost' || host === '127.0.0.1' || host === '::1';
-  const { apiKey } = getAuthConfig();
-
-  if (!apiKey && !isLoopback) {
-    return (
-      'AUTOORG_API_KEY is not set, but the API is bound to ' + host + '. ' +
-      'Refusing to expose unauthenticated approval endpoints. ' +
-      'Set AUTOORG_API_KEY, or bind to 127.0.0.1 for local use.'
-    );
+  if (!getAuthConfig().apiKey) {
+    return `AUTOORG_API_KEY is not set; refusing to start the API on ${hostname ?? '0.0.0.0'}. Configure a strong key, including for loopback.`;
   }
   return null;
 }
@@ -146,15 +129,5 @@ export function authorizeWsUpgrade(req: Request, peer: string | null): AuthResul
     return { ok: true };
   }
 
-  const local = peer === '127.0.0.1' || peer === '::1' || peer === '::ffff:127.0.0.1';
-  if (!local) return { ok: false, status: 403, error: 'Local access only' };
-  const origin = req.headers.get('origin');
-  if (origin) {
-    const allowed = (process.env.AUTOORG_CORS_ORIGINS ?? '').split(',').map(s => s.trim()).filter(Boolean);
-    const localDashboard = ['http://localhost:3000', 'http://127.0.0.1:3000'];
-    if (origin !== new URL(req.url).origin && !allowed.includes(origin) && !localDashboard.includes(origin)) {
-      return { ok: false, status: 403, error: 'Origin not allowed' };
-    }
-  }
-  return { ok: true };
+  return { ok: false, status: 503, error: 'API key not configured' };
 }
