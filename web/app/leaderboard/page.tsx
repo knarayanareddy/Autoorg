@@ -1,5 +1,7 @@
 'use client';
 
+import { apiFetch } from '@/lib/api-client';
+
 import { useEffect, useState } from 'react';
 
 interface LeaderboardEntry {
@@ -19,7 +21,7 @@ export default function LeaderboardPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/leaderboards')
+    apiFetch('/api/leaderboards')
       .then(res => res.json())
       .then(data => {
         setEntries(data);

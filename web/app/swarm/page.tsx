@@ -1,5 +1,7 @@
 'use client';
 
+import { apiFetch } from '@/lib/api-client';
+
 import { useEffect, useState } from 'react';
 
 export default function SwarmDashboard() {
@@ -9,9 +11,9 @@ export default function SwarmDashboard() {
 
   useEffect(() => {
     const fetchData = () => {
-      fetch('/api/swarm/graph').then(res => res.json()).then(setGraph);
-      fetch('/api/swarm/wallets').then(res => res.json()).then(setWallets);
-      fetch('/api/swarm/registry').then(res => res.json()).then(setServices);
+      apiFetch('/api/swarm/graph').then(res => res.json()).then(setGraph);
+      apiFetch('/api/swarm/wallets').then(res => res.json()).then(setWallets);
+      apiFetch('/api/swarm/registry').then(res => res.json()).then(setServices);
     };
     fetchData();
     const interval = setInterval(fetchData, 5000);

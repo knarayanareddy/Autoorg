@@ -76,8 +76,8 @@ async function handleRequest(req: Request, peer: string): Promise<Response> {
   // Webhooks authenticate with their own HMAC signature, not the API key.
   const isWebhook = url.pathname === '/api/webhooks/github';
 
-  // Auth gate: every mutating endpoint requires the API key once configured.
-  if (!isWebhook && MUTATING.has(method)) {
+  // All API data, including reads, is protected when an API key is configured.
+  if (!isWebhook) {
     const retry = authLimiter.retryAfter(peer);
     if (retry) return new Response(JSON.stringify({ error: 'Too many authentication failures' }), { status: 429, headers: { 'Content-Type': 'application/json', 'Retry-After': String(retry) } });
     const auth = authenticate(req, true);

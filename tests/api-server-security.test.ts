@@ -52,6 +52,12 @@ describe('API server security', () => {
       expect(res.headers.get('content-security-policy')).toBe("default-src 'none'; frame-ancestors 'none'");
     }
   });
+  it('protects read endpoints with the configured key', async () => {
+    expect((await fetch(`http://127.0.0.1:${port}/api/runs`)).status).toBe(401);
+    const res = await fetch(`http://127.0.0.1:${port}/api/runs`, { headers: { 'x-api-key': 'integration-secret' } });
+    expect(res.status).toBe(200);
+    expect(Array.isArray(await res.json())).toBe(true);
+  });
   it('returns 400 for malformed JSON without echoing input', async () => {
     const res = await fetch(`http://127.0.0.1:${port}/api/interview`, { method: 'POST', headers: { 'x-api-key': 'integration-secret' }, body: '{"private":"oops' });
     expect(res.status).toBe(400);

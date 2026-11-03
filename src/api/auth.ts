@@ -13,8 +13,7 @@
  * - Auth is MANDATORY whenever the server is not bound to loopback. Booting an
  *   unauthenticated server on a public interface is refused rather than warned
  *   about, because "approve arbitrary commits" is not a safe default.
- * - Read-only endpoints stay open in local/dev to keep the dashboard usable;
- *   every mutating endpoint requires the key once one is configured.
+ * - All API requests require the key once one is configured.
  *
  * Set `AUTOORG_API_KEY` in `.env` for anything other than a local run.
  */
@@ -59,9 +58,7 @@ export interface AuthResult {
  * Check an incoming request.
  *
  * @param req        The incoming request.
- * @param mutating   True for POST/PUT/PATCH/DELETE. Mutating requests require
- *                   the key whenever one is configured; reads do not, so the
- *                   dashboard keeps working locally.
+ * @param mutating   Retained for compatibility; all methods require the key.
  */
 export function authenticate(req: Request, mutating: boolean): AuthResult {
   const { apiKey } = getAuthConfig();
@@ -72,7 +69,6 @@ export function authenticate(req: Request, mutating: boolean): AuthResult {
     return { ok: true };
   }
 
-  if (!mutating) return { ok: true };
 
   const header = req.headers.get('authorization') ?? '';
   const bearer = header.toLowerCase().startsWith('bearer ')

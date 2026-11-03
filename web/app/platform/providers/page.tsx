@@ -1,5 +1,7 @@
 'use client';
 
+import { apiFetch } from '@/lib/api-client';
+
 import React, { useState } from 'react';
 import useSWR, { mutate } from 'swr';
 import { 
@@ -16,7 +18,7 @@ import {
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
-const fetcher = (url: string) => fetch(url).then((res) => res.json());
+const fetcher = (url: string) => apiFetch(url).then((res) => res.json());
 
 interface ProviderConfig {
   id: string;
@@ -45,7 +47,7 @@ export default function ProvidersPage() {
   });
 
   const handleSave = async () => {
-    await fetch('/api/platform/providers', {
+    await apiFetch('/api/platform/providers', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(form)
@@ -57,14 +59,14 @@ export default function ProvidersPage() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this provider?')) return;
-    await fetch(`/api/platform/providers/${id}`, { method: 'DELETE' });
+    await apiFetch(`/api/platform/providers/${id}`, { method: 'DELETE' });
     mutate('/api/platform/providers');
   };
 
   const testConnection = async (id: string) => {
     setIsTesting(id);
     try {
-      const res = await fetch(`/api/platform/providers/${id}/test`, { method: 'POST' });
+      const res = await apiFetch(`/api/platform/providers/${id}/test`, { method: 'POST' });
       const data = await res.json();
       setTestResult(prev => ({ ...prev, [id]: data.ok }));
     } catch {

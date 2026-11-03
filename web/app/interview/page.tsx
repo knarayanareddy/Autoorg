@@ -1,5 +1,7 @@
 'use client';
 
+import { apiFetch } from '@/lib/api-client';
+
 import { useState, useRef, useEffect } from 'react';
 
 const AGENT_ROLES = ['CEO', 'Engineer', 'Critic', 'DevilsAdvocate', 'Archivist', 'RatchetJudge'];
@@ -28,7 +30,7 @@ export default function InterviewPage() {
     setLoading(true);
 
     try {
-      const res = await fetch('/api/interview', {
+      const res = await apiFetch('/api/interview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -58,7 +60,7 @@ export default function InterviewPage() {
     setMessage('');
 
     try {
-      const res = await fetch(`/api/interview/${sessionId}`, {
+      const res = await apiFetch(`/api/interview/${sessionId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: userTurn.content }),

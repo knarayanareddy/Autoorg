@@ -112,21 +112,23 @@ uses `wss://`; do not send API keys over plain HTTP or WebSocket connections.
 Configure proxy timeouts and body-size limits as appropriate. The API also
 limits request bodies to 1 MiB.
 
-**The API key protects mutations and WebSocket events, not HTTP GET routes.**
-Read endpoints can expose runs and approval details. Restrict access to the
-entire dashboard and API at the proxy or network layer (for example, VPN or
-proxy authentication); CORS is not authentication. Do not expose the dashboard's
+**The API key protects reads, mutations and WebSocket events when configured.**
+The GitHub webhook instead requires its own HMAC signature. Restrict access to
+the dashboard and API at the proxy or network layer as defense in depth; CORS
+is not authentication. Do not expose the dashboard's
 Next.js development server to the internet.
 
 For local development, the dashboard connects to `localhost:3001/ws` from port
 3000. For remote deployments it connects to `/ws` on the dashboard origin,
 which the proxy must forward. When a key is configured, use the dashboard's
-**Live key** control to enter it for the current tab; WebSocket browser clients
+**API key** control to enter it for the current tab. The dashboard stores it in
+`sessionStorage`, sends it in a header on API requests, and clears it when the
+tab closes (or when you enter a blank key). Browser script running on the same
+origin can read it, so keep the dashboard origin trusted. WebSocket clients
 send it in the URL query string because browser WebSocket APIs cannot set
 arbitrary headers. Treat URLs as secrets: disable or redact query strings in
 proxy/access logs, monitoring, and tracing; use WSS. Non-browser clients may
-instead send `x-api-key`. The Live key only authenticates the event stream;
-existing dashboard mutation requests do not yet supply an API key.
+instead send `x-api-key`.
 
 Unkeyed WebSocket access is permitted only from loopback with a trusted browser
 origin; never rely on that exception behind a proxy, since proxied clients may

@@ -1,5 +1,7 @@
 'use client';
 
+import { apiFetch } from '@/lib/api-client';
+
 import { useEffect, useState } from 'react';
 
 interface Approval {
@@ -19,7 +21,7 @@ export function ApprovalCenter() {
 
   const fetchApprovals = async () => {
     try {
-      const res = await fetch('/api/approvals');
+      const res = await apiFetch('/api/approvals');
       const data = await res.json();
       setApprovals(data);
     } catch (err) {
@@ -37,7 +39,7 @@ export function ApprovalCenter() {
 
   const handleAction = async (id: string, action: 'approve' | 'reject') => {
     try {
-      await fetch(`/api/approvals/${id}/${action}`, { method: 'POST' });
+      await apiFetch(`/api/approvals/${id}/${action}`, { method: 'POST' });
       fetchApprovals();
     } catch (err) {
       console.error(`Failed to ${action} approval ${id}:`, err);

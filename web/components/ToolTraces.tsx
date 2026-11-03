@@ -1,5 +1,7 @@
 'use client';
 
+import { apiFetch } from '@/lib/api-client';
+
 import { useEffect, useState } from 'react';
 
 interface ToolExecution {
@@ -22,7 +24,7 @@ export function ToolTraces({ runId }: { runId?: string }) {
   const fetchTraces = async () => {
     if (!runId) return;
     try {
-      const res = await fetch(`/api/tools/executions?runId=${runId}`);
+      const res = await apiFetch(`/api/tools/executions?runId=${runId}`);
       const data = await res.json();
       setTraces(data);
     } catch (err) {

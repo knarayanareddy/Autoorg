@@ -1,5 +1,7 @@
 'use client';
 
+import { apiFetch } from '@/lib/api-client';
+
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { SecurityFindings } from '@/components/SecurityFindings';
@@ -25,11 +27,11 @@ export default function RunDetailPage() {
   useEffect(() => {
     // Polling for run data
     const interval = setInterval(() => {
-      fetch(`/api/runs/${runId}`).then(res => res.json()).then(setData);
-      fetch(`/api/runs/${runId}/pivots`).then(res => res.json()).then(setPivots);
-      fetch(`/api/runs/${runId}/debt`).then(res => res.json()).then(setDebt);
-      fetch(`/api/runs/${runId}/costs`).then(res => res.json()).then(setCosts);
-      fetch(`/api/runs/${runId}/graph`).then(res => res.json()).then(setGraphData);
+      apiFetch(`/api/runs/${runId}`).then(res => res.json()).then(setData);
+      apiFetch(`/api/runs/${runId}/pivots`).then(res => res.json()).then(setPivots);
+      apiFetch(`/api/runs/${runId}/debt`).then(res => res.json()).then(setDebt);
+      apiFetch(`/api/runs/${runId}/costs`).then(res => res.json()).then(setCosts);
+      apiFetch(`/api/runs/${runId}/graph`).then(res => res.json()).then(setGraphData);
     }, 3000);
     return () => clearInterval(interval);
   }, [runId]);
@@ -37,14 +39,14 @@ export default function RunDetailPage() {
   const updateObjective = (type: string, value: number) => {
     const next = { ...objectives, [type]: value };
     setObjectives(next);
-    fetch(`/api/runs/${runId}/objectives`, {
+    apiFetch(`/api/runs/${runId}/objectives`, {
       method: 'POST',
       body: JSON.stringify(next)
     });
   };
 
   const approvePivot = (pivotId: string) => {
-    fetch(`/api/pivots/${pivotId}/approve`, { method: 'POST' });
+    apiFetch(`/api/pivots/${pivotId}/approve`, { method: 'POST' });
   };
 
   if (!data) return <div className="p-12 text-center text-gray-500 italic">Initializing mission data...</div>;

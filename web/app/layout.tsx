@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { ApiKeyControl } from '@/components/ApiKeyControl';
 
 export const metadata: Metadata = {
   title:       'AutoOrg Dashboard',
@@ -13,6 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <header className="border-b border-gray-800 px-6 py-3 flex items-center gap-4">
           <span className="text-cyan-400 font-bold text-lg">🔬 AutoOrg</span>
           <span className="text-gray-500 text-sm">Autonomous Research Organization Engine</span>
+          <ApiKeyControl />
           <nav className="ml-auto flex gap-6 text-sm">
             <a href="/"           className="text-gray-400 hover:text-cyan-400 transition-colors">Dashboard</a>
             <a href="/graph"      className="text-gray-400 hover:text-cyan-400 transition-colors">Knowledge Graph</a>
