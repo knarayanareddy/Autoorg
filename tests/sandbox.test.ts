@@ -144,6 +144,19 @@ describe('sandbox.run (bun mode, explicitly opted in)', () => {
     expect(res.stderr).toMatch(/denylist/i);
   }, 20000);
 
+  it('reports a timeout as failure', async () => {
+    const result = await sandbox.run('sleep 2', { timeout: 50 });
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toMatch(/timed out/i);
+  });
+
+  it('bounds command output and fails when the limit is exceeded', async () => {
+    const result = await sandbox.run('python3 -c "print(chr(120) * 2000000)"');
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stdout.length).toBeLessThanOrEqual(1024 * 1024);
+    expect(result.stderr).toMatch(/limit/i);
+  });
+
   it('still runs ordinary commands', async () => {
     const res = await sandbox.run('echo sandbox-ok');
     expect(res.exitCode).toBe(0);
