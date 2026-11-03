@@ -10,6 +10,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'bun:test';
+import { createServer } from 'node:http';
 import {
   safeWebFetch,
   validateFetchUrl,
@@ -160,4 +161,29 @@ describe('safeWebFetch (end to end)', () => {
     expect(res.status).toBe(200);
     expect(res.summary).toContain('Fetched');
   });
+});
+
+
+describe('SSRF regression: translated addresses and DNS rebinding', () => {
+  it('rejects IPv4-mapped and translation IPv6 forms', async () => {
+    for (const host of ['::ffff:7f00:1', '::ffff:127.0.0.1', '::ffff:a9fe:a9fe', '0:0:0:0:0:ffff:7f00:1', '2002:7f00:1::1']) {
+      expect(isPrivateAddress(host)).toBe(true);
+      await expect(validateFetchUrl(`http://[${host}]/`)).rejects.toThrow(FetchBlockedError);
+    }
+  });
+  it('does not connect when DNS changes from public to loopback', async () => {
+    let requests = 0;
+    const server = createServer((_req, res) => { requests++; res.end('private'); });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const port = (server.address() as {port: number}).port;
+      let lookups = 0;
+      const resolver = async () => [{ address: ++lookups === 1 ? '8.8.8.8' : '127.0.0.1', family: 4 }];
+      const result = await safeWebFetch(`http://example.invalid:${port}/`, 200, resolver);
+      expect(result.status).not.toBe(200);
+      expect(result.summary).not.toContain('ENOTFOUND'); // The HTTP client actually used the pinned address.
+      expect(requests).toBe(0);
+      expect(lookups).toBe(1); // DNS is resolved once and the vetted address is pinned.
+    } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
+  }, 15000);
 });
