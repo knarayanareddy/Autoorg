@@ -9,38 +9,40 @@ env:
   DB_PATH: /tmp/autoorg-cd-${{ github.run_id }}.db
 
 jobs:
-  deploy-staging:
+  verify-local:
+    name: Verify release locally (no deployment)
     runs-on: ubuntu-latest
-    environment: staging
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-autoorg
         with:
           build-web: 'true'
-
-      - name: Run Migrations
+      - name: Run migrations
         uses: ./.github/actions/run-migrations
-
-      - name: Deploy to Staging
-        run: bun run scripts/deploy/deploy-single-node.ts
-        env:
-          SSH_HOST: ${{ vars.STAGING_HOST }}
-          SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
-          DEPLOY_SHA: ${{ github.sha }}
-
-      - name: Health Check
+      - name: Create temporary API key
+        shell: bash
+        run: |
+          key="$(openssl rand -hex 32)"
+          echo "::add-mask::$key"
+          echo "AUTOORG_API_KEY=$key" >> "$GITHUB_ENV"
+      - name: Authenticated local health check
         uses: ./.github/actions/health-check
         with:
-          api-url: ${{ vars.STAGING_URL || 'http://localhost:3001' }}
+          api-url: http://localhost:3001
           start-local: 'true'
-
-      - name: Smoke Test
+      - name: Authenticated local smoke test
         run: bun run scripts/ci/smoke-test.ts
         env:
-          AUTOORG_API_URL: ${{ vars.STAGING_URL || 'http://localhost:3001' }}
+          AUTOORG_API_URL: http://localhost:3001
 
-      - name: Rollback on Failure
-        if: failure()
-        run: bun run scripts/ci/rollback.ts
-        env:
-          ROLLBACK_SHA: ${{ github.event.before }}
+  deploy-staging:
+    name: Staging deployment (not implemented)
+    needs: verify-local
+    if: ${{ vars.AUTOORG_ENABLE_STAGING_DEPLOY == 'true' }}
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Refuse unimplemented deployment
+        run: bun run scripts/deploy/deploy-single-node.ts

@@ -1,5 +1,5 @@
 name: Health Check
-description: Run smoke tests against a running AutoOrg instance.
+description: Verify an authenticated AutoOrg API health endpoint.
 
 inputs:
   api-url:
@@ -11,7 +11,7 @@ inputs:
     required: false
     default: '60'
   start-local:
-    description: Whether to start a local server if the API is not up
+    description: Start a local API if needed
     required: false
     default: 'false'
 
@@ -20,48 +20,25 @@ runs:
   steps:
     - name: Ensure API is available
       shell: bash
+      env:
+        AUTOORG_API_URL: ${{ inputs.api-url }}
+        HEALTH_TIMEOUT: ${{ inputs.timeout-seconds }}
+        START_LOCAL: ${{ inputs.start-local }}
       run: |
-        URL="${{ inputs.api-url }}"
-        TIMEOUT=${{ inputs.timeout-seconds }}
-        START_LOCAL=${{ inputs.start-local }}
-        
-        echo "📡 Probing API at: $URL"
-        
-        # Check if already up
-        if curl -sf "$URL/health" > /dev/null 2>&1 || curl -sf "$URL/api/health" > /dev/null 2>&1; then
-          echo "✅ API is already up"
-          exit 0
-        fi
-
-        # Start local if requested and on localhost
-        if [[ "$START_LOCAL" == "true" && "$URL" == *"localhost"* ]]; then
-          echo "🚀 Starting local API server for verification..."
-          # Set safe defaults if not provided
+        set -euo pipefail
+        [[ "$HEALTH_TIMEOUT" =~ ^[0-9]+$ ]] && (( HEALTH_TIMEOUT > 0 )) || { echo 'Invalid health timeout'; exit 1; }
+        if bun run scripts/ci/health-check.ts > /dev/null 2>&1; then exit 0; fi
+        if [[ "$START_LOCAL" == "true" && "$AUTOORG_API_URL" =~ ^http://(localhost|127\.0\.0\.1)(:[0-9]+)?/?$ ]]; then
+          export API_HOST=127.0.0.1
           export AUTOORG_DB_PATH="${AUTOORG_DB_PATH:-./autoorg.db}"
           nohup bun run src/api/server.ts > api.log 2>&1 &
-          SERVER_PID=$!
-          echo "   Server PID: $SERVER_PID"
-          # Wait a few seconds for process to spawn
-          sleep 3
         fi
-
-        echo "⏱️ Waiting for API to respond (Timeout: ${TIMEOUT}s)..."
-        for i in $(seq 1 $TIMEOUT); do
-          if curl -sf "$URL/health" > /dev/null 2>&1 || curl -sf "$URL/api/health" > /dev/null 2>&1; then
-            echo "✅ API is up and responding."
-            exit 0
-          fi
-          if [ $((i % 10)) -eq 0 ]; then
-             echo "... still waiting ($i/${TIMEOUT}s) ..."
-          fi
+        for ((i=0; i<HEALTH_TIMEOUT; i++)); do
+          if bun run scripts/ci/health-check.ts > /dev/null 2>&1; then exit 0; fi
           sleep 1
         done
-
-        echo "❌ API did not come up in time at $URL"
-        if [ ! -z "$SERVER_PID" ]; then
-          echo "📄 Last 20 lines of API log:"
-          tail -n 20 api.log
-        fi
+        echo 'API health check timed out.'
+        [[ ! -f api.log ]] || tail -n 20 api.log
         exit 1
 
     - name: Run health check script

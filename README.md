@@ -258,3 +258,12 @@ conventions.
 
 ## 📜 License
 MIT © 2026 AutoOrg Framework.
+### Deployment status
+
+The CD workflow runs authenticated **local verification only**; it does not
+ship a release to staging or production. The previous deploy stub reported
+success without deploying and has been made fail-closed. A real deployment,
+verified host keys, health checks, and rollback procedure must be designed and
+validated for the target environment before enabling automated staging. Setting
+`AUTOORG_ENABLE_STAGING_DEPLOY` currently runs a step that deliberately fails;
+it does not deploy or roll back anything.
