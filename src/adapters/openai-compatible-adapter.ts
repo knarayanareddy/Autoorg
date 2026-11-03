@@ -44,7 +44,8 @@ export class OpenAICompatibleAdapter extends BaseAdapter {
     return {
       content,
       usage: { inputTokens, outputTokens },
-      costUsd: estimateCost(opts.model, inputTokens, outputTokens),
+      promptTokens: inputTokens, completionTokens: outputTokens, totalTokens: inputTokens + outputTokens,
+      costUsd: data.usage ? estimateCost(opts.model, inputTokens, outputTokens) : undefined,
       model: opts.model,
     };
   }

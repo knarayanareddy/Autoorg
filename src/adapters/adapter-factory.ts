@@ -6,6 +6,7 @@ import { OpenAICompatibleAdapter } from '@/adapters/openai-compatible-adapter.js
 import { GeminiAdapter } from '@/adapters/gemini-adapter.js';
 import { getDb } from '@/db/migrate.js';
 import { decryptProviderKey } from '@/config/provider-secrets.js';
+import { runBudgetedLLM, requireUnbudgetedStructuredCall } from '@/runtime/llm-budget.js';
 import type { LLMAdapter, LLMProvider, ModelConfig } from '@/types/index.js';
 
 const adapters = new Map<string, LLMAdapter>();
@@ -41,14 +42,24 @@ export function getAdapter(config: ModelConfig | { provider: LLMProvider; model?
   if (dbProv) {
     const storedKey = dbProv.api_key ? decryptProviderKey(dbProv.api_key, dbProv.id) : undefined;
     const adapter = createAdapter(dbProv.provider_type, storedKey ?? apiKey, dbProv.base_url ?? baseUrl);
-    adapters.set(cacheKey, adapter);
-    return adapter;
+    const guarded = guardAdapter(adapter);
+    adapters.set(cacheKey, guarded);
+    return guarded;
   }
 
   // Fallback to environment variables (Legacy/Phase 1-14 mode)
   const adapter = createAdapter(providerType, apiKey, baseUrl);
-  adapters.set(cacheKey, adapter);
-  return adapter;
+  const guarded = guardAdapter(adapter);
+  adapters.set(cacheKey, guarded);
+  return guarded;
+}
+
+export function guardAdapter(adapter: LLMAdapter): LLMAdapter {
+  return {
+    provider: adapter.provider,
+    run: opts => runBudgetedLLM(() => adapter.run(opts)),
+    structured: opts => { requireUnbudgetedStructuredCall(); return adapter.structured(opts); },
+  };
 }
 
 function createAdapter(type: LLMProvider, apiKey?: string, baseUrl?: string): LLMAdapter {

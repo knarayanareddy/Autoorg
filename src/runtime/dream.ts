@@ -38,6 +38,7 @@ import path                           from 'node:path';
 import { getAdapter }                 from '@/adapters/adapter-factory.js';
 import { parseStructuredOutput }     from '@/utils/structured-output.js';
 import { withLLMRetry }               from '@/utils/retry.js';
+import { LLMBudgetError } from '@/runtime/llm-budget.js';
 import { gitCommit }                  from '@/utils/git.js';
 import { getDb }                      from '@/db/migrate.js';
 import { featureFlag }                from '@/config/feature-flags.js';
@@ -212,6 +213,7 @@ export class DreamEngine {
       console.log(chalk.magenta(`     Dream quality: ${(dreamOutput.quality_score * 100).toFixed(0)}%`));
 
     } catch (err) {
+      if (err instanceof LLMBudgetError) throw err;
       console.error(chalk.red(`     DreamAgent LLM failed: ${err}`));
       dreamOutput = {
         validated_patterns: [],

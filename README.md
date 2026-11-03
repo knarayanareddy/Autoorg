@@ -140,6 +140,23 @@ on restart and is not shared between processes.
 Redaction prevents recognized secret patterns from entering new transcripts
 and search results; it is not a substitute for rotating exposed keys or
 reviewing existing files. Older transcripts are not automatically sanitized.
+### Run budgets
+
+`MAX_API_SPEND_USD` is checked immediately before every LLM attempt in the
+main run, including graph extraction, agent/tool planning, judging and dreams.
+Calls within a run are serialized so parallel workers cannot spend the same
+remaining budget. Successful usage is accounted immediately. If a failed call
+or response does not report a cost, the run stops rather than retrying with
+unknown billing; provider SDK retries are disabled. Outside the main run (for
+example, separate interview or benchmark processes), configure provider-side
+limits separately.
+
+This is a **best-effort spending guard**, not a guaranteed billing cap: the
+application uses estimated, potentially outdated model prices, and a single
+request can cross the remaining budget before its cost is known. Provider
+billing, failed requests, other processes and external API use can differ from
+these estimates. Set hard spending limits with the provider as well.
+
 ### Constitution lock
 
 The `constitutionLock` flag is enabled by default. A run records a hash of a

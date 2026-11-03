@@ -21,6 +21,7 @@ export class OpenAIAdapter extends BaseAdapter {
     const resolvedBaseUrl = providerBaseUrl('openai', baseUrl);
     this.client = new OpenAI({
       apiKey: key,
+      maxRetries: 0, // Retry only through the budget-aware application layer.
       ...(resolvedBaseUrl ? { baseURL: resolvedBaseUrl } : {}),
     });
   }
@@ -39,15 +40,16 @@ export class OpenAIAdapter extends BaseAdapter {
     const content = response.choices[0]?.message?.content ?? '';
     const inputTokens = response.usage?.prompt_tokens ?? 0;
     const outputTokens = response.usage?.completion_tokens ?? 0;
-    const costUsd = estimateCost(opts.model, inputTokens, outputTokens);
+    const costUsd = response.usage ? estimateCost(opts.model, inputTokens, outputTokens) : undefined;
 
     if (process.env.AUTOORG_DEBUG_LLM === '1') {
-      console.debug(`[OpenAIAdapter] model=${opts.model} in=${inputTokens} out=${outputTokens} cost=$${costUsd.toFixed(6)}`);
+      console.debug(`[OpenAIAdapter] model=${opts.model} in=${inputTokens} out=${outputTokens} cost=$${costUsd?.toFixed(6) ?? "unknown"}`);
     }
 
     return {
       content,
       usage: { inputTokens, outputTokens },
+      promptTokens: inputTokens, completionTokens: outputTokens, totalTokens: inputTokens + outputTokens,
       costUsd,
       model: opts.model,
     };

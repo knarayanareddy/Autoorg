@@ -195,7 +195,7 @@ export function validateOrgConfig(config: OrgConfig): string[] {
     errors.push('MISSION section is missing or too short (< 20 chars)');
   }
   
-  if (config.maxApiSpendUsd <= 0) {
+  if (!Number.isFinite(config.maxApiSpendUsd) || config.maxApiSpendUsd <= 0) {
     errors.push('MAX_API_SPEND_USD must be greater than 0');
   }
   

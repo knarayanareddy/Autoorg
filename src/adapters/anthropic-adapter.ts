@@ -22,6 +22,7 @@ export class AnthropicAdapter extends BaseAdapter {
     const resolvedBaseUrl = providerBaseUrl('anthropic', baseUrl);
     this.client = new Anthropic({
       apiKey: key,
+      maxRetries: 0, // Retry only through the budget-aware application layer.
       ...(resolvedBaseUrl ? { baseURL: resolvedBaseUrl } : {}),
     });
   }
@@ -57,6 +58,7 @@ export class AnthropicAdapter extends BaseAdapter {
     return {
       content,
       usage: { inputTokens, outputTokens },
+      promptTokens: inputTokens, completionTokens: outputTokens, totalTokens: inputTokens + outputTokens,
       costUsd,
       model: opts.model,
     };
