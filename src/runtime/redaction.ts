@@ -6,6 +6,20 @@ function hashText(text: string) {
   return createHash('sha256').update(text).digest('hex');
 }
 
+// Known credentials cover arbitrary provider-specific formats that pattern
+// detectors cannot infer. Never persist or print the registered values.
+const knownSecrets = new Set<string>();
+export function registerKnownSecret(secret: string): void {
+  if (secret.length >= 8) knownSecrets.add(secret);
+}
+export function unregisterKnownSecret(secret: string): void { knownSecrets.delete(secret); }
+function configuredSecrets(): string[] {
+  const env = Object.entries(process.env)
+    .filter(([key]) => (/(?:^|_)(?:API_KEY|TOKEN|SECRET|PASSWORD|ENCRYPTION_KEY|ACCESS_KEY_ID|SECRET_ACCESS_KEY)$/i.test(key) || /^AUTOORG_API_KEY_/i.test(key)))
+    .map(([, value]) => value ?? '').filter(value => value.length >= 8);
+  return [...new Set([...knownSecrets, ...env])].sort((a, b) => b.length - a.length);
+}
+
 interface Detector {
   detector: string;
   type: string;
@@ -107,6 +121,13 @@ export class RedactionFilter {
           replacement: rule.replacement,
         });
       }
+    }
+
+    for (const secret of configuredSecrets()) {
+      if (!out.includes(secret)) continue;
+      const count = out.split(secret).length - 1;
+      out = out.split(secret).join('[REDACTED:CONFIGURED_SECRET]');
+      for (let i = 0; i < count; i++) events.push({ detector: 'secret', findingType: 'configured_secret', replacement: '[REDACTED:CONFIGURED_SECRET]' });
     }
 
     const afterHash = hashText(out);

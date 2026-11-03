@@ -288,7 +288,7 @@ const FALLBACK_FLAGS: Array<[string, boolean, string]> = [
   ['daemonMode',          true,  'Persistent background daemon mode'],
   ['cycleSnapshots',      true,  'Snapshot run state after every cycle'],
   ['githubIntegration',   true,  'Accept and process GitHub webhooks'],
-  ['constitutionLock',    true,  'Terminate agents that modify constitution.md'],
+  ['constitutionLock',    true,  'Protect constitution.md; block write-capable tools and stop on changes'],
   ['maxCostGuard',        true,  'Hard stop when API budget exceeded'],
   ['gitAuditTrail',       true,  'Commit/revert every proposal to git'],
 

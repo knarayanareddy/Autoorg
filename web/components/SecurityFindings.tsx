@@ -1,5 +1,7 @@
 'use client';
 
+import { apiFetch } from '@/lib/api-client';
+
 import { useEffect, useState } from 'react';
 
 interface Finding {
@@ -19,7 +21,7 @@ export function SecurityFindings({ runId }: { runId?: string }) {
   const fetchFindings = async () => {
     if (!runId) return;
     try {
-      const res = await fetch(`/api/security/findings?runId=${runId}`);
+      const res = await apiFetch(`/api/security/findings?runId=${runId}`);
       const data = await res.json();
       setFindings(data);
     } catch (err) {

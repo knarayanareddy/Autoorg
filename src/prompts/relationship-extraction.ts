@@ -15,7 +15,7 @@ export const RelationshipExtractionSchema = z.object({
     ]),
     sourceText:   z.string(),
     confidence:   z.number().min(0).max(1),
-    properties:   z.record(z.unknown()).optional(),
+    properties:   z.record(z.string(), z.unknown()).optional(),
   })),
   relationship_count: z.number(),
 });

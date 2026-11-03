@@ -16,6 +16,8 @@
 import { computeEmbeddingCached, cosineSimilarity, deserializeEmbedding } from './embeddings.js';
 import { searchBM25 }    from './bm25.js';
 import { getDb }         from '@/db/migrate.js';
+import { transcriptContentEnabled } from '@/runtime/transcript-privacy.js';
+import { RedactionFilter } from '@/runtime/redaction.js';
 
 export interface HybridSearchResult {
   id:            string;
@@ -43,6 +45,7 @@ export async function hybridSearch(
   runId:   string,
   opts:    HybridSearchOptions = {}
 ): Promise<HybridSearchResult[]> {
+  if (!transcriptContentEnabled()) return [];
   const vectorWeight = opts.vectorWeight ?? 0.7;
   const bm25Weight   = opts.bm25Weight   ?? 0.3;
   const topK         = opts.topK         ?? 10;
@@ -106,9 +109,9 @@ export async function hybridSearch(
       id:           c.id,
       run_id:       c.run_id,
       cycle_number: c.cycle_number,
-      role:         c.role,
-      action:       c.action,
-      content:      c.content,
+      role:         RedactionFilter.redactOnly(c.role).text,
+      action:       RedactionFilter.redactOnly(c.action).text,
+      content:      RedactionFilter.redactOnly(c.content).text,
     });
   }
 

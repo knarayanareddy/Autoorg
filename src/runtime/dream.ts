@@ -38,6 +38,9 @@ import path                           from 'node:path';
 import { getAdapter }                 from '@/adapters/adapter-factory.js';
 import { parseStructuredOutput }     from '@/utils/structured-output.js';
 import { withLLMRetry }               from '@/utils/retry.js';
+import { LLMBudgetError } from '@/runtime/llm-budget.js';
+import { transcriptContentEnabled } from '@/runtime/transcript-privacy.js';
+import { RedactionFilter } from '@/runtime/redaction.js';
 import { gitCommit }                  from '@/utils/git.js';
 import { getDb }                      from '@/db/migrate.js';
 import { featureFlag }                from '@/config/feature-flags.js';
@@ -212,6 +215,7 @@ export class DreamEngine {
       console.log(chalk.magenta(`     Dream quality: ${(dreamOutput.quality_score * 100).toFixed(0)}%`));
 
     } catch (err) {
+      if (err instanceof LLMBudgetError) throw err;
       console.error(chalk.red(`     DreamAgent LLM failed: ${err}`));
       dreamOutput = {
         validated_patterns: [],
@@ -435,7 +439,7 @@ export class DreamEngine {
     }
 
     // Now compute and store embeddings for un-embedded entries
-    if (featureFlag('localEmbeddings')) {
+    if (transcriptContentEnabled() && featureFlag('localEmbeddings')) {
       await this.computeTranscriptEmbeddings();
     }
 
@@ -457,7 +461,7 @@ export class DreamEngine {
     console.log(chalk.magenta(`     Computing ${rows.length} embeddings...`));
 
     for (const row of rows) {
-      const vec    = await computeEmbeddingCached(row.content);
+      const vec    = await computeEmbeddingCached(RedactionFilter.redactOnly(row.content).text);
       const embBuf = serializeEmbedding(vec);
 
       const db2 = getDb();

@@ -1,3 +1,5 @@
+import { transcriptContentEnabled, OMITTED_TRANSCRIPT_CONTENT } from '@/runtime/transcript-privacy.js';
+import { RedactionFilter } from '@/runtime/redaction.js';
 /**
  * AutoOrg Memory Manager — Phase 3 Full Upgrade
  *
@@ -240,6 +242,7 @@ export class MemoryManager {
     currentCycle: number,
     query?:       string
   ): Promise<string> {
+    if (!transcriptContentEnabled()) return OMITTED_TRANSCRIPT_CONTENT;
     // Phase 3: Use hybrid search if query provided and features enabled
     if (
       query &&
@@ -279,7 +282,7 @@ export class MemoryManager {
 
         const keyMoments = entries
           .filter(e => e && ['score', 'commit', 'revert', 'error', 'response'].includes(e.action ?? ''))
-          .map(e => `Cycle ${c} [${e?.role}/${e?.action}]: ${(e?.content ?? '').slice(0, 100)}`);
+          .map(e => `Cycle ${c} [${RedactionFilter.redactOnly(e?.role ?? '').text}/${RedactionFilter.redactOnly(e?.action ?? '').text}]: ${RedactionFilter.redactOnly(e?.content ?? '').text.slice(0, 100)}`);
 
         lines.push(...keyMoments);
       } catch {

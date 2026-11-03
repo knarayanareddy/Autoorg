@@ -64,13 +64,16 @@ export function extractSqlLiterals(src: string): string[] {
 /** Read every table and its columns from a migrated database. */
 export function readSchema(db: Database): Map<string, TableSchema> {
   const tables = db
-    .prepare(`SELECT name FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%'`)
-    .all() as Array<{ name: string }>;
+    .prepare(`SELECT name, sql FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%'`)
+    .all() as Array<{ name: string; sql: string | null }>;
 
   const schema = new Map<string, TableSchema>();
-  for (const { name } of tables) {
+  for (const { name, sql } of tables) {
     const cols = db.prepare(`PRAGMA table_info("${name}")`).all() as Array<{ name: string }>;
-    schema.set(name.toLowerCase(), { columns: new Set(cols.map(c => c.name.toLowerCase())) });
+    const columns = new Set(cols.map(c => c.name.toLowerCase()));
+    // FTS5 supports a hidden table-name column for control commands.
+    if (sql && /\bUSING\s+fts5\s*\(/i.test(sql)) columns.add(name.toLowerCase());
+    schema.set(name.toLowerCase(), { columns });
   }
   return schema;
 }

@@ -1,3 +1,5 @@
+import { transcriptContentEnabled } from '@/runtime/transcript-privacy.js';
+import { sanitizeRunConfig } from '@/runtime/run-config.js';
 /**
  * Baseline response headers.
  *
@@ -12,6 +14,15 @@ export const CORS = {
   'Content-Type':                 'application/json',
 };
 
+export const MAX_BODY_BYTES = 1024 * 1024;
+
+/** Early check; the server also enforces the limit while reading streamed bodies. */
+export function checkContentLength(req: Request): boolean {
+  const value = req.headers.get('content-length');
+  if (value === null) return true;
+  return /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) <= MAX_BODY_BYTES;
+}
+
 export function json(data: unknown, statusOrOpts: number | { status: number } = 200): Response {
   const status = typeof statusOrOpts === 'number' ? statusOrOpts : statusOrOpts.status;
   return new Response(JSON.stringify(data), { 
@@ -24,8 +35,24 @@ export function notFound(msg = 'Not found'): Response {
   return json({ error: msg }, 404);
 }
 
-export function serverError(msg: string): Response {
-  return json({ error: msg }, 500);
+export function serverError(): Response {
+  return json({ error: 'Internal server error' }, 500);
+}
+
+/** An explicitly safe client-facing error, never constructed from raw input. */
+export class HttpError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+  }
+}
+
+export async function parseJsonBody(req: Request): Promise<unknown> {
+  try {
+    return await req.json();
+  } catch (err) {
+    if (err instanceof SyntaxError) throw new HttpError(400, 'Invalid JSON');
+    throw err;
+  }
 }
 
 export function registerRoute(pattern: string, handler: (params: Record<string, string>) => Response) {
@@ -55,4 +82,11 @@ export function matchRoute(
     }
   }
   return params;
+}
+
+/** Never expose legacy tool payloads by default. */
+export function sanitizeToolTrace(row: Record<string, unknown>): Record<string, unknown> {
+  if (transcriptContentEnabled()) return sanitizeRunConfig(row);
+  const allowed = ['id', 'run_id', 'cycle_number', 'role', 'tool_name', 'capability_class', 'status', 'cost_usd', 'duration_ms', 'created_at', 'started_at', 'finished_at', 'task_id', 'team_id', 'source_count'];
+  return Object.fromEntries(allowed.filter(key => key in row).map(key => [key, row[key]]));
 }

@@ -4,6 +4,7 @@ import { nanoid } from 'nanoid';
 import chalk from 'chalk';
 import { getDbPath } from '@/db/migrate.js';
 import { providerApiKey, providerBaseUrl } from '@/config/env.js';
+import { encryptProviderKey } from '@/config/provider-secrets.js';
 
 const DB_PATH = getDbPath();
 
@@ -68,10 +69,13 @@ async function main() {
 
   for (const p of providers) {
     const id = `prov_${nanoid(8)}`;
+    // Without a master key, keep credentials only in the environment.
+    const storedKey = p.key && process.env.AUTOORG_PROVIDER_ENCRYPTION_KEY
+      ? encryptProviderKey(p.key, id) : null;
     db.prepare(`
       INSERT OR IGNORE INTO llm_providers (id, name, provider_type, api_key, base_url, is_enabled, is_default)
       VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, p.name, p.type, p.key ?? null, p.baseUrl, p.enabled, p.type === 'anthropic' ? 1 : 0);
+    `).run(id, p.name, p.type, storedKey, p.baseUrl, p.enabled, p.type === 'anthropic' ? 1 : 0);
 
     const status = p.enabled ? chalk.green('enabled') : chalk.gray('no key — disabled');
     console.log(`  ✓ Seeded provider: ${p.name} (${p.type}) — ${status}`);

@@ -9,6 +9,8 @@
  */
 
 import chalk                         from 'chalk';
+import { createHash } from 'node:crypto';
+import { transcriptContentEnabled, OMITTED_TRANSCRIPT_CONTENT } from './transcript-privacy.js';
 import { nanoid }                    from 'nanoid';
 import { getAdapter }                from '@/adapters/adapter-factory.js';
 import { featureFlag }                 from '@/config/feature-flags.js';
@@ -85,7 +87,7 @@ async function callLLM(
   `).run(
     execId, cycleId, runId, role,
     modelConfig.provider, modelConfig.model,
-    Buffer.from(system).toString('base64').slice(0, 64) // hash proxy
+    createHash('sha256').update(system).digest('hex')
   );
   db.close();
 
@@ -134,7 +136,7 @@ async function callLLM(
     (response as any).promptTokens,
     (response as any).completionTokens,
     (response as any).costUsd,
-    cleanContent.slice(0, 10000), 
+    transcriptContentEnabled() ? cleanContent.slice(0, 10000) : OMITTED_TRANSCRIPT_CONTENT, 
     (response as any).promptTokens,
     execId
   );

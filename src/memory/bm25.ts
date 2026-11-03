@@ -11,6 +11,9 @@
  */
 
 import { getDb } from '@/db/migrate.js';
+import { transcriptContentEnabled } from '@/runtime/transcript-privacy.js';
+import { RedactionFilter } from '@/runtime/redaction.js';
+import { createHash } from 'node:crypto';
 
 export interface BM25Result {
   id:           string;
@@ -32,6 +35,14 @@ export async function indexTranscriptEntry(
   content:     string,
   contentHash: string
 ): Promise<void> {
+  if (!transcriptContentEnabled()) return;
+  const safeContent = RedactionFilter.redactOnly(content).text;
+  const safeRole = RedactionFilter.redactOnly(role).text;
+  const safeAction = RedactionFilter.redactOnly(action).text;
+  if (safeContent !== content || safeRole !== role) {
+    contentHash = createHash('sha256').update(`${cycleNumber}:${safeRole}:${safeContent}`).digest('hex');
+  }
+  content = safeContent; role = safeRole; action = safeAction;
   const db = getDb();
 
   // Check for duplicate
@@ -56,6 +67,7 @@ export function searchBM25(
   runId:  string,
   limit:  number = 20
 ): BM25Result[] {
+  if (!transcriptContentEnabled()) return [];
   const db = getDb();
 
   // FTS5 bm25() function returns negative scores (more negative = better)
@@ -77,7 +89,7 @@ export function searchBM25(
   `).all(query, runId, limit) as BM25Result[];
 
   db.close();
-  return rows;
+  return rows.map(row => ({ ...row, role: RedactionFilter.redactOnly(row.role).text, action: RedactionFilter.redactOnly(row.action).text, content: RedactionFilter.redactOnly(row.content).text }));
 }
 
 // ── Index a batch of transcript entries from a JSONL file ────────────
@@ -85,6 +97,7 @@ export async function indexTranscriptFile(
   filePath: string,
   runId:    string
 ): Promise<number> {
+  if (!transcriptContentEnabled()) return 0;
   const { readFile } = await import('node:fs/promises');
   const { existsSync } = await import('node:fs');
   const { createHash } = await import('node:crypto');

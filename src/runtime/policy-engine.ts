@@ -88,7 +88,7 @@ export class PolicyEngine {
         AND (role = ? OR role = '*')
         AND action_class = ?
         AND (team_id = ? OR team_id IS NULL)
-      ORDER BY CASE WHEN role = '*' THEN 1 ELSE 0 END, updated_at DESC
+      ORDER BY CASE WHEN role = '*' THEN 1 ELSE 0 END, created_at DESC
     `).all(
       this.runId,
       intent.role,

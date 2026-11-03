@@ -29,7 +29,7 @@ import {
   getDashboardSummary, getFeatureFlags,
   getKnowledgeGraph,
 } from '@/db/queries.js';
-import { registerRoute, matchRoute, json, notFound, serverError } from './route-utils.js';
+import { registerRoute, matchRoute, json, notFound, serverError, HttpError, parseJsonBody, MAX_BODY_BYTES, checkContentLength, sanitizeToolTrace } from './route-utils.js';
 import { getDb, withDb } from '@/db/migrate.js';
 import { ApprovalGate } from '@/runtime/approval-gate.js';
 import { ServiceState } from '@/runtime/service-state.js';
@@ -43,7 +43,8 @@ import { handleSwarmRoutes } from './swarm-routes.js';
 import { handlePlatformRoutes } from './platform-routes.js';
 import { handleLearningRoutes } from './learning-routes.js';
 import { handleApprovalDecision } from './approval-routes.js';
-import { authenticate, corsHeaders, checkBootSafety } from './auth.js';
+import { authenticate, corsHeaders, checkBootSafety, authorizeWsUpgrade } from './auth.js';
+import { AuthRateLimiter } from './rate-limit.js';
 
 dotenvLoad();
 
@@ -58,7 +59,9 @@ const HOSTNAME = process.env.API_HOST ?? '0.0.0.0';
 // ── Request handler ────────────────────────────────────────────────────
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
-async function handleRequest(req: Request): Promise<Response> {
+const authLimiter = new AuthRateLimiter();
+
+async function handleRequest(req: Request, peer: string): Promise<Response> {
   const url    = new URL(req.url);
   const method = req.method;
 
@@ -66,15 +69,23 @@ async function handleRequest(req: Request): Promise<Response> {
     return new Response(null, { status: 204, headers: corsHeaders(req) });
   }
 
+  if (MUTATING.has(method) && !checkContentLength(req)) {
+    return json({ error: 'Request body too large or invalid' }, 413);
+  }
+
   // Webhooks authenticate with their own HMAC signature, not the API key.
   const isWebhook = url.pathname === '/api/webhooks/github';
 
-  // Auth gate: every mutating endpoint requires the API key once configured.
-  if (!isWebhook && MUTATING.has(method)) {
+  // All API data, including reads, is protected when an API key is configured.
+  if (!isWebhook) {
+    const retry = authLimiter.retryAfter(peer);
+    if (retry) return new Response(JSON.stringify({ error: 'Too many authentication failures' }), { status: 429, headers: { 'Content-Type': 'application/json', 'Retry-After': String(retry) } });
     const auth = authenticate(req, true);
     if (!auth.ok) {
+      authLimiter.recordFailure(peer);
       return json({ error: auth.error }, { status: auth.status ?? 401 });
     }
+    authLimiter.recordSuccess(peer);
   }
 
   try {
@@ -264,8 +275,8 @@ async function handleRequest(req: Request): Promise<Response> {
         WHERE (? IS NULL OR run_id = ?)
         ORDER BY created_at DESC
         LIMIT 50
-      `).all(runId ?? null, runId ?? null));
-      return json(traces);
+      `).all(runId ?? null, runId ?? null) as Array<Record<string, unknown>>);
+      return json(traces.map(sanitizeToolTrace));
     }
 
     // GET /api/security/findings
@@ -282,7 +293,7 @@ async function handleRequest(req: Request): Promise<Response> {
 
     // POST /api/interview — Start an agent interview
     if (url.pathname === '/api/interview' && method === 'POST') {
-      const body = await req.json() as {
+      const body = await parseJsonBody(req) as {
         runId:     string;
         agentRole: string;
         cycleId?:  string;
@@ -299,7 +310,7 @@ async function handleRequest(req: Request): Promise<Response> {
     // POST /api/interview/:sessionId — Continue an interview
     params = matchRoute(url, method, '/api/interview/:sessionId', 'POST');
     if (params) {
-      const body = await req.json() as { message: string };
+      const body = await parseJsonBody(req) as { message: string };
       const { InterviewEngine } = await import('@/runtime/interview.js');
 
       // Load session from DB
@@ -317,15 +328,20 @@ async function handleRequest(req: Request): Promise<Response> {
 
     return notFound();
   } catch (err) {
+    if (err instanceof HttpError) return json({ error: err.message }, err.status);
     const msg = err instanceof Error ? err.message : String(err);
     console.error(chalk.red(`[API] Error: ${msg}`));
-    return withCors(serverError(msg), req);
+    return serverError();
   }
 }
 
 /** Attach per-request CORS headers to a response, replacing any baseline. */
 function withCors(res: Response, req: Request): Response {
   const headers = new Headers(res.headers);
+  headers.set('X-Content-Type-Options', 'nosniff');
+  headers.set('X-Frame-Options', 'DENY');
+  headers.set('Referrer-Policy', 'no-referrer');
+  headers.set('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
   // Drop any CORS headers a route may have set, then apply the allowlist.
   headers.delete('Access-Control-Allow-Origin');
   headers.delete('Access-Control-Allow-Credentials');
@@ -345,13 +361,25 @@ if (bootProblem) {
 const server = Bun.serve({
   port: PORT,
   hostname: HOSTNAME,
+  maxRequestBodySize: MAX_BODY_BYTES,
   fetch(req, server) {
-    // Upgrade WebSocket connections
-    if (req.headers.get('upgrade') === 'websocket') {
+    // Authenticate before upgrade: event streams may contain sensitive data.
+    if (req.headers.get('upgrade')?.toLowerCase() === 'websocket') {
+      if (new URL(req.url).pathname !== '/ws') return withCors(notFound(), req);
+      const peer = server.requestIP(req)?.address ?? null;
+      const key = peer ?? 'unknown';
+      const retry = authLimiter.retryAfter(key);
+      if (retry) return withCors(new Response('Too many authentication failures', { status: 429, headers: { 'Retry-After': String(retry) } }), req);
+      const auth = authorizeWsUpgrade(req, peer);
+      if (!auth.ok) {
+        authLimiter.recordFailure(key);
+        return withCors(json({ error: auth.error }, auth.status ?? 401), req);
+      }
+      authLimiter.recordSuccess(key);
       const success = server.upgrade(req);
-      return success ? undefined : new Response('WebSocket upgrade failed', { status: 400 });
+      return success ? undefined : withCors(new Response('WebSocket upgrade failed', { status: 400 }), req);
     }
-    return handleRequest(req).then(res => withCors(res, req));
+    return handleRequest(req, server.requestIP(req)?.address ?? 'unknown').then(res => withCors(res, req));
   },
   websocket: {
     open(ws) {

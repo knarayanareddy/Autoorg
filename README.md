@@ -33,6 +33,7 @@ AutoOrg is a production-grade platform designed to manage complex, multi-cycle a
 
 ### 1. Prerequisites
 - **Runtime**: [Bun](https://bun.sh)
+- **Repository search**: [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) on `PATH` (also required by the repository search tests).
 - **Local Inference** (Optional): [Ollama](https://ollama.ai)
 
 ### 2. Setup
@@ -101,6 +102,141 @@ GITHUB_WEBHOOK_SECRET=<secret>        # webhooks reject unsigned payloads
 The server **refuses to start** on a public interface without
 `AUTOORG_API_KEY`. CORS is an explicit allowlist — never `*`.
 
+### Remote deployment and TLS
+
+The Bun API does not terminate TLS. For remote use, put the dashboard and API
+behind a TLS-terminating reverse proxy or VPN; bind the API to `127.0.0.1` and
+set a strong `AUTOORG_API_KEY` **even on loopback** when a proxy can reach it.
+Forward `/api` to the API and `/ws` as a WebSocket upgrade to the API (preserve
+`Upgrade` and `Connection` headers). Serve both through HTTPS so the browser
+uses `wss://`; do not send API keys over plain HTTP or WebSocket connections.
+Configure proxy timeouts and body-size limits as appropriate. The API also
+limits request bodies to 1 MiB.
+
+**The API key protects reads, mutations and WebSocket events when configured.**
+The GitHub webhook instead requires its own HMAC signature. Restrict access to
+the dashboard and API at the proxy or network layer as defense in depth; CORS
+is not authentication. Do not expose the dashboard's
+Next.js development server to the internet.
+
+For local development, the dashboard connects to `localhost:3001/ws` from port
+3000. For remote deployments it connects to `/ws` on the dashboard origin,
+which the proxy must forward. When a key is configured, use the dashboard's
+**API key** control to enter it for the current tab. The dashboard stores it in
+`sessionStorage`, sends it in a header on API requests, and clears it when the
+tab closes (or when you enter a blank key). Browser script running on the same
+origin can read it, so keep the dashboard origin trusted. WebSocket clients
+send it in the URL query string because browser WebSocket APIs cannot set
+arbitrary headers. Treat URLs as secrets: disable or redact query strings in
+proxy/access logs, monitoring, and tracing; use WSS. Non-browser clients may
+instead send `x-api-key`.
+
+Unkeyed WebSocket access is permitted only from loopback with a trusted browser
+origin; never rely on that exception behind a proxy, since proxied clients may
+appear to be loopback. Failed key attempts are throttled by the direct peer IP,
+not forwarded headers, so clients behind one proxy share a limit; enforce
+per-client throttling at a trusted proxy if needed. The in-memory limiter resets
+on restart and is not shared between processes.
+
+### Transcript and search privacy
+
+By default, new transcript entries retain operational metadata but omit prompt,
+response and arbitrary metadata content. Stored cycle contexts and agent output
+are also withheld by default; post-run interviews lose that historical context.
+Tool trace inputs, outputs, artifact snippets and stored evidence are withheld
+too, although evidence still reaches the active agent in memory. Legacy
+transcript retrieval and indexing are disabled in this mode. Repository search returns counts and line
+numbers but withholds queries, paths and snippets. This deliberately sacrifices
+search usefulness to avoid relying on secret-pattern detection.
+
+For trusted workspaces, `AUTOORG_TRANSCRIPT_CONTENT=1` enables transcript
+content and retrieval, and `AUTOORG_REPO_SEARCH_CONTENT=1` enables search paths
+and snippets; transcript opt-in also enables stored tool and evidence content.
+Redaction then covers known configured credentials and common
+patterns, but **cannot recognize every possible secret**, including arbitrary
+unknown values and fragments of multiline keys. Only enable these options after
+reviewing data and protecting access to the workspace, database and backups.
+Other application data can also contain sensitive content. Rotate exposed keys;
+redaction is not a substitute for rotation.
+
+### Run budgets
+
+`MAX_API_SPEND_USD` is checked immediately before every LLM attempt in the
+main run, including graph extraction, agent/tool planning, judging and dreams.
+Calls within a run are serialized so parallel workers cannot spend the same
+remaining budget. Successful usage is accounted immediately. If a failed call
+or response does not report a cost, the run stops rather than retrying with
+unknown billing; provider SDK retries are disabled. Outside the main run (for
+example, separate interview or benchmark processes), configure provider-side
+limits separately.
+
+This is a **best-effort spending guard**, not a guaranteed billing cap: the
+application uses estimated, potentially outdated model prices, and a single
+request can cross the remaining budget before its cost is known. Provider
+billing, failed requests, other processes and external API use can differ from
+these estimates. Set hard spending limits with the provider as well.
+
+### Constitution lock
+
+The `constitutionLock` flag is enabled by default. A run records a hash of a
+regular `constitution.md` at startup and stops without resetting the file if
+it changes or disappears before scoring/staging. Because the shell sandbox is
+not a filesystem isolation boundary, the lock blocks `sandbox.exec` and other
+non-allowlisted tools; only the built-in read-only search and web-fetch tools
+remain available. Set `FEATURE_CONSTITUTION_LOCK=0` only if you deliberately
+accept the risk and provide your own OS-level isolation. Hash checks cannot
+prevent an independent host process from changing and restoring the file
+between checks; isolate the workspace from untrusted host processes as well.
+
+### Cleaning legacy private data
+
+Older transcript files, transcript search indexes and saved run configuration
+may already contain credentials. The application does not automatically
+rewrite historical data. To inspect the cleanup plan without changes, set
+`AUTOORG_DB_PATH` and `AUTOORG_MEMORY_DIR` as appropriate and run:
+
+```bash
+bun run privacy:sanitize             # dry run
+bun run privacy:sanitize -- --apply  # destructive: stop all AutoOrg processes first
+```
+
+The apply step replaces every JSONL transcript's contents with metadata-only
+records (including hashed legacy run IDs), deletes transcript search-index
+entries and embeddings, rebuilds the FTS index, clears stored agent prompt
+contexts, outputs and old reversible prompt hashes, and removes credential
+fields from saved run configs. It also clears tool trace payloads, tool
+artifacts, evidence snippets, and tool-ledger payloads (retaining trace IDs
+and ledger hashes). It checkpoints the WAL and vacuums the database. It
+cannot sanitize unknown secrets in unrelated tables, files, logs or backups.
+It validates files first and can be rerun, but database and file updates are not
+one atomic transaction: if interrupted, rerun while offline. Malformed files
+and symlinks cause it to stop for manual review. Make a protected backup before
+applying, then securely retire old backups and snapshots where appropriate.
+Storage snapshots, Git history and flash media may retain old data; rotate
+previously exposed credentials even after cleanup. The command warns when no database is
+found; run it for every database and memory directory in use.
+
+### Provider credentials at rest
+
+Provider seeding normally leaves database key fields empty and reads provider
+keys from the process environment. To store provider keys in the database, set
+`AUTOORG_PROVIDER_ENCRYPTION_KEY` to a dedicated, random 32-byte hex key
+(`openssl rand -hex 32`) **outside** the database, then run the seeder. Keys
+are encrypted with AES-256-GCM and bound to their provider ID. Keep a secure
+backup of the encryption key: losing or changing it makes stored credentials
+unreadable. Never reuse the API key as the encryption key.
+
+Existing plaintext rows are refused by the adapter. To migrate, stop **all**
+AutoOrg processes, take a protected, consistent database backup, set the
+correct encryption key and `AUTOORG_DB_PATH`, then run `bun run providers:encrypt`.
+The migration checks existing ciphertext before updating rows, uses a
+transaction, checkpoints the WAL and vacuums the database; rerun it if a
+checkpoint was blocked. Securely handle or retire old backups, WAL/journal
+files and filesystem snapshots, which may retain plaintext. SQLite vacuum and
+secure deletion cannot guarantee erasure on all storage. Rotate credentials
+that may previously have been exposed. Keep database files and backups access
+controlled and encrypted at rest as defense in depth.
+
 ### Development
 ```bash
 bun run typecheck   # tsc --noEmit
@@ -108,6 +244,7 @@ bun run test:ci     # unit tests
 bun run build       # bundle CLI + API
 bun run lint
 bun run security    # secrets, tracked build output, route-auth checks
+bun run audit       # root dependencies; also audit web/ separately in CI
 bun run api         # dashboard API on :3001
 ```
 

@@ -1,0 +1,21 @@
+# Keep dependencies current so advisories are fixed by PR instead of
+# accumulating into a red-team finding (the first audit found 24
+# vulnerabilities, 2 critical, all in direct dependencies).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: npm
+    directory: "/web"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly

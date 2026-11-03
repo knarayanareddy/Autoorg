@@ -23,6 +23,7 @@ export class ActionLedger {
     riskTier: RiskTier;
     summary: string;
     input?: unknown;
+    inputHash?: string;
     reversible?: boolean;
     compensationAction?: unknown;
     policySnapshot?: unknown;
@@ -46,7 +47,7 @@ export class ActionLedger {
       opts.riskTier,
       opts.summary,
       JSON.stringify(opts.input ?? {}),
-      sha(opts.input ?? {}),
+      opts.inputHash ?? sha(opts.input ?? {}),
       opts.reversible ? 1 : 0,
       JSON.stringify(opts.compensationAction ?? {}),
       JSON.stringify(opts.policySnapshot ?? {}),
@@ -77,6 +78,7 @@ export class ActionLedger {
 
   apply(actionId: string, opts?: {
     output?: unknown;
+    outputHash?: string;
     artifactPath?: string;
   }) {
     const db = getDb();
@@ -90,7 +92,7 @@ export class ActionLedger {
       WHERE id = ?
     `).run(
       JSON.stringify(opts?.output ?? {}),
-      sha(opts?.output ?? {}),
+      opts?.outputHash ?? sha(opts?.output ?? {}),
       opts?.artifactPath ?? null,
       actionId
     );

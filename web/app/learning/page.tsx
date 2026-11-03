@@ -1,20 +1,22 @@
 'use client';
 
+import { apiFetch } from '@/lib/api-client';
+
 import { useState, useEffect } from 'react';
 
 export default function LearningPage() {
   const [proposals, setProposals] = useState<any[]>([]);
 
   useEffect(() => {
-    fetch('/api/learning/proposals')
+    apiFetch('/api/learning/proposals')
       .then(res => res.json())
       .then(setProposals);
   }, []);
 
   const release = async (id: string) => {
-    await fetch(`/api/learning/proposals/${id}/release`, { method: 'POST' });
+    await apiFetch(`/api/learning/proposals/${id}/release`, { method: 'POST' });
     // Refresh
-    const res = await fetch('/api/learning/proposals');
+    const res = await apiFetch('/api/learning/proposals');
     setProposals(await res.json());
   };
 
@@ -25,7 +27,7 @@ export default function LearningPage() {
           Cognitive Evolution
         </h1>
         <button 
-          onClick={() => fetch('/api/learning/cycle', { method: 'POST' })}
+          onClick={() => apiFetch('/api/learning/cycle', { method: 'POST' })}
           className="bg-emerald-600 hover:bg-emerald-500 px-6 py-2 rounded-xl text-sm font-bold transition-all shadow-[0_0_15px_rgba(16,185,129,0.3)]"
         >
           ⚡ Trigger Learning Cycle

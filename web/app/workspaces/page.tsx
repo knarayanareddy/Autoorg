@@ -1,12 +1,14 @@
 'use client';
 
+import { apiFetch } from '@/lib/api-client';
+
 import { useState, useEffect } from 'react';
 
 export default function WorkspacesPage() {
   const [workspaces, setWorkspaces] = useState<any[]>([]);
 
   useEffect(() => {
-    fetch('/api/platform/workspaces')
+    apiFetch('/api/platform/workspaces')
       .then(res => res.json())
       .then(setWorkspaces);
   }, []);

@@ -68,9 +68,10 @@ describe('authenticate', () => {
     expect(result.status).toBe(403);
   });
 
-  it('leaves read-only requests open so the dashboard works', () => {
+  it('protects read-only requests when a key is configured', () => {
     process.env.AUTOORG_API_KEY = 'sk-test-secret';
-    expect(authenticate(req('GET'), false).ok).toBe(true);
+    expect(authenticate(req('GET'), false).status).toBe(401);
+    expect(authenticate(req('GET', { 'x-api-key': 'sk-test-secret' }), false).ok).toBe(true);
   });
 });
 

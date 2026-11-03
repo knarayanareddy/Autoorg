@@ -2,6 +2,7 @@
  * AutoOrg — Exponential Backoff Retry Utility
  */
 import chalk from 'chalk';
+import { LLMBudgetError } from '@/runtime/llm-budget.js';
 
 export interface RetryOptions {
   maxRetries?: number;
@@ -30,6 +31,7 @@ export async function withRetry<T>(fn: () => Promise<T>, opts: RetryOptions = {}
     try {
       return await fn();
     } catch (err) {
+      if (err instanceof LLMBudgetError) throw err;
       lastError = err instanceof Error ? err : new Error(String(err));
       if (attempt > maxRetries) break;
       const exponential = Math.min(baseDelayMs * Math.pow(2, attempt - 1), maxDelayMs);

@@ -2,7 +2,7 @@ import { cp, mkdir, rename, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { nanoid } from 'nanoid';
-import simpleGit from 'simple-git';
+import { simpleGit } from 'simple-git';
 import { getDb } from '@/db/migrate.js';
 import { ApprovalGate } from '@/runtime/approval-gate.js';
 import { WorkspaceLock } from '@/runtime/workspace-lock.js';

@@ -13,8 +13,7 @@
  * - Auth is MANDATORY whenever the server is not bound to loopback. Booting an
  *   unauthenticated server on a public interface is refused rather than warned
  *   about, because "approve arbitrary commits" is not a safe default.
- * - Read-only endpoints stay open in local/dev to keep the dashboard usable;
- *   every mutating endpoint requires the key once one is configured.
+ * - All API requests require the key once one is configured.
  *
  * Set `AUTOORG_API_KEY` in `.env` for anything other than a local run.
  */
@@ -59,9 +58,7 @@ export interface AuthResult {
  * Check an incoming request.
  *
  * @param req        The incoming request.
- * @param mutating   True for POST/PUT/PATCH/DELETE. Mutating requests require
- *                   the key whenever one is configured; reads do not, so the
- *                   dashboard keeps working locally.
+ * @param mutating   Retained for compatibility; all methods require the key.
  */
 export function authenticate(req: Request, mutating: boolean): AuthResult {
   const { apiKey } = getAuthConfig();
@@ -72,7 +69,6 @@ export function authenticate(req: Request, mutating: boolean): AuthResult {
     return { ok: true };
   }
 
-  if (!mutating) return { ok: true };
 
   const header = req.headers.get('authorization') ?? '';
   const bearer = header.toLowerCase().startsWith('bearer ')
@@ -136,4 +132,29 @@ export function checkBootSafety(hostname: string | undefined): string | null {
     );
   }
   return null;
+}
+
+/** Authorize WebSocket upgrades independently of open HTTP read endpoints. */
+export function authorizeWsUpgrade(req: Request, peer: string | null): AuthResult {
+  const apiKey = getAuthConfig().apiKey;
+  if (apiKey) {
+    // A loopback peer may be a reverse proxy for an arbitrary remote client.
+    // Never exempt it when a key is configured.
+    const provided = req.headers.get('x-api-key')?.trim() || new URL(req.url).searchParams.get('token') || '';
+    if (!provided) return { ok: false, status: 401, error: 'Missing API key' };
+    if (!safeEqual(provided, apiKey)) return { ok: false, status: 403, error: 'Invalid API key' };
+    return { ok: true };
+  }
+
+  const local = peer === '127.0.0.1' || peer === '::1' || peer === '::ffff:127.0.0.1';
+  if (!local) return { ok: false, status: 403, error: 'Local access only' };
+  const origin = req.headers.get('origin');
+  if (origin) {
+    const allowed = (process.env.AUTOORG_CORS_ORIGINS ?? '').split(',').map(s => s.trim()).filter(Boolean);
+    const localDashboard = ['http://localhost:3000', 'http://127.0.0.1:3000'];
+    if (origin !== new URL(req.url).origin && !allowed.includes(origin) && !localDashboard.includes(origin)) {
+      return { ok: false, status: 403, error: 'Origin not allowed' };
+    }
+  }
+  return { ok: true };
 }

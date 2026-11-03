@@ -1,12 +1,14 @@
 'use client';
 
+import { apiFetch } from '@/lib/api-client';
+
 import { useState, useEffect } from 'react';
 
 export default function AgentsPage() {
   const [agents, setAgents] = useState<any[]>([]);
 
   useEffect(() => {
-    fetch('/api/platform/agents')
+    apiFetch('/api/platform/agents')
       .then(res => res.json())
       .then(setAgents);
   }, []);

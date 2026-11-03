@@ -1,5 +1,7 @@
 'use client';
 
+import { apiFetch } from '@/lib/api-client';
+
 import { useEffect, useState } from 'react';
 
 interface BenchmarkRun {
@@ -21,7 +23,7 @@ export default function BenchmarksPage() {
 
   const fetchRuns = async () => {
     try {
-      const res = await fetch('/api/benchmarks');
+      const res = await apiFetch('/api/benchmarks');
       const data = await res.json();
       setRuns(data);
     } catch (err) {
@@ -34,7 +36,7 @@ export default function BenchmarksPage() {
   const triggerRun = async () => {
     setStarting(true);
     try {
-      await fetch('/api/benchmarks/run', {
+      await apiFetch('/api/benchmarks/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ suiteName: 'core' }),

@@ -52,6 +52,9 @@ import { parseOrgMd, validateOrgConfig } from '@/config/org-parser.js';
 import { gitInit }                    from '@/utils/git.js';
 import { ensureResultsFile, getBestScore } from '@/utils/results-logger.js';
 import { getDb }                      from '@/db/migrate.js';
+import { ConstitutionGuard, ConstitutionChangedError } from './constitution-lock.js';
+import { LLMBudget, LLMBudgetError, withLLMBudget } from './llm-budget.js';
+import { sanitizeRunConfig } from './run-config.js';
 import type { AgentRunnerContext }    from './agent-runner.js';
 import { GraphBuilder }               from '@/graph/graph-builder.js';
 import { createBestAvailableGraphDB } from '@/graph/graph-db.js';
@@ -81,7 +84,7 @@ function createCycleState(runId: string, cycle: number, prevBest: number): Cycle
 function upsertRunInDb(runId: string, config: OrgConfig): void {
   const db = getDb();
   db.prepare(`INSERT OR REPLACE INTO runs (id,org_md_hash,org_md_path,status,config_json) VALUES (?,?,'org.md','running',?)`)
-    .run(runId, config.contentHash, JSON.stringify(config));
+    .run(runId, config.contentHash, JSON.stringify(sanitizeRunConfig(config)));
   db.close();
 }
 
@@ -146,8 +149,20 @@ export async function* orchestratorLoop(
     return;
   }
 
+  let constitutionGuard: ConstitutionGuard | undefined;
+  try { if (featureFlag('constitutionLock')) constitutionGuard = new ConstitutionGuard(); }
+  catch (err) {
+    yield { type: 'error', message: err instanceof Error ? err.message : 'Constitution unavailable', fatal: true };
+    return;
+  }
+
   const runId = `run_${nanoid(8)}`;
   upsertRunInDb(runId, config);
+  const budget = new LLMBudget(config.maxApiSpendUsd, spent => {
+    const db = getDb();
+    try { db.prepare('UPDATE runs SET total_cost_usd = ? WHERE id = ?').run(spent, runId); }
+    finally { db.close(); }
+  });
 
   // ── Phase 4: Initialize memory manager with run context ───────────
   await memoryManager.initialize(runId);
@@ -178,7 +193,13 @@ export async function* orchestratorLoop(
     // Check if graph already has nodes for this run
     const stats = await graphDb.getStats();
     if (stats.nodeCount === 0) {
-      await builder.buildFromSeedMaterial(config.seedMaterial, config);
+      try {
+        await withLLMBudget(budget, () => builder.buildFromSeedMaterial(config.seedMaterial, config));
+      } catch (err) {
+        finalizeRunInDb(runId, 'failed', err instanceof LLMBudgetError ? 'budget' : 'error');
+        yield { type: 'error', message: err instanceof Error ? err.message : 'Graph initialization failed', fatal: true };
+        return;
+      }
     }
   }
 
@@ -203,19 +224,20 @@ export async function* orchestratorLoop(
     id: runId, config, status: 'running',
     cycleCount: 0, bestScore: await getBestScore(),
     plateauCount: 0, consecutiveRejects: 0,
-    totalCostUsd: 0, cycleHistory: [], startedAt: new Date(),
+    totalCostUsd: budget.spent, cycleHistory: [], startedAt: new Date(),
   };
 
   // Score history for DreamAgent (accumulated during run)
   const scoreHistory: Array<{ cycle: number; score: number; decision: string }> = [];
 
+  let budgetStopped = false;
   const ratchet = new RatchetEngine({ mock: opts.mockScoring ?? false });
 
   console.log(chalk.bold.white(`\n  Mission:  ${config.mission.slice(0, 80)}...`));
   console.log(chalk.gray(`  Run ID:   ${runId}`));
   console.log(chalk.gray(`  Mode:     Phase 3 (Full Memory System + autoDream)`));
 
-  const startEvt: OrchestratorEvent = { type: 'run_start', runId, config };
+  const startEvt: OrchestratorEvent = { type: 'run_start', runId, config: sanitizeRunConfig(config) };
   yield startEvt;
   eventBus.broadcast(startEvt);
 
@@ -230,7 +252,7 @@ export async function* orchestratorLoop(
     if (cycleNumber > config.maxCycles)                           break;
     if (runState.plateauCount       >= config.plateauCycles)      break;
     if (runState.consecutiveRejects >= config.consecutiveRejects) break;
-    if (runState.totalCostUsd       >= config.maxApiSpendUsd)     break;
+    if (budget.exhausted) { budgetStopped = true; break; }
     if (runState.bestScore          >= config.targetScore)         break;
 
     // ── Memory health check (Phase 3) ─────────────────────────────
@@ -279,6 +301,7 @@ export async function* orchestratorLoop(
     runState.currentCycle = cycleState;
 
     const cycleStartMs = Date.now();
+    const cycleStartSpent = budget.spent;
     let   dreamRan     = false;
     let   proposalPath = '';
 
@@ -294,21 +317,23 @@ export async function* orchestratorLoop(
         `Open objections: ${objectionTracker.getStats().open}`
       );
 
+      constitutionGuard?.assertUnchanged();
       // ── RUN THE PIPELINE ──────────────────────────────────────────
-      const pipelineResult = await runCyclePipeline(
+      const pipelineResult = await withLLMBudget(budget, () => runCyclePipeline(
         agentCtx,
         cycleState,
         objectionTracker,
         (event) => eventBus.broadcast(event as OrchestratorEvent)
-      );
+      ));
 
+      constitutionGuard?.assertUnchanged();
       // ── WRITE PROPOSAL & UPDATE OUTPUT ────────────────────────────
       proposalPath = await writeProposal(cycleNumber, pipelineResult.ceoSynthesis.content);
       cycleState.proposalPath = proposalPath;
       await updateCurrentOutput(pipelineResult.ceoSynthesis.content, cycleNumber);
 
-      cycleState.totalCostUsd += pipelineResult.totalCostUsd;
-      cycleState.totalTokens  += pipelineResult.totalTokens;
+      // Pipeline already accumulates token counts; budget tracks every LLM call.
+      cycleState.totalCostUsd = budget.spent - cycleStartSpent;
 
       // ── RATCHET JUDGE ─────────────────────────────────────────────
       const judgeEvt: OrchestratorEvent = { type: 'phase_change', phase: 'judge' };
@@ -317,12 +342,13 @@ export async function* orchestratorLoop(
 
       yield { type: 'agent_start', role: 'RatchetJudge', model: config.modelAssignments.RatchetJudge?.model ?? 'preferred-opus-tier' };
 
-      const score = await ratchet.scoreWithJudge(
+      const score = await withLLMBudget(budget, () => ratchet.scoreWithJudge(
         agentCtx,
         pipelineResult.ceoSynthesis.content,
         pipelineResult.criticOutput,
         config.seedMaterial.slice(0, 2000)
-      );
+      ));
+      cycleState.totalCostUsd = budget.spent - cycleStartSpent;
 
       cycleState.score = score;
 
@@ -337,6 +363,7 @@ export async function* orchestratorLoop(
         `\n  ${chalk.italic.gray(score.justification.slice(0, 100))}`
       );
 
+      constitutionGuard?.assertUnchanged();
       // ── KEEP OR REVERT ─────────────────────────────────────────────
       const ratchetResult = await ratchet.keepOrRevert(score, runState.bestScore, cycleState);
       cycleState.decision = ratchetResult.decision;
@@ -409,7 +436,7 @@ export async function* orchestratorLoop(
         eventBus.broadcast(revertedEvt);
       }
 
-      runState.totalCostUsd += cycleState.totalCostUsd;
+      runState.totalCostUsd = budget.spent;
 
       // ── MEMORY UPDATES ─────────────────────────────────────────────
       await memoryManager.updateIndexAfterCycle(
@@ -451,9 +478,11 @@ export async function* orchestratorLoop(
         const activeFacts = memoryManager.getFactStore().getActiveFacts();
         await graphManager.updateFromFacts(activeFacts.slice(-25).map(f => f.statement));
         
-        const dreamResult = await dreamEngine.dream(
+        const dreamResult = await withLLMBudget(budget, () => dreamEngine.dream(
           config, cycleNumber, trigger, scoreHistory
-        );
+        ));
+        runState.totalCostUsd = budget.spent;
+        cycleState.totalCostUsd = budget.spent - cycleStartSpent;
 
         dreamRan = true;
 
@@ -516,7 +545,20 @@ export async function* orchestratorLoop(
       }
 
     } catch (err) {
+      // Check even when another failure occurred: never reset over an operator's
+      // concurrent constitution edit merely because the pipeline also failed.
+      try { constitutionGuard?.assertUnchanged(); } catch (changed) { err = changed; }
       const errMsg = err instanceof Error ? err.message : String(err);
+      if (err instanceof ConstitutionChangedError) {
+        finalizeRunInDb(runId, 'failed', 'constitution_changed');
+        const event: OrchestratorEvent = { type: 'error', message: errMsg, cycleNumber, fatal: true };
+        yield event;
+        eventBus.broadcast(event);
+        return; // Never reset the operator's modified file.
+      }
+      if (err instanceof LLMBudgetError) budgetStopped = true;
+      runState.totalCostUsd = budget.spent;
+      cycleState.totalCostUsd = budget.spent - cycleStartSpent;
       console.error(chalk.red(`\n  ✗ Cycle ${cycleNumber}: ${errMsg}`));
 
       try {
@@ -534,57 +576,66 @@ export async function* orchestratorLoop(
     }
 
     // ── Cycle complete ─────────────────────────────────────────────
-    const durationMs = Date.now() - cycleStartMs;
-
+    runState.totalCostUsd = budget.spent;
+    cycleState.totalCostUsd = budget.spent - cycleStartSpent;
     // ── Phase 9: Reflection & Strategic Pivoting ──────────────────
-    if (featureFlag('processReflection') || featureFlag('strategicPivoting')) {
-      const currentRunOutput = await Bun.file('./workspace/current_output.md').text().catch(() => '');
-      
-      // Generate Process Debt Report
-      if (featureFlag('processReflection')) {
-        await reflection.reflect({ cycleNumber, transcript: currentRunOutput });
-      }
+    try {
+      if (!budgetStopped && !budget.exhausted && (featureFlag('processReflection') || featureFlag('strategicPivoting'))) {
+        const currentRunOutput = await Bun.file('./workspace/current_output.md').text().catch(() => '');
+        
+        // Generate Process Debt Report
+        if (featureFlag('processReflection')) {
+          await withLLMBudget(budget, () => reflection.reflect({ cycleNumber, transcript: currentRunOutput }));
+        }
 
-      // Check for Strategic Pivot
-      if (featureFlag('strategicPivoting')) {
-        const pivot = await pivoting.evaluatePivot({
-          cycleNumber,
-          scoreHistory: scoreHistory.map(s => s.score),
-          currentOutput: currentRunOutput,
-          objectives: weights
-        });
+        // Check for Strategic Pivot
+        if (featureFlag('strategicPivoting')) {
+          const pivot = await withLLMBudget(budget, () => pivoting.evaluatePivot({
+            cycleNumber,
+            scoreHistory: scoreHistory.map(s => s.score),
+            currentOutput: currentRunOutput,
+            objectives: weights
+          }));
 
-        if (pivot?.status === 'auto_approved') {
-          await pivoting.applyPivot(pivot.pivotId);
-          console.log(chalk.bold.yellow(`  🚀 Auto-Applied Minor Pivot: ${pivot.pivotId}`));
-        } else if (pivot?.status === 'pending') {
-          console.log(chalk.bold.red(`  ⚠️   Major Strategic Pivot Proposed: ${pivot.pivotId}. Waiting for approval.`));
+          if (pivot?.status === 'auto_approved') {
+            await pivoting.applyPivot(pivot.pivotId);
+            console.log(chalk.bold.yellow(`  🚀 Auto-Applied Minor Pivot: ${pivot.pivotId}`));
+          } else if (pivot?.status === 'pending') {
+            console.log(chalk.bold.red(`  ⚠️   Major Strategic Pivot Proposed: ${pivot.pivotId}. Waiting for approval.`));
+          }
         }
       }
-    }
 
-    // ── Phase 10: Swarm Delegation ───────────────────────────────
-    if (featureFlag('hierarchicalSwarm')) {
-      const currentRunOutput = await Bun.file('./workspace/current_output.md').text().catch(() => '');
-      const transcriptText = runState.cycleHistory.slice(-3).map((c: any) => c.action).join('\n');
+      // ── Phase 10: Swarm Delegation ───────────────────────────────
+      if (!budgetStopped && !budget.exhausted && featureFlag('hierarchicalSwarm')) {
+        const currentRunOutput = await Bun.file('./workspace/current_output.md').text().catch(() => '');
+        const transcriptText = runState.cycleHistory.slice(-3).map((c: any) => c.action).join('\n');
 
-      const delegation = await swarm.evaluateDelegation({
-        cycle: cycleNumber,
-        mission: config.mission,
-        currentOutput: currentRunOutput,
-        transcript: transcriptText
-      });
+        const delegation = await withLLMBudget(budget, () => swarm.evaluateDelegation({
+          cycle: cycleNumber,
+          mission: config.mission,
+          currentOutput: currentRunOutput,
+          transcript: transcriptText
+        }));
 
-      if (delegation) {
-        console.log(chalk.bold.cyan(`  🐝 Swarm Delegation: Contract ${delegation.contractId} created with Specialist Org ${delegation.provider.runId}`));
-        eventBus.broadcast({ 
-          type: 'swarm_event', 
-          message: `Delegated to Specialist Org for service: ${delegation.provider.serviceKey}` 
-        });
+        if (delegation) {
+          console.log(chalk.bold.cyan(`  🐝 Swarm Delegation: Contract ${delegation.contractId} created with Specialist Org ${delegation.provider.runId}`));
+          eventBus.broadcast({ 
+            type: 'swarm_event', 
+            message: `Delegated to Specialist Org for service: ${delegation.provider.serviceKey}` 
+          });
+        }
       }
-    }
 
+    } catch (err) {
+      if (!(err instanceof LLMBudgetError)) throw err;
+      budgetStopped = true;
+      yield { type: 'error', message: err.message, cycleNumber, fatal: false };
+    }
+    runState.totalCostUsd = budget.spent;
+    cycleState.totalCostUsd = budget.spent - cycleStartSpent;
     cycleState.endedAt = new Date();
+    const durationMs = Date.now() - cycleStartMs;
     finalizeCycleInDb(cycleState.id, durationMs, cycleState.totalCostUsd, cycleState.totalTokens, proposalPath, dreamRan);
     updateRunProgress(runId, cycleNumber, runState.bestScore, runState.totalCostUsd);
 
@@ -594,10 +645,12 @@ export async function* orchestratorLoop(
       `$${cycleState.totalCostUsd.toFixed(4)} | ${cycleState.totalTokens} tokens | ` +
       `Facts: ${factStats.active} (Δ${factStats.avgConfidence > 0 ? '+' : ''}${(factStats.avgConfidence * 100).toFixed(0)}% avg conf)`
     ));
+    if (budgetStopped || budget.exhausted) { budgetStopped = true; break; }
   }
 
   // ── Run complete ──────────────────────────────────────────────────
-  const stopReason: StopReason = (() => {
+  let stopReason: StopReason = (() => {
+    if (budgetStopped || budget.exhausted)                        return 'budget';
     if (runState.cycleCount > config.maxCycles)                    return 'max_cycles';
     if (runState.plateauCount >= config.plateauCycles)             return 'plateau';
     if (runState.consecutiveRejects >= config.consecutiveRejects)  return 'consecutive_rejects';
@@ -606,17 +659,20 @@ export async function* orchestratorLoop(
     return 'manual_stop';
   })();
 
-  finalizeRunInDb(runId, 'completed', stopReason);
-
   // ── Final dream (always run at end of session) ────────────────────
-  if (featureFlag('fullAutoDream') && runState.cycleCount > 0) {
+  if (featureFlag('fullAutoDream') && runState.cycleCount > 0 && !budget.exhausted && !budgetStopped) {
     console.log(chalk.magenta('\n  💤 Final session dream...'));
     try {
-      await dreamEngine.dream(config, runState.cycleCount, 'manual', scoreHistory);
+      await withLLMBudget(budget, () => dreamEngine.dream(config, runState.cycleCount, 'manual', scoreHistory));
     } catch (err) {
       console.warn(chalk.yellow(`  ⚠  Final dream failed: ${err}`));
     }
   }
+
+  if (budget.exhausted) stopReason = 'budget';
+  runState.totalCostUsd = budget.spent;
+  updateRunProgress(runId, runState.cycleCount, runState.bestScore, budget.spent);
+  finalizeRunInDb(runId, 'completed', stopReason);
 
   const finalFacts = memoryManager.getFactStore().getStats();
   const finalObjs  = objectionTracker.getStats();

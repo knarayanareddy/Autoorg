@@ -1,5 +1,7 @@
 'use client';
 
+import { apiFetch } from '@/lib/api-client';
+
 import { useEffect, useState } from 'react';
 
 interface PortfolioRun {
@@ -16,7 +18,7 @@ export default function PortfolioPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/portfolio/runs')
+    apiFetch('/api/portfolio/runs')
       .then(res => res.json())
       .then(data => {
         setRuns(data);

@@ -1,6 +1,6 @@
 import { mkdir, copyFile } from 'node:fs/promises';
 import path from 'node:path';
-import simpleGit from 'simple-git';
+import { simpleGit } from 'simple-git';
 
 export class BranchStrategy {
   private git = simpleGit();

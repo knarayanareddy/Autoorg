@@ -1,5 +1,7 @@
 'use client';
 
+import { apiFetch, getApiKey } from '@/lib/api-client';
+
 import { useState, useEffect, useCallback } from 'react';
 import { ScoreChart }       from '@/components/ScoreChart';
 import { ObjectionTracker } from '@/components/ObjectionTracker';
@@ -84,11 +86,11 @@ export default function DashboardPage() {
   // ── Fetch latest run ───────────────────────────────────────────────
   const fetchLatestRun = useCallback(async () => {
     try {
-      const runs = await fetch('/api/runs').then(r => r.json()) as Array<{ id: string }>;
+      const runs = await apiFetch('/api/runs').then(r => r.json()) as Array<{ id: string }>;
       if (runs.length > 0 && runs[0]) {
         const id   = runs[0].id;
         setRunId(id);
-        const data = await fetch(`/api/runs/${id}`).then(r => r.json()) as RunSummary;
+        const data = await apiFetch(`/api/runs/${id}`).then(r => r.json()) as RunSummary;
         setSummary(data);
       }
     } catch (err) {
@@ -100,7 +102,13 @@ export default function DashboardPage() {
 
   // ── WebSocket connection ────────────────────────────────────────────
   useEffect(() => {
-    const ws = new WebSocket('ws://localhost:3001');
+    const localDashboard = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname) && window.location.port === '3000';
+    const url = new URL('/ws', window.location.href);
+    url.protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    if (localDashboard) url.port = '3001';
+    const key = getApiKey();
+    if (key) url.searchParams.set('token', key);
+    const ws = new WebSocket(url);
 
     ws.onopen = () => {
       setWsConnected(true);
@@ -138,7 +146,7 @@ export default function DashboardPage() {
   useEffect(() => {
     const interval = setInterval(() => {
       fetchLatestRun();
-      fetch('/api/daemon').then(r => r.json()).then(setDaemonStatus).catch(() => {});
+      apiFetch('/api/daemon').then(r => r.json()).then(setDaemonStatus).catch(() => {});
     }, 10_000);
     return () => clearInterval(interval);
   }, [fetchLatestRun]);
@@ -177,6 +185,7 @@ export default function DashboardPage() {
           <LiveBadge event={liveEvent} />
           <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-400 animate-pulse' : 'bg-gray-600'}`} />
           <span className="text-xs text-gray-500">{wsConnected ? 'Live' : 'Disconnected'}</span>
+
         </div>
       </div>
 

@@ -1,5 +1,7 @@
 'use client';
 
+import { apiFetch } from '@/lib/api-client';
+
 import { useState, useEffect, useCallback } from 'react';
 import GraphVisualization from '@/components/GraphVisualization';
 
@@ -10,11 +12,11 @@ export default function GraphPage() {
 
   const fetchLatestRun = useCallback(async () => {
     try {
-      const runs = await fetch('/api/runs').then(r => r.json()) as Array<{ id: string }>;
+      const runs = await apiFetch('/api/runs').then(r => r.json()) as Array<{ id: string }>;
       if (runs.length > 0 && runs[0]) {
         const id = runs[0].id;
         setRunId(id);
-        const data = await fetch(`/api/graph?runId=${id}`).then(r => r.json());
+        const data = await apiFetch(`/api/graph?runId=${id}`).then(r => r.json());
         setGraphData(data);
       }
     } catch (err) {

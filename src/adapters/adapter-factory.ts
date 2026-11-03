@@ -5,6 +5,10 @@ import { OllamaAdapter } from '@/adapters/ollama-adapter.js';
 import { OpenAICompatibleAdapter } from '@/adapters/openai-compatible-adapter.js';
 import { GeminiAdapter } from '@/adapters/gemini-adapter.js';
 import { getDb } from '@/db/migrate.js';
+import { decryptProviderKey } from '@/config/provider-secrets.js';
+import { runBudgetedLLM, hasLLMBudget } from '@/runtime/llm-budget.js';
+import { parseStructuredOutput } from '@/utils/structured-output.js';
+import { registerKnownSecret } from '@/runtime/redaction.js';
 import type { LLMAdapter, LLMProvider, ModelConfig } from '@/types/index.js';
 
 const adapters = new Map<string, LLMAdapter>();
@@ -15,6 +19,7 @@ const adapters = new Map<string, LLMAdapter>();
 export function getAdapter(config: ModelConfig | { provider: LLMProvider; model?: string }): LLMAdapter {
   const providerType = config.provider;
   const apiKey = (config as ModelConfig).apiKey;
+  if (apiKey) registerKnownSecret(apiKey);
   const baseUrl = (config as ModelConfig).baseUrl;
   const cacheKey = `${providerType}:${apiKey ?? 'default'}:${baseUrl ?? 'default'}`;
 
@@ -22,30 +27,59 @@ export function getAdapter(config: ModelConfig | { provider: LLMProvider; model?
     return adapters.get(cacheKey)!;
   }
 
-  // Phase 15: Try to find a dynamic configuration in the database
+  // A missing table may use environment fallback, but never swallow a failure
+  // to decrypt a configured credential and silently use a different provider key.
+  let dbProv: { id: string; provider_type: LLMProvider; api_key: string | null; base_url: string | null } | undefined;
   try {
     const db = getDb();
-    const dbProv = db.prepare(`
-      SELECT * FROM llm_providers 
-      WHERE provider_type = ? AND is_enabled = 1
-      ORDER BY is_default DESC, created_at DESC 
-      LIMIT 1
-    `).get(providerType) as any;
-
-    if (dbProv) {
-      const adapter = createAdapter(dbProv.provider_type as LLMProvider, dbProv.api_key, dbProv.base_url);
-      adapters.set(cacheKey, adapter);
-      return adapter;
-    }
+    try {
+      dbProv = db.prepare(`
+        SELECT id, provider_type, api_key, base_url FROM llm_providers
+        WHERE provider_type = ? AND is_enabled = 1
+        ORDER BY is_default DESC, created_at DESC LIMIT 1
+      `).get(providerType) as typeof dbProv;
+    } finally { db.close(); }
   } catch (err) {
-    // If DB fails (e.g. table doesn't exist yet), fallback to env-only mode
-    console.debug(`[AdapterFactory] Dynamic provider lookup failed, using environment fallbacks. error=${err}`);
+    if (!(err instanceof Error) || !err.message.includes('no such table: llm_providers')) throw err;
+  }
+  if (dbProv) {
+    const storedKey = dbProv.api_key ? decryptProviderKey(dbProv.api_key, dbProv.id) : undefined;
+    const adapter = createAdapter(dbProv.provider_type, storedKey ?? apiKey, dbProv.base_url ?? baseUrl);
+    const guarded = guardAdapter(adapter);
+    adapters.set(cacheKey, guarded);
+    return guarded;
   }
 
   // Fallback to environment variables (Legacy/Phase 1-14 mode)
   const adapter = createAdapter(providerType, apiKey, baseUrl);
-  adapters.set(cacheKey, adapter);
-  return adapter;
+  const guarded = guardAdapter(adapter);
+  adapters.set(cacheKey, guarded);
+  return guarded;
+}
+
+export function guardAdapter(adapter: LLMAdapter): LLMAdapter {
+  return {
+    provider: adapter.provider,
+    run: opts => runBudgetedLLM(() => adapter.run(opts)),
+    structured: async opts => {
+      if (!hasLLMBudget()) return adapter.structured(opts);
+      const attempts = Math.max(1, opts.maxRetries ?? 3);
+      let lastError: unknown;
+      for (let i = 0; i < attempts; i++) {
+        // Charge every provider call before attempting to parse its response.
+        const response = await runBudgetedLLM(() => adapter.run({
+          model: opts.model,
+          messages: [...opts.messages, { role: 'user', content: 'Respond only with valid JSON matching the required schema.' }],
+          temperature: opts.temperature ?? 0.1,
+          maxTokens: opts.maxTokens ?? 4096,
+        }));
+        try {
+          return parseStructuredOutput(response.content, opts.schema);
+        } catch (err) { lastError = err; }
+      }
+      throw lastError;
+    },
+  };
 }
 
 function createAdapter(type: LLMProvider, apiKey?: string, baseUrl?: string): LLMAdapter {
