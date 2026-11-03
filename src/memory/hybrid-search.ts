@@ -17,6 +17,7 @@ import { computeEmbeddingCached, cosineSimilarity, deserializeEmbedding } from '
 import { searchBM25 }    from './bm25.js';
 import { getDb }         from '@/db/migrate.js';
 import { transcriptContentEnabled } from '@/runtime/transcript-privacy.js';
+import { RedactionFilter } from '@/runtime/redaction.js';
 
 export interface HybridSearchResult {
   id:            string;
@@ -108,9 +109,9 @@ export async function hybridSearch(
       id:           c.id,
       run_id:       c.run_id,
       cycle_number: c.cycle_number,
-      role:         c.role,
-      action:       c.action,
-      content:      c.content,
+      role:         RedactionFilter.redactOnly(c.role).text,
+      action:       RedactionFilter.redactOnly(c.action).text,
+      content:      RedactionFilter.redactOnly(c.content).text,
     });
   }
 

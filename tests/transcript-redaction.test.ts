@@ -102,3 +102,22 @@ describe('legacy transcript retrieval', () => {
     } finally { if (old === undefined) delete process.env.AUTOORG_TRANSCRIPT_CONTENT; else process.env.AUTOORG_TRANSCRIPT_CONTENT = old; }
   });
 });
+
+describe('opt-in legacy transcript redaction', () => {
+  it('redacts known credentials before indexing legacy content', async () => {
+    const old = process.env.AUTOORG_TRANSCRIPT_CONTENT;
+    process.env.AUTOORG_TRANSCRIPT_CONTENT = '1';
+    try {
+      const { indexTranscriptFile } = await import('../src/memory/bm25.ts');
+      const { getDb } = await import('../src/db/migrate.ts');
+      const file = path.join(MEMORY_DIR, 'legacy.jsonl');
+      await Bun.write(file, JSON.stringify({ cycle: 1, role: 'CEO', action: 'response', content: `legacy ${SECRET_ANTHROPIC}` }) + '\n');
+      expect(await indexTranscriptFile(file, RUN_ID)).toBe(1);
+      const db = getDb();
+      const row = db.query('SELECT content FROM transcript_index WHERE run_id = ?').get(RUN_ID) as { content: string };
+      db.close();
+      expect(row.content).not.toContain(SECRET_ANTHROPIC);
+      expect(row.content).toContain('[REDACTED:ANTHROPIC_KEY]');
+    } finally { if (old === undefined) delete process.env.AUTOORG_TRANSCRIPT_CONTENT; else process.env.AUTOORG_TRANSCRIPT_CONTENT = old; }
+  });
+});

@@ -40,6 +40,7 @@ import { parseStructuredOutput }     from '@/utils/structured-output.js';
 import { withLLMRetry }               from '@/utils/retry.js';
 import { LLMBudgetError } from '@/runtime/llm-budget.js';
 import { transcriptContentEnabled } from '@/runtime/transcript-privacy.js';
+import { RedactionFilter } from '@/runtime/redaction.js';
 import { gitCommit }                  from '@/utils/git.js';
 import { getDb }                      from '@/db/migrate.js';
 import { featureFlag }                from '@/config/feature-flags.js';
@@ -460,7 +461,7 @@ export class DreamEngine {
     console.log(chalk.magenta(`     Computing ${rows.length} embeddings...`));
 
     for (const row of rows) {
-      const vec    = await computeEmbeddingCached(row.content);
+      const vec    = await computeEmbeddingCached(RedactionFilter.redactOnly(row.content).text);
       const embBuf = serializeEmbedding(vec);
 
       const db2 = getDb();
