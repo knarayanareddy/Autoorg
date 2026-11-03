@@ -1,6 +1,7 @@
 import { BaseAdapter } from './base-adapter.js';
 import { estimateCost } from '@/config/model-costs.js';
 import type { LLMProvider, LLMResponse, LLMRunOptions } from '@/types/index.js';
+import { providerApiKey, providerBaseUrl } from '@/config/env.js';
 
 export class OpenAICompatibleAdapter extends BaseAdapter {
   readonly provider: LLMProvider;
@@ -10,9 +11,9 @@ export class OpenAICompatibleAdapter extends BaseAdapter {
   constructor(provider: LLMProvider, baseUrl?: string, apiKey?: string) {
     super();
     this.provider = provider;
-    const envPrefix = provider.toUpperCase().replace(/[^A-Z0-9]/g, '_');
-    this.baseUrl = baseUrl ?? process.env[`AUTOORG_BASE_URL_${envPrefix}`] ?? '';
-    this.apiKey = apiKey ?? process.env[`AUTOORG_API_KEY_${envPrefix}`] ?? '';
+    // GROQ_API_KEY / GROQ_BASE_URL (documented) or the AUTOORG_* legacy names.
+    this.baseUrl = providerBaseUrl(provider as never, baseUrl);
+    this.apiKey = providerApiKey(provider as never, apiKey);
   }
 
   async run(opts: LLMRunOptions): Promise<LLMResponse> {

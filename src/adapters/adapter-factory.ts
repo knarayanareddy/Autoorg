@@ -51,9 +51,11 @@ export function getAdapter(config: ModelConfig | { provider: LLMProvider; model?
 function createAdapter(type: LLMProvider, apiKey?: string, baseUrl?: string): LLMAdapter {
   switch (type) {
     case 'anthropic':
-      return new AnthropicAdapter(apiKey);
+      // ANTHROPIC_BASE_URL is honoured for proxies (documented in .env.example).
+      return new AnthropicAdapter(apiKey, baseUrl);
     case 'openai':
-      return new OpenAIAdapter(apiKey);
+      // OPENAI_BASE_URL is honoured for LM Studio / Together / compatible APIs.
+      return new OpenAIAdapter(apiKey, baseUrl);
     case 'ollama':
       return new OllamaAdapter(baseUrl);
     case 'gemini':
